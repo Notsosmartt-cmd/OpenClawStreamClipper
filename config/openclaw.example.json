@@ -1,0 +1,107 @@
+{
+  "models": {
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://ollama:11434",
+        "apiKey": "ollama-local",
+        "api": "ollama",
+        "models": [
+          {
+            "id": "qwen3-vl:8b",
+            "name": "Qwen3-VL 8B (Vision)",
+            "reasoning": false,
+            "input": ["text", "image"],
+            "cost": { "input": 0, "output": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 4096,
+            "compat": {
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false
+            }
+          },
+          {
+            "id": "qwen2.5:7b",
+            "name": "Qwen 2.5 7B (Text)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 4096,
+            "compat": {
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false
+            }
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "ollama/qwen2.5:7b",
+        "fallbacks": ["ollama/qwen3-vl:8b"]
+      },
+      "workspace": "/root/.openclaw/workspace",
+      "compaction": {
+        "reserveTokens": 8192,
+        "keepRecentTokens": 8000
+      },
+      "timeoutSeconds": 3600,
+      "maxConcurrent": 1
+    }
+  },
+  "session": {
+    "reset": {
+      "idleMinutes": 60
+    },
+    "maintenance": {
+      "mode": "enforce",
+      "pruneAfter": "7d",
+      "maxEntries": 200
+    }
+  },
+  "tools": {
+    "profile": "coding",
+    "web": {
+      "search": {
+        "enabled": true,
+        "provider": "duckduckgo"
+      }
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "token": "__DISCORD_BOT_TOKEN__",
+      "groupPolicy": "open",
+      "historyLimit": 10,
+      "streaming": "off"
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "CHANGE_ME_TO_A_RANDOM_STRING"
+    },
+    "channelHealthCheckMinutes": 10,
+    "channelStaleEventThresholdMinutes": 60,
+    "channelMaxRestartsPerHour": 20
+  },
+  "plugins": {
+    "entries": {
+      "duckduckgo": {
+        "enabled": true
+      }
+    }
+  }
+}

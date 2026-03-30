@@ -1,0 +1,91 @@
+# ============================================================
+# Secrets & credentials
+# ============================================================
+.env
+config/openclaw.json
+config/openclaw.json.bak*
+config/exec-approvals.json
+
+# ============================================================
+# VODs — large video files (multi-GB each)
+# ============================================================
+vods/*
+!vods/.gitkeep
+!vods/.transcriptions/
+
+# Transcription cache — large JSON/SRT per VOD
+vods/.transcriptions/*
+
+# ============================================================
+# Generated clips — output videos + diagnostics
+# ============================================================
+clips/*
+!clips/.gitkeep
+
+# ============================================================
+# OpenClaw runtime data (sessions, auth, memory, device IDs)
+# ============================================================
+config/agents/
+config/identity/
+config/devices/
+config/logs/
+config/memory/
+config/canvas/
+config/workspace/
+config/update-check.json
+
+# ============================================================
+# Claude Code / Claude Cache
+# ============================================================
+.claude/
+.claude-*
+
+# Workspace runtime state
+workspace/.openclaw/
+
+# ============================================================
+# Pipeline temp files (created at runtime in container)
+# ============================================================
+/tmp/clipper/
+*.log
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# ============================================================
+# Node
+# ============================================================
+node_modules/
+package-lock.json
+
+# ============================================================
+# OS junk
+# ============================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ============================================================
+# IDE / Editor
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Deprecated / old files
+# ============================================================
+OpenClawStreamClipper/
+OpenClaw_Stream_Clipper_Summary.md

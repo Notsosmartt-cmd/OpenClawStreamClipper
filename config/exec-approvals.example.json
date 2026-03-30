@@ -1,0 +1,14 @@
+{
+  "*": {
+    "allowlist": [
+      { "pattern": "*" },
+      { "pattern": "/usr/bin/*" },
+      { "pattern": "/usr/local/bin/*" },
+      { "pattern": "/root/scripts/*" },
+      { "pattern": "bash*" },
+      { "pattern": "python3*" },
+      { "pattern": "ffmpeg*" },
+      { "pattern": "ls*" }
+    ]
+  }
+}
