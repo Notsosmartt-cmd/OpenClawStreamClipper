@@ -1611,7 +1611,17 @@ print("[WHISPER] Batch transcription complete.", file=sys.stderr)
 PYTRANSCRIBE
 
 # --- 7d. Render ALL clips (FFmpeg only, Whisper already unloaded) ---
-log "  Rendering all clips..."
+# Uses blur-fill technique: full 16:9 frame centered on 9:16 canvas with
+# a blurred, zoomed copy of the same frame filling the background.
+# This preserves all stream content instead of hard-cropping the sides.
+log "  Rendering all clips (blur-fill 9:16)..."
+
+# Blur-fill filter chain:
+#   split into two streams → background gets scaled to fill 1080x1920,
+#   cropped, and heavily blurred → foreground scales to fit width (1080)
+#   while keeping aspect ratio → overlay foreground centered on blurred bg
+BLUR_BG="split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[blurred];[fg]scale=1080:-2:force_original_aspect_ratio=decrease[sharp];[blurred][sharp]overlay=(W-w)/2:(H-h)/2"
+
 while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
     [ -z "$T" ] && continue
 
@@ -1622,9 +1632,9 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
     CLIP_SRT="$TEMP_DIR/clip_${T}.srt"
     CLIP_OUTPUT="$CLIPS_DIR/${TITLE}.mp4"
 
-    # Render vertical clip with burned captions
+    # Render vertical clip: blur-fill background + burned captions
     ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
-        -vf "crop=ih*9/16:ih,scale=1080:1920,subtitles='${CLIP_SRT}':force_style='FontSize=14,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=20'" \
+        -vf "${BLUR_BG},subtitles='${CLIP_SRT}':force_style='FontSize=14,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=120'" \
         -c:v libx264 -crf 23 -preset medium \
         -c:a aac -b:a 128k \
         -movflags +faststart \
@@ -1633,7 +1643,7 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
     if [ ! -f "$CLIP_OUTPUT" ]; then
         warn "Render failed for $TITLE. Trying without subtitles..."
         ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
-            -vf "crop=ih*9/16:ih,scale=1080:1920" \
+            -vf "${BLUR_BG}" \
             -c:v libx264 -crf 23 -preset medium \
             -c:a aac -b:a 128k \
             -movflags +faststart \

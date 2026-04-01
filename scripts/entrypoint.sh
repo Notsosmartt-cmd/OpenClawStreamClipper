@@ -54,6 +54,10 @@ mkdir -p /root/VODs/Clips_Ready /tmp/clipper /root/VODs/.transcriptions
 # --- Ensure scripts are executable ---
 chmod +x /root/scripts/*.sh 2>/dev/null || true
 
+# --- Start Dashboard ---
+echo "Starting web dashboard on port 5000..."
+python3 /root/dashboard/app.py &
+
 # --- Start OpenClaw Gateway ---
 echo "Starting OpenClaw gateway..."
 exec openclaw gateway

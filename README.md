@@ -802,7 +802,8 @@ The pipeline **always** writes to `/tmp/clipper/pipeline.log` regardless of whet
 
 **Check current stage** (instant — works for both bot-started and manual pipelines):
 ```bash
-docker exec stream-clipper-gpu cat /tmp/clipper/pipeline_stage.txt 2>/dev/null
+docker exec stream-clipper-gpu bash -c "cat /tmp/clipper/pipeline_stage.txt 2>/dev/null"
+
 ```
 
 **Tail the log in real time** (Ctrl+C to stop watching — the pipeline keeps running):

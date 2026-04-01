@@ -25,7 +25,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 RUN npm install -g openclaw@latest
 
 # faster-whisper (uses CUDA libs from base image)
-RUN pip3 install --no-cache-dir faster-whisper
+RUN pip3 install --no-cache-dir faster-whisper flask
 
 # Pre-download Whisper large-v3 model (~3GB baked into image)
 RUN python3 -c "\
@@ -39,8 +39,10 @@ RUN mkdir -p /root/VODs/Clips_Ready /root/.openclaw/workspace /tmp/clipper
 # Copy scripts and fix line endings (Windows CRLF safety)
 COPY scripts/entrypoint.sh /entrypoint.sh
 COPY scripts/clip-pipeline.sh /root/scripts/clip-pipeline.sh
+COPY dashboard/ /root/dashboard/
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh && \
-    sed -i 's/\r$//' /root/scripts/clip-pipeline.sh && chmod +x /root/scripts/clip-pipeline.sh
+    sed -i 's/\r$//' /root/scripts/clip-pipeline.sh && chmod +x /root/scripts/clip-pipeline.sh && \
+    find /root/dashboard -type f -exec sed -i 's/\r$//' {} +
 
 WORKDIR /root
 ENTRYPOINT ["/entrypoint.sh"]
