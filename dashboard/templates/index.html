@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Clipper Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1><span>Stream Clipper</span> Dashboard</h1>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="docker-badge" class="badge badge-gray" style="display: none; font-size: 0.7rem;"></span>
+            <div id="status-badge" class="status-badge">
+                <div class="status-dot"></div>
+                <span id="status-label">Idle</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <!-- VOD Browser -->
+        <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+                <span>VOD Library</span>
+                <button id="btn-refresh-vods" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                <table class="vod-table">
+                    <thead>
+                        <tr>
+                            <th>VOD Name</th>
+                            <th>Size</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Transcription</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vod-tbody">
+                        <tr><td colspan="5" class="empty-state">Loading VODs...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Clip Controls -->
+        <div class="panel">
+            <div class="panel-header">Clip Controls</div>
+            <div class="panel-body">
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Style</label>
+                        <select id="sel-style">
+                            <option value="auto">Auto</option>
+                            <option value="funny">Funny</option>
+                            <option value="hype">Hype</option>
+                            <option value="emotional">Emotional</option>
+                            <option value="hot_take">Hot Take</option>
+                            <option value="storytime">Storytime</option>
+                            <option value="reactive">Reactive</option>
+                            <option value="variety">Variety</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Type Hint</label>
+                        <input type="text" id="inp-type" placeholder="e.g. gaming, irl" style="width: 140px;">
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-force">
+                        <label for="chk-force">Force reprocess</label>
+                    </div>
+                    <button id="btn-clip" class="btn-primary" disabled>Clip Selected</button>
+                    <button id="btn-clip-all" class="btn-primary">Clip All</button>
+                    <button id="btn-stop" class="btn-danger" style="display: none;">Stop Pipeline</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pipeline Monitor -->
+        <div class="panel">
+            <div class="panel-header">Pipeline Monitor</div>
+            <div class="panel-body">
+                <div class="stage-track">
+                    <div id="stage-1" class="stage-dot" title="Discovery"></div>
+                    <div id="stage-2" class="stage-dot" title="Transcription"></div>
+                    <div id="stage-3" class="stage-dot" title="Segments"></div>
+                    <div id="stage-4" class="stage-dot" title="Moments"></div>
+                    <div id="stage-5" class="stage-dot" title="Frames"></div>
+                    <div id="stage-6" class="stage-dot" title="Vision"></div>
+                    <div id="stage-7" class="stage-dot" title="Render"></div>
+                    <div id="stage-8" class="stage-dot" title="Summary"></div>
+                </div>
+                <div id="stage-label" class="stage-label">No pipeline running</div>
+                <div id="log-viewer" class="log-viewer"></div>
+                <div id="stage-history" class="stage-history"></div>
+            </div>
+        </div>
+
+        <!-- Clips Gallery -->
+        <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+                <span>Clips Gallery</span>
+                <button id="btn-refresh-clips" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
+            </div>
+            <div class="panel-body">
+                <div id="clips-grid" class="clips-grid">
+                    <div class="empty-state">Loading clips...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

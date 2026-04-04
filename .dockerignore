@@ -1,0 +1,33 @@
+# VODs and clips — large media files, mounted at runtime via volumes
+vods/
+clips/
+
+# Git and IDE
+.git
+.gitignore
+.gitattributes
+.claude
+.vscode
+.idea
+
+# Config and runtime state (mounted at runtime)
+config/
+
+# Workspace docs (mounted at runtime)
+workspace/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Docs (not needed in image)
+*.md
+LICENSE
+
+# Env files
+.env
+.env.example
+
+# Docker files (don't need to copy themselves into the image)
+docker-compose.yml
+.dockerignore

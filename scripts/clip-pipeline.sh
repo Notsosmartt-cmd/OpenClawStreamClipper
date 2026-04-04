@@ -7,10 +7,10 @@
 # ============================================================
 set -euo pipefail
 
-VODS_DIR="/root/VODs"
-CLIPS_DIR="/root/VODs/Clips_Ready"
+VODS_DIR="${CLIP_VODS_DIR:-/root/VODs}"
+CLIPS_DIR="${CLIP_CLIPS_DIR:-/root/VODs/Clips_Ready}"
 TEMP_DIR="/tmp/clipper"
-PROCESSED_LOG="/root/VODs/processed.log"
+PROCESSED_LOG="${VODS_DIR}/processed.log"
 WHISPER_CACHE="/root/.cache/whisper-models"
 OLLAMA_URL="http://ollama:11434"
 TEXT_MODEL="${CLIP_TEXT_MODEL:-qwen3.5:9b}"
@@ -74,7 +74,7 @@ unload_ollama() {
 
 cleanup() {
     # Save diagnostic data before cleanup
-    DIAG_DIR="/root/VODs/Clips_Ready/.diagnostics"
+    DIAG_DIR="${CLIPS_DIR}/.diagnostics"
     mkdir -p "$DIAG_DIR"
     DIAG_FILE="$DIAG_DIR/last_run_$(date -u +%Y%m%d_%H%M%S).json"
     python3 -c "
@@ -142,7 +142,7 @@ if [ "$LIST_MODE" = true ]; then
         fi
         cached="false"
         cache_key=$(echo "$basename_vod" | sed 's/\.[^.]*$//')
-        if [ -f "/root/VODs/.transcriptions/${cache_key}.transcript.json" ]; then
+        if [ -f "${VODS_DIR}/.transcriptions/${cache_key}.transcript.json" ]; then
             cached="true"
         fi
         [ "$FIRST" = true ] && FIRST=false || echo ','
@@ -245,7 +245,7 @@ unload_ollama "$TEXT_MODEL"
 unload_ollama "$VISION_MODEL"
 
 AUDIO_FILE="$TEMP_DIR/audio.wav"
-TRANSCRIPT_CACHE_DIR="/root/VODs/.transcriptions"
+TRANSCRIPT_CACHE_DIR="${VODS_DIR}/.transcriptions"
 mkdir -p "$TRANSCRIPT_CACHE_DIR"
 
 # Cache key: VOD filename without extension
@@ -641,30 +641,39 @@ KEYWORD_SETS = {
         "miss you", "struggling", "mental health", "tough time",
         "i needed that", "means the world", "i can't thank you enough"
     ],
-    "controversial": [
+    "hot_take": [
         "hot take", "i don't care what anyone says", "fight me", "unpopular opinion",
         "this is gonna be controversial", "here's the thing", "wrong",
         "that's not okay", "cancel", "problematic", "woke", "based",
         "ratio", "cope", "you're wrong", "nobody wants to hear this",
-        "i said what i said", "don't @ me"
+        "i said what i said", "don't @ me", "hear me out", "controversial",
+        "honestly though", "people don't want to hear", "the truth is"
     ],
-    "ragebait": [
+    "storytime": [
+        "so basically", "let me tell you", "you won't believe", "long story short",
+        "so this happened", "i was at", "the craziest thing", "true story",
+        "one time", "back when", "so i was", "this one time", "i remember when",
+        "what happened was", "the other day", "story time", "gather around",
+        "you want to know", "let me explain", "so get this"
+    ],
+    "reactive": [
         "what is wrong with", "are you kidding", "i'm so done", "this is unacceptable",
         "this is ridiculous", "i'm pissed", "rage", "tilted", "so annoying",
         "sick of this", "how is this fair", "broken", "scam", "garbage",
         "worst", "terrible", "disgusting", "why does this always",
-        "makes my blood boil", "actually insane"
+        "makes my blood boil", "actually insane", "look at this",
+        "did you just see", "watch this", "hold on", "pause"
     ]
 }
 
 # Segment-specific keyword weight multipliers
 # Boosts keywords that are natural for that segment type
 SEGMENT_KEYWORD_WEIGHTS = {
-    "gaming":       {"hype": 1.5, "funny": 1.0, "emotional": 0.8, "controversial": 0.7, "ragebait": 1.0},
-    "irl":          {"hype": 0.8, "funny": 1.4, "emotional": 1.4, "controversial": 1.0, "ragebait": 0.8},
-    "just_chatting": {"hype": 0.7, "funny": 1.3, "emotional": 1.3, "controversial": 1.2, "ragebait": 1.0},
-    "reaction":     {"hype": 1.0, "funny": 1.2, "emotional": 0.8, "controversial": 1.5, "ragebait": 1.5},
-    "debate":       {"hype": 0.7, "funny": 0.8, "emotional": 1.0, "controversial": 1.5, "ragebait": 1.3},
+    "gaming":       {"hype": 1.5, "funny": 1.0, "emotional": 0.8, "hot_take": 0.7, "storytime": 0.6, "reactive": 1.0},
+    "irl":          {"hype": 0.8, "funny": 1.4, "emotional": 1.4, "hot_take": 1.0, "storytime": 1.3, "reactive": 0.8},
+    "just_chatting": {"hype": 0.7, "funny": 1.3, "emotional": 1.3, "hot_take": 1.4, "storytime": 1.5, "reactive": 0.8},
+    "reaction":     {"hype": 1.0, "funny": 1.2, "emotional": 0.8, "hot_take": 1.5, "storytime": 0.6, "reactive": 1.5},
+    "debate":       {"hype": 0.7, "funny": 0.8, "emotional": 1.0, "hot_take": 1.5, "storytime": 0.8, "reactive": 1.3},
 }
 
 # Keyword thresholds — raised to reduce false positives from overused keywords
@@ -936,12 +945,16 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
         cat_map = {
             "comedy": "funny", "humor": "funny", "humour": "funny",
             "emotion": "emotional", "sad": "emotional", "heartfelt": "emotional",
-            "controversy": "controversial", "debate": "controversial",
-            "rage": "ragebait", "anger": "ragebait", "frustration": "ragebait",
+            "controversy": "hot_take", "controversial": "hot_take", "debate": "hot_take",
+            "hot-take": "hot_take", "hottake": "hot_take", "opinion": "hot_take",
+            "rage": "reactive", "anger": "reactive", "frustration": "reactive",
+            "ragebait": "reactive", "reaction": "reactive",
+            "story": "storytime", "narrative": "storytime", "anecdote": "storytime",
             "excitement": "hype", "intense": "hype", "skill": "hype", "clutch": "hype"
         }
         category = cat_map.get(category, category)
-        if category not in ("hype", "funny", "emotional", "controversial", "ragebait"):
+        VALID_CATEGORIES = ("hype", "funny", "emotional", "hot_take", "storytime", "reactive")
+        if category not in VALID_CATEGORIES:
             category = "hype"
 
         results.append({
@@ -969,31 +982,34 @@ SEGMENT_PROMPTS = {
     "irl": """Focus on IRL moments (these are NATURALLY QUIETER so lower your bar for what counts):
 - Funny real-world situations, awkward encounters with strangers
 - Interesting locations, unexpected events happening around streamer
+- STORYTIME: Streamer telling a story while walking, traveling, or doing something — look for narrative arc
 - Genuine emotional moments, real talk while walking/traveling
 - Interactions with friends, strangers, or the environment
 - Someone off-camera saying something unexpected that changes the situation
 - Situational irony — streamer claims something then reality contradicts them
+- Getting kicked out, confronted, or encountering unexpected resistance
 - Even small charming or relatable moments count here""",
 
     "just_chatting": """Focus on CONVERSATION moments (lower your bar for what counts — subtle is fine):
-- Hot takes or unpopular opinions dropped casually
+- STORYTIME: A story building to a punchline, reveal, or unexpected twist. The setup matters as much as the payoff
+- HOT TAKES: Unpopular opinions, controversial claims, bold statements that will make viewers react
 - Funny stories, witty one-liners, comedic timing
 - Emotional vulnerability, real talk, genuine audience connection
 - Drama, tea-spilling, call-outs, gossip
 - Audience interaction moments that are entertaining
 - Moments where the streamer says something quotable
-- Storytelling with a punchline or unexpected twist
 - Someone (chat, friend, co-host) calling the streamer out or correcting them
 - The streamer setting something up (bragging, explaining) and then getting undercut""",
 
     "reaction": """Focus on REACTION moments:
 - Strong emotional reactions to content (shock, anger, laughter, disbelief)
-- Hot takes and controversial opinions about what they're watching
-- Ragebait moments — things viewers will argue about in comments
+- HOT TAKES about what they're watching — opinions viewers will argue about
+- Reactive rage or disbelief — things viewers will clip and share
 - Disagreeing strongly with popular opinion
 - Over-the-top reactions that are entertaining to watch
 - Moments where the streamer's reaction IS the content
-- Streamer confidently stating something, then immediately being proven wrong""",
+- Streamer confidently stating something, then immediately being proven wrong
+- Double-takes, jaw drops, or moments where they have to pause and process""",
 
     "debate": """Focus on DEBATE/ARGUMENT moments:
 - Strongest arguments, mic-drop moments
@@ -1020,8 +1036,11 @@ style_prompts = {
     "hype": "Prioritize exciting, intense, high-energy moments. Celebrations, clutch plays, shock reactions.",
     "funny": "Prioritize comedy. Funny stories, awkward moments, witty lines, ironic situations, fails, deadpan delivery.",
     "emotional": "Prioritize emotional depth. Vulnerable sharing, heartfelt gratitude, real talk, difficult topics, genuine moments.",
-    "controversial": "Prioritize hot takes, debates, unpopular opinions, edgy comments, ragebait reactions.",
-    "variety": "Find ONE moment from EACH category. Maximum diversity across hype, funny, emotional, controversial, and ragebait."
+    "hot_take": "Prioritize controversial opinions, hot takes, unpopular opinions, bold claims that viewers will debate.",
+    "storytime": "Prioritize narrative moments — stories with setup and payoff, anecdotes building to a punchline or reveal.",
+    "reactive": "Prioritize strong reactions — rage, shock, disbelief, over-the-top responses to events or content.",
+    "controversial": "Prioritize hot takes, debates, unpopular opinions, edgy comments, reactive moments.",
+    "variety": "Find ONE moment from EACH category. Maximum diversity across hype, funny, emotional, hot_take, storytime, and reactive."
 }
 style_hint = style_prompts.get(CLIP_STYLE, style_prompts["auto"])
 
@@ -1086,7 +1105,14 @@ When in doubt, include the moment with a lower score (3-5) rather than skipping 
 Transcript (timestamps MM:SS from stream start):
 {chunk_text}
 
-Respond with ONLY a JSON array. Each element: {{"time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|controversial|ragebait", "why": "one sentence explaining the SITUATION not just the words"}}
+Respond with ONLY a JSON array. Each element: {{"time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive", "why": "one sentence explaining the SITUATION not just the words"}}
+Categories:
+- hype: exciting, intense, clutch plays, celebrations
+- funny: comedy, fails, awkward moments, ironic situations
+- emotional: vulnerable, heartfelt, real talk, genuine moments
+- hot_take: controversial opinions, unpopular takes, bold claims
+- storytime: narrative buildup with payoff, anecdotes, storytelling
+- reactive: strong reactions to something, rage, shock, disbelief
 If nothing stands out at all, respond: []"""
 
     print(f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): {seg_type}, {word_count} words...", file=sys.stderr)
@@ -1169,7 +1195,10 @@ for m in deduped:
         "hype": {"hype": 1.4},
         "funny": {"funny": 1.4},
         "emotional": {"emotional": 1.4},
-        "controversial": {"controversial": 1.4, "ragebait": 1.3},
+        "hot_take": {"hot_take": 1.4},
+        "storytime": {"storytime": 1.4, "emotional": 1.2},
+        "reactive": {"reactive": 1.4, "hot_take": 1.2},
+        "controversial": {"hot_take": 1.4, "reactive": 1.3},
         "variety": {}
     }
 
@@ -1178,70 +1207,93 @@ for m in deduped:
     m["final_score"] = min(base * multiplier, 10)
 
     # Cross-validated moments (found by BOTH keyword AND LLM) get a strong boost
-    # This is the best signal: keywords flagged it AND the LLM understood WHY it's good
     if m.get("cross_validated"):
         m["final_score"] = min(m["final_score"] + 1.5, 10)
 
-# Selection strategy
+# ---- TIME-BUCKET DISTRIBUTION ----
+# Divide VOD into equal time buckets and guarantee each bucket gets representation.
+# This prevents early-VOD bias where high-scoring early moments dominate selection.
+NUM_BUCKETS = max(3, min(int(vod_hours * 2), 10))  # 2 buckets per hour, 3-10 range
+bucket_duration = max_time / NUM_BUCKETS
+clips_per_bucket = max(1, MAX_CLIPS // NUM_BUCKETS)
+overflow_slots = MAX_CLIPS - (clips_per_bucket * NUM_BUCKETS)  # leftover slots for best-of
+
+print(f"  Time distribution: {NUM_BUCKETS} buckets of {bucket_duration/60:.0f}min, {clips_per_bucket} clips/bucket + {overflow_slots} overflow", file=sys.stderr)
+
+# Place each moment into its time bucket
+buckets = [[] for _ in range(NUM_BUCKETS)]
+for m in deduped:
+    bucket_idx = min(int(m["timestamp"] / bucket_duration), NUM_BUCKETS - 1)
+    buckets[bucket_idx].append(m)
+
+# Sort each bucket by final_score
+for b in buckets:
+    b.sort(key=lambda x: x["final_score"], reverse=True)
+
+# Selection: pick top N from each bucket, then fill overflow with best remaining
+selected = []
+
+# Phase 1: Guaranteed picks from each bucket (ensures time spread)
+for i, bucket in enumerate(buckets):
+    picked = 0
+    for m in bucket:
+        if picked >= clips_per_bucket:
+            break
+        # Check 45-second spacing against already-selected
+        too_close = any(abs(m["timestamp"] - s["timestamp"]) < 45 for s in selected)
+        if not too_close:
+            selected.append(m)
+            picked += 1
+    bucket_start_min = (i * bucket_duration) / 60
+    bucket_end_min = ((i + 1) * bucket_duration) / 60
+    print(f"  Bucket {i+1} ({bucket_start_min:.0f}-{bucket_end_min:.0f}min): {picked} clips from {len(bucket)} candidates", file=sys.stderr)
+
+# Phase 2: Fill overflow slots with best remaining moments (any bucket)
+remaining = []
+for bucket in buckets:
+    for m in bucket:
+        if m not in selected:
+            remaining.append(m)
+remaining.sort(key=lambda x: x["final_score"], reverse=True)
+
+for m in remaining:
+    if len(selected) >= MAX_CLIPS:
+        break
+    too_close = any(abs(m["timestamp"] - s["timestamp"]) < 45 for s in selected)
+    if not too_close:
+        selected.append(m)
+
+# Phase 3: If a style is specified, apply style-aware re-ranking within the selection
 if CLIP_STYLE == "variety":
+    # Round-robin by category from the selected pool
     by_category = {}
-    for m in deduped:
+    for m in selected:
         cat = m.get("primary_category", "hype")
         by_category.setdefault(cat, []).append(m)
     for cat in by_category:
         by_category[cat].sort(key=lambda x: x["final_score"], reverse=True)
-
-    selected = []
+    final = []
     cats = list(by_category.keys())
     idx = 0
-    while len(selected) < MAX_CANDIDATES and any(by_category.values()):
+    while len(final) < MAX_CLIPS and any(by_category.values()):
         cat = cats[idx % len(cats)]
         if by_category.get(cat):
-            selected.append(by_category[cat].pop(0))
+            final.append(by_category[cat].pop(0))
         idx += 1
         cats = [c for c in cats if by_category.get(c)]
         if not cats:
             break
-
-elif CLIP_STYLE == "auto":
-    # Top by score, but cap any single category at 60%
-    deduped.sort(key=lambda x: x["final_score"], reverse=True)
-    selected = []
-    cat_counts = {}
-    max_per_cat = max(2, int(MAX_CANDIDATES * 0.6))
-
-    for m in deduped:
-        cat = m.get("primary_category", "hype")
-        if cat_counts.get(cat, 0) < max_per_cat:
-            selected.append(m)
-            cat_counts[cat] = cat_counts.get(cat, 0) + 1
-        if len(selected) >= MAX_CANDIDATES:
-            break
-
-    if len(selected) < MAX_CANDIDATES:
-        for m in deduped:
-            if m not in selected:
-                selected.append(m)
-            if len(selected) >= MAX_CANDIDATES:
-                break
+elif CLIP_STYLE not in ("auto", ""):
+    # Style-specific: re-sort selected by style-weighted score, pick top N
+    selected.sort(key=lambda x: x["final_score"], reverse=True)
+    final = selected[:MAX_CLIPS]
 else:
-    deduped.sort(key=lambda x: x["final_score"], reverse=True)
-    selected = deduped[:MAX_CANDIDATES]
-
-# Enforce minimum 45-second temporal spread (reduced from 90s)
-final = []
-for m in sorted(selected, key=lambda x: x["final_score"], reverse=True):
-    too_close = False
-    for f in final:
-        if abs(m["timestamp"] - f["timestamp"]) < 45:
-            too_close = True
-            break
-    if not too_close:
-        final.append(m)
-    if len(final) >= MAX_CLIPS:
-        break
+    # Auto: already time-distributed, just take what we have
+    final = selected[:MAX_CLIPS]
 
 final.sort(key=lambda x: x["final_score"], reverse=True)
+
+print(f"  Final selection: {len(final)} clips across {len(set(min(int(m['timestamp']/bucket_duration), NUM_BUCKETS-1) for m in final))} of {NUM_BUCKETS} time buckets", file=sys.stderr)
 
 # Write output
 output = []
@@ -1634,7 +1686,7 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
 
     # Render vertical clip: blur-fill background + burned captions
     ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
-        -vf "${BLUR_BG},subtitles='${CLIP_SRT}':force_style='FontSize=14,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=120'" \
+        -vf "${BLUR_BG},subtitles='${CLIP_SRT}':force_style='FontSize=16,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'" \
         -c:v libx264 -crf 23 -preset medium \
         -c:a aac -b:a 128k \
         -movflags +faststart \

@@ -1,0 +1,252 @@
+================================================================================
+ OpenClaw Stream Clipper — Development Summary
+ Generated: 2026-04-04
+================================================================================
+
+PROJECT OVERVIEW
+----------------
+Self-hosted AI-powered livestream highlight clipper. Processes VOD files through
+an 8-stage pipeline (transcription → segment detection → moment detection →
+frame extraction → vision enrichment → rendering) to produce vertical 9:16
+clips with burned-in captions. Runs entirely locally via Docker with NVIDIA GPU
+acceleration. Controlled via Discord bot (OpenClaw) or standalone web dashboard.
+
+Stack: Docker, NVIDIA CUDA 12.3, Ollama (qwen3.5:9b, qwen2.5:7b, qwen3-vl:8b),
+faster-whisper large-v3, FFmpeg, Flask, OpenClaw agent framework.
+
+================================================================================
+ARCHITECTURE
+================================================================================
+
+Docker Containers:
+  - ollama-gpu: Ollama LLM server hosting Qwen models
+  - stream-clipper-gpu: OpenClaw agent + pipeline + dashboard + Whisper
+
+Volume Mounts:
+  ./vods → /root/VODs (input VODs)
+  ./clips → /root/VODs/Clips_Ready (output clips)
+  ./config → /root/.openclaw (agent config)
+  ./workspace → /root/.openclaw/workspace (AGENTS.md, skills)
+
+Network: clipper-net bridge, Ollama accessible at http://ollama:11434
+
+Web Dashboard (dashboard/app.py):
+  - Runs on host (Windows) or inside container
+  - On Windows: uses `docker exec` to run pipeline inside container
+  - REST API for VOD listing, pipeline control, clip serving
+  - SSE streaming for real-time log output
+  - Port 5000
+
+================================================================================
+FEATURES IMPLEMENTED
+================================================================================
+
+1. BLUR-FILL 9:16 RENDERING (Stage 7)
+   Before: Hard crop to 9:16 — most 16:9 content cut out of frame
+   After:  Full 16:9 frame centered on 9:16 canvas, blurred+zoomed background
+   FFmpeg filter: split[bg][fg] → scale+crop+boxblur(25:5) → overlay(centered)
+   Result: All content visible, no information loss
+
+2. BOTTOM-ALIGNED CAPTIONS (Stage 7)
+   Before: Captions centered in frame, obscuring content
+   After:  Alignment=2, MarginV=40 — captions at bottom with 40px margin
+   Font: Bold, size 16, white with black outline (2px)
+
+3. TIME-BUCKET DISTRIBUTION (Pass C)
+   Before: Clips biased toward beginning of VOD (LLM analyzes early chunks first,
+           fills quota before reaching later content)
+   After:  VOD divided into equal time buckets (2/hour, 3-10 range)
+           Phase 1: guaranteed picks from each bucket
+           Phase 2: overflow slots filled by highest-scoring remaining moments
+           Phase 3: style-aware re-ranking
+   Result: Clips drawn from entire VOD timeline
+
+4. EXPANDED MOMENT CATEGORIES (6 categories, was 5)
+   Old: hype, funny, emotional, controversial, ragebait
+   New: hype, funny, emotional, hot_take, storytime, reactive
+
+   - hot_take: "hot take", "unpopular opinion", "fight me", "hear me out"
+   - storytime: "so basically", "let me tell you", "long story short", "true story"
+   - reactive: "what is wrong with", "are you kidding", "rage", "tilted"
+
+   Segment-specific weights per category (e.g., storytime gets 1.5x in just_chatting,
+   hot_take gets 1.5x in reaction/debate segments).
+
+5. STYLE-AWARE CLIP SELECTION (8 styles)
+   auto, hype, funny, emotional, hot_take, storytime, reactive, variety
+   Each style applies weight multipliers during Pass C re-ranking.
+   variety: round-robin by category for maximum diversity.
+
+6. WEB ADMIN DASHBOARD (dashboard/)
+   - VOD library with size, duration, processing status, transcription cache
+   - Clip controls: style dropdown, type hint, force reprocess
+   - Pipeline monitor: 8-stage progress dots, SSE log streaming
+   - Clips gallery: video preview, download links
+   - Docker connectivity indicator (green/red badge)
+   - Cross-platform: Windows host (docker exec) + Docker container (direct bash)
+
+7. DOCKER IMAGE OPTIMIZATION
+   - .dockerignore excludes vods/, clips/, .git, config/, workspace/
+   - Build context reduced from ~32GB to ~107KB
+   - Image layers cached for fast rebuilds
+
+================================================================================
+BUGS FOUND AND FIXED
+================================================================================
+
+BUG 1: Pipeline not reclipping after rebuild
+  Symptom: Bot says "All VODs already processed" after container rebuild
+  Cause:   All VODs listed in processed.log from previous runs; bot didn't
+           use --force flag
+  Fix:     Clear processed.log or use --force flag. Dashboard has "Force
+           reprocess" checkbox.
+
+BUG 2: PowerShell breaks 2>/dev/null redirects
+  Symptom: Commands with 2>/dev/null create files named "null" on Windows
+  Cause:   PowerShell interprets 2> as Windows redirect to G:\dev\null
+  Fix:     Wrap commands in bash -c "..." so bash handles redirects
+
+BUG 3: Dashboard JSON parsing error ("Unexpected token '<'")
+  Symptom: Frontend shows "Unexpected token '<', '<!doctype'..." on clip request
+  Cause:   Flask returning HTML error pages (404/405/500) for API routes;
+           JavaScript trying to parse HTML as JSON
+  Fix:     Added JSON error handlers for 404, 405, 500 in Flask.
+           Hardened JS fetch: parse as text first, then JSON.parse with try/catch.
+
+BUG 4: Docker build uploading 32GB on every build
+  Symptom: `docker compose build` takes forever, transfers ~32GB
+  Cause:   No .dockerignore file — all 48GB of VODs sent as build context
+  Fix:     Created .dockerignore excluding vods/, clips/, config/, workspace/,
+           .git, docs, env files. Build context now ~107KB.
+
+BUG 5: os.setsid AttributeError on Windows
+  Symptom: 500 error when clicking "Clip Selected" on Windows dashboard
+  Cause:   os.setsid is Linux-only; dashboard run on Windows with Python 3.12
+  Fix:     Platform check: os.setsid on Linux, CREATE_NEW_PROCESS_GROUP on
+           Windows. Also fixed kill_pipeline for cross-platform.
+
+BUG 6: Dashboard can't see VODs
+  Symptom: "No VODs found" in dashboard despite 48GB of videos in vods/
+  Cause:   app.py used BASE_DIR / "vods" (= dashboard/vods/, empty directory)
+           instead of PROJECT_DIR / "vods" (= project root vods/)
+  Fix:     Changed path resolution: PROJECT_DIR = BASE_DIR.parent, then
+           VODS_DIR = PROJECT_DIR / "vods". Removed empty dashboard/vods/
+           and dashboard/clips/ directories and their docker-compose mounts.
+
+BUG 7: processed.log UnicodeDecodeError
+  Symptom: 500 error on /api/vods — "utf-8 codec can't decode byte 0xff"
+  Cause:   processed.log had UTF-16 LE BOM (FF FE) — likely written by a
+           Windows tool. Python's default read_text() assumes UTF-8.
+  Fix:     Reset file to empty UTF-8. Hardened reader with
+           encoding="utf-8", errors="replace".
+
+BUG 8: Pipeline doesn't start from dashboard ("Waiting for pipeline")
+  Symptom: Clicking "Clip Selected" returns success but pipeline never starts;
+           log viewer shows "Waiting for pipeline..." indefinitely
+  Cause:   Dashboard runs locally on Windows but spawns `bash clip-pipeline.sh`
+           as a local process. The script needs:
+           - Ollama at http://ollama:11434 (Docker internal network only)
+           - faster-whisper, python3, CUDA (only in container)
+           - VODs at /root/VODs (Docker mount)
+           Local bash process crashes immediately; stdout/stderr go to DEVNULL
+           so no error is visible.
+  Fix:     Dashboard now detects it's running outside Docker (INSIDE_DOCKER
+           check). When on Windows host, uses `docker exec <container> bash
+           /root/scripts/clip-pipeline.sh ...` to execute pipeline inside the
+           running container. Pipeline stdout is piped to local log file for
+           SSE streaming. Stage files are polled from container via background
+           thread running `docker exec cat /tmp/clipper/pipeline_stage.txt`
+           every 2 seconds.
+
+BUG 9: Early-VOD clip bias (design issue)
+  Symptom: Most clips come from first 30-60 minutes of multi-hour VODs
+  Cause:   LLM analyzes transcript chunks sequentially. Combined with the
+           selection algorithm picking top-N by score, early chunks fill the
+           quota before later chunks are even considered. Also, keyword
+           density tends to be higher early when the streamer is fresh.
+  Fix:     Time-bucket distribution (see Features #3). VOD divided into equal
+           buckets, guaranteed picks from each before overflow. Clips now
+           spread across entire timeline.
+
+BUG 10: Docker container dashboard crashes (zombie process)
+  Symptom: Dashboard inside Docker shows as zombie process (<defunct>)
+  Cause:   The dashboard Flask app inside Docker binds port 5000. If the
+           app crashes (e.g., missing dependency or import error), it becomes
+           a zombie since entrypoint.sh launched it with & (background).
+           Docker still forwards port 5000 but nothing is listening.
+  Impact:  Low — users can run dashboard locally on Windows host instead.
+           The container dashboard is a convenience, not required.
+  Status:  Not yet fixed. The local Windows dashboard is the primary
+           interface. Container dashboard may need debugging separately.
+
+================================================================================
+FILE INVENTORY (modified/created)
+================================================================================
+
+scripts/clip-pipeline.sh (~1,700 lines) — CORE PIPELINE
+  - Environment-variable path overrides (CLIP_VODS_DIR, CLIP_CLIPS_DIR)
+  - Always-on logging (tee to /tmp/clipper/pipeline.log)
+  - Stage tracking (pipeline_stage.txt, pipeline_stages.log)
+  - 6 keyword categories with segment-specific weights
+  - Updated LLM prompts for hot_take, storytime, reactive
+  - Time-bucket distribution in Pass C
+  - Blur-fill 9:16 rendering with bottom captions
+  - Style-aware re-ranking (8 styles)
+
+dashboard/app.py (~410 lines) — WEB DASHBOARD BACKEND
+  - Docker exec bridge for Windows host
+  - Background thread for stage file polling
+  - Cross-platform process management
+  - REST API + SSE log streaming
+  - JSON error handlers
+
+dashboard/templates/index.html — DASHBOARD UI
+  - Dark-themed single-page app
+  - VOD library table, clip controls, pipeline monitor, clips gallery
+  - Docker connectivity badge
+
+dashboard/static/style.css — DASHBOARD STYLES
+  - CSS custom properties, responsive grid
+  - Purple accent (#7c5cfc), dark backgrounds
+
+dashboard/static/app.js — DASHBOARD CLIENT
+  - Vanilla JS, EventSource SSE streaming
+  - Safe JSON parsing, Docker status indicator
+  - Auto-polling status every 3 seconds
+
+dashboard/requirements.txt — flask>=3.0
+
+.dockerignore — Excludes vods/, clips/, .git, config/, workspace/, docs
+.gitignore — Protects secrets, VODs, clips, cache, IDE files
+docker-compose.yml — Added port 5000:5000 mapping
+Dockerfile — Added flask pip install, dashboard COPY, CRLF fix
+scripts/entrypoint.sh — Added dashboard background process start
+README.md — Updated with dashboard docs, 6 categories, blur-fill, time-buckets
+
+================================================================================
+CURRENT STATE (2026-04-04)
+================================================================================
+
+Working:
+  - Docker containers run (ollama-gpu + stream-clipper-gpu)
+  - Ollama serves qwen3.5:9b, qwen2.5:7b, qwen3-vl:8b
+  - Pipeline executes inside container via docker exec from Windows dashboard
+  - 3 VODs available (Lacy 11GB, jasontheween 20GB, Jynxzi 17GB)
+  - 31 clips already generated from previous runs
+  - Transcription caches exist for all 3 VODs
+  - Dashboard detects Docker container and shows connectivity status
+  - Build context is ~107KB (down from 32GB)
+
+To test:
+  1. Start dashboard: python dashboard/app.py
+  2. Open http://localhost:5000
+  3. Select a VOD, choose style, check "Force reprocess", click "Clip Selected"
+  4. Monitor pipeline progress in real-time via log viewer
+  5. Verify clips appear in gallery after pipeline completes
+  6. Verify clips are from different time regions of the VOD (time-bucket test)
+  7. Verify clips use blur-fill rendering (full frame visible, blurred background)
+  8. Verify captions are at bottom of frame
+
+================================================================================
+END OF SUMMARY
+================================================================================

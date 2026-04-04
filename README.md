@@ -58,8 +58,10 @@ The bot silently infers the clip style from your message — it never asks you t
 | "clip my stream" | `auto` | Best moments of any type, balanced variety |
 | "find the funny moments" | `funny` | Comedy, awkward moments, witty lines, banter |
 | "get the emotional parts" | `emotional` | Heartfelt, vulnerable, wholesome moments |
-| "find the spicy takes" | `controversial` | Hot takes, debates, unpopular opinions |
+| "find the spicy takes" | `hot_take` | Hot takes, bold claims, unpopular opinions |
 | "get the hype clips" | `hype` | Clutch plays, epic wins, high-energy reactions |
+| "tell me a story" | `storytime` | Narrative moments, anecdotes, stories with payoff |
+| "get the reactions" | `reactive` | Strong reactions, rage, shock, disbelief |
 | "find a mix of everything" | `variety` | One clip from each category, maximum diversity |
 
 ### Stream Type Hints
@@ -138,12 +140,13 @@ The core detection engine. Three independent passes, then merge and select.
 
 **Pass A — Keyword Scanning (instant, no LLM)**:
 - Slides a 30-second window across the transcript (10-second step)
-- Matches against five keyword categories:
+- Matches against six keyword categories:
   - **Hype**: "oh my god", "no way", "clip that", "let's go", "holy shit", "clutch", "poggers"...
   - **Funny**: "i'm dead", "bruh", "that's so bad", "you're trolling", "i'm crying"...
   - **Emotional**: "i love you", "thank you so much", "from the bottom of my heart", "mental health"...
-  - **Controversial**: "hot take", "unpopular opinion", "fight me", "cancel", "i said what i said"...
-  - **Ragebait**: "what is wrong with", "i'm so done", "tilted", "makes my blood boil"...
+  - **Hot Take**: "hot take", "unpopular opinion", "fight me", "hear me out", "controversial"...
+  - **Storytime**: "so basically", "let me tell you", "you won't believe", "long story short", "true story"...
+  - **Reactive**: "what is wrong with", "are you kidding", "i'm so done", "rage", "tilted", "look at this"...
 - Applies **segment-specific weight multipliers** (e.g., "funny" keywords get 1.4x weight during IRL segments, "controversial" gets 1.5x during reaction segments)
 - Detects **universal signals**: exclamation clusters (2+), ALL CAPS streaks (3+ words), rapid-fire short sentences (4+), laughter markers, question clusters (3+), long pauses followed by speech bursts
 - Multi-category hits get a bonus point
@@ -165,11 +168,15 @@ The core detection engine. Three independent passes, then merge and select.
 - Applies segment score boosts (quieter segments like IRL/just_chatting get +1 so they compete fairly with gaming hype)
 - **Thinking model support**: `call_ollama()` detects when a thinking model exhausts `num_predict` on internal reasoning and automatically retries with a larger token budget
 
-**Pass C — Merge, Deduplicate, Diversify, Select**:
+**Pass C — Merge, Deduplicate, Time-Bucket Distribute, Select**:
 - Normalizes keyword scores (capped at 8 to prevent keyword-only moments from dominating)
 - Cross-validates: moments detected by **both** passes get a +1.5 score boost and a `cross_validated` flag
 - Applies style weighting (e.g., `--style funny` gives funny moments a 1.4x multiplier)
 - Category cap: no single category exceeds 60% of final candidates (for `auto` style)
+- **Time-bucket distribution**: divides the VOD into equal time buckets (2 per hour, 3-10 range) and guarantees clip selection from each bucket — prevents early-VOD bias where the LLM focuses on the beginning
+  - Phase 1: guaranteed picks from each bucket (ensures time spread)
+  - Phase 2: fill overflow slots with best remaining moments
+  - Phase 3: style-aware re-ranking (variety = round-robin by category; specific style = re-sort by weighted score)
 - Temporal spread: enforces minimum 45 seconds between final selected clips
 - Selects up to `MAX_CANDIDATES` (2x the target clip count)
 
@@ -204,12 +211,13 @@ This stage manages VRAM carefully — it unloads the vision model, then uses Whi
 1. **Generate clip manifest**: uses vision-generated titles as filenames (e.g., `IRL_Fat_Sack_Checkout_Fiasco.mp4`), sanitizes for filesystem safety, creates `clip_manifest.txt`
 2. **Extract clip audio** (FFmpeg, all clips in one pass): pulls 45-second audio segments for each moment
 3. **Batch caption transcription** (single Whisper model load): transcribes all clip audio segments with word-level timestamps, outputs individual SRT files
-4. **Render all clips** (FFmpeg): for each moment:
+4. **Render all clips** (FFmpeg, blur-fill 9:16): for each moment:
    - Source window: `T - 22s` to `T + 23s` (45 seconds total)
-   - Video filter chain: `crop(ih*9/16:ih)` -> `scale(1080:1920)` -> `subtitles(burned-in)`
+   - **Blur-fill technique**: full 16:9 frame centered on 9:16 canvas with blurred+zoomed background (no content cropped out)
+   - Video filter chain: `split[bg][fg] -> [bg]scale+crop+boxblur(25:5) -> [fg]scale(fit) -> overlay(centered)` + `subtitles(burned-in)`
    - Codec: H.264 (libx264), CRF 23, preset medium
    - Audio: AAC 128kbps
-   - Subtitle style: white text, black outline (2px), bold, font size 14, bottom-aligned with 20px margin
+   - Subtitle style: white text, black outline (2px), bold, font size 16, bottom-aligned with 40px margin (`Alignment=2,MarginV=40`)
 5. **Output**: `.mp4` files saved to `./clips/` on host
 
 ### Stage 8 — Summary and Logging
@@ -441,7 +449,15 @@ OpenClawClipperDocker/
 ├── .env.example                    # Template for secrets (Discord token)
 ├── scripts/
 │   ├── entrypoint.sh               # Container startup: Ollama wait, model pull, gateway start
-│   └── clip-pipeline.sh            # 8-stage AI clipping pipeline (~1,550 lines)
+│   └── clip-pipeline.sh            # 8-stage AI clipping pipeline (~1,700 lines)
+├── dashboard/                      # Web admin dashboard (Flask)
+│   ├── app.py                      # REST API + SSE log streaming + docker exec bridge
+│   ├── requirements.txt            # flask>=3.0
+│   ├── templates/
+│   │   └── index.html              # Single-page dark-themed UI
+│   └── static/
+│       ├── style.css               # Dark theme, purple accent
+│       └── app.js                  # Vanilla JS client, SSE streaming
 ├── config/
 │   ├── openclaw.example.json       # Template: models, agent config, compaction, Discord
 │   └── exec-approvals.example.json # Template: command execution allowlist
@@ -537,6 +553,49 @@ For tighter security, restrict to the pipeline script only:
 
 ---
 
+## Web Dashboard
+
+A standalone web UI for triggering the clip pipeline without Discord or OpenClaw.
+
+### Running the Dashboard
+
+**On Windows (recommended for development):**
+```bash
+pip install flask
+python dashboard/app.py
+# Open http://localhost:5000
+```
+
+The Windows dashboard automatically detects the running Docker container and executes the pipeline inside it via `docker exec`. The Docker containers must be running (`docker compose --profile gpu up -d`).
+
+**Inside Docker (automatic):**
+The dashboard starts automatically inside the container on port 5000 (exposed to host). Access it at `http://localhost:5000` after starting the containers.
+
+### Dashboard Features
+
+- **VOD Library**: browse all VODs with size, duration, processing status, and transcription cache info
+- **Clip Controls**: select style (auto, funny, hype, emotional, hot_take, storytime, reactive, variety), stream type hint, force reprocess
+- **Pipeline Monitor**: 8-stage progress dots, real-time log streaming via SSE, stage history with timestamps
+- **Clips Gallery**: preview and download rendered clips directly in-browser
+- **Docker Status**: green/red indicator shows whether the Docker container is connected
+
+### Dashboard API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/vods` | GET | List all VODs with metadata |
+| `/api/status` | GET | Pipeline running/idle + Docker connectivity |
+| `/api/clip` | POST | Start clipping a specific VOD |
+| `/api/clip-all` | POST | Clip all VODs sequentially |
+| `/api/stop` | POST | Stop the running pipeline |
+| `/api/clips` | GET | List generated clips |
+| `/api/clips/<file>` | GET | Serve a clip for preview/download |
+| `/api/diagnostics` | GET | Most recent diagnostic JSON |
+| `/api/stages` | GET | Stage history with timestamps |
+| `/api/log/stream` | GET | SSE endpoint for live pipeline log |
+
+---
+
 ## Usage
 
 ### Basic Commands (via Discord)
@@ -546,7 +605,9 @@ clip my stream              -> Auto-detect best moments
 find the funny parts        -> Prioritize comedy
 get the emotional moments   -> Prioritize heartfelt/vulnerable moments
 clip the hype               -> Prioritize high-energy/gaming moments
-find the spicy takes        -> Prioritize controversial/debate moments
+find the spicy takes        -> Prioritize hot takes, bold claims
+tell me a story             -> Prioritize narrative/storytime moments
+get the reactions           -> Prioritize strong reactions, rage, shock
 get a mix of everything     -> One clip from each category
 ```
 
@@ -599,7 +660,7 @@ The pipeline script accepts these flags (normally passed by the bot, but usable 
 
 | Flag | Example | Description |
 |------|---------|-------------|
-| `--style <type>` | `--style funny` | Clip style: `auto`, `funny`, `hype`, `emotional`, `controversial`, `variety` |
+| `--style <type>` | `--style funny` | Clip style: `auto`, `funny`, `hype`, `emotional`, `hot_take`, `storytime`, `reactive`, `variety` |
 | `--vod <keyword>` | `--vod lacy` | Target a specific VOD by name match (bypasses processed.log) |
 | `--type <type>` | `--type irl` | Stream type hint: `gaming`, `irl`, `just_chatting`, `reaction`, `debate` |
 | `--list` | `--list` | List all VODs with status (returns JSON, no processing) |

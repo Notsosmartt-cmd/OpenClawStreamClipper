@@ -12,7 +12,6 @@ config/exec-approvals.json
 vods/*
 !vods/.gitkeep
 !vods/.transcriptions/
-
 # Transcription cache — large JSON/SRT per VOD
 vods/.transcriptions/*
 
