@@ -58,6 +58,8 @@
                             <option value="hot_take">Hot Take</option>
                             <option value="storytime">Storytime</option>
                             <option value="reactive">Reactive</option>
+                            <option value="controversial">Controversial</option>
+                            <option value="dancing">Dancing</option>
                             <option value="variety">Variety</option>
                         </select>
                     </div>
@@ -72,6 +74,25 @@
                     <button id="btn-clip" class="btn-primary" disabled>Clip Selected</button>
                     <button id="btn-clip-all" class="btn-primary">Clip All</button>
                     <button id="btn-stop" class="btn-danger" style="display: none;">Stop Pipeline</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Models -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>AI Models</span>
+                <div style="display: flex; gap: 6px;">
+                    <button id="btn-refresh-models" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
+                </div>
+            </div>
+            <div class="panel-body" id="models-panel">
+                <div class="models-grid" id="models-grid">
+                    <div class="empty-state">Loading model configuration...</div>
+                </div>
+                <div id="models-save-bar" class="models-save-bar" style="display: none;">
+                    <span id="models-change-summary" class="models-change-text"></span>
+                    <button id="btn-save-models" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Save Changes</button>
                 </div>
             </div>
         </div>

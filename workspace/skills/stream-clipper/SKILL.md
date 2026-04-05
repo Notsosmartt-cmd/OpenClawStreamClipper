@@ -45,7 +45,8 @@ Pick the right command based on what the user said:
 ```
 
 ## Style flag
-Replace `auto` with: funny, hype, emotional, controversial, or variety — based on the user's words.
+Replace `auto` with one of these based on the user's words:
+funny, hype, emotional, controversial, hot_take, storytime, reactive, dancing, variety
 
 ## After calling exec
 

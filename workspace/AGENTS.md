@@ -37,6 +37,11 @@ bash /root/scripts/clip-pipeline.sh --list 2>&1
 - hype/exciting → `--style hype`
 - emotional → `--style emotional`
 - controversial/drama → `--style controversial`
+- hot take/opinions → `--style hot_take`
+- storytime/stories → `--style storytime`
+- reactive/rage → `--style reactive`
+- dancing/moves → `--style dancing`
+- variety/mix → `--style variety`
 - otherwise → `--style auto`
 
 ## STREAM TYPE (optional --type flag, extract from user's words)

@@ -30,6 +30,7 @@ CLIPS_DIR = Path(os.environ.get("CLIP_CLIPS_DIR", str(PROJECT_DIR / "clips")))
 DIAGNOSTICS_DIR = CLIPS_DIR / ".diagnostics"
 TRANSCRIPTION_DIR = VODS_DIR / ".transcriptions"
 PROCESSED_LOG = VODS_DIR / "processed.log"
+MODELS_CONFIG = PROJECT_DIR / "config" / "models.json"
 
 # Pipeline script paths
 PIPELINE_SCRIPT = str(PROJECT_DIR / "scripts" / "clip-pipeline.sh")
@@ -84,6 +85,11 @@ def pipeline_env():
     env = os.environ.copy()
     env["CLIP_VODS_DIR"] = str(VODS_DIR)
     env["CLIP_CLIPS_DIR"] = str(CLIPS_DIR)
+    # Inject model selections from config
+    config = load_models_config()
+    env["CLIP_TEXT_MODEL"] = config.get("text_model", DEFAULT_MODELS["text_model"])
+    env["CLIP_VISION_MODEL"] = config.get("vision_model", DEFAULT_MODELS["vision_model"])
+    env["CLIP_WHISPER_MODEL"] = config.get("whisper_model", DEFAULT_MODELS["whisper_model"])
     return env
 
 
@@ -101,15 +107,25 @@ def spawn_pipeline(cmd):
                 "Start it with: docker compose --profile gpu up -d"
             )
 
+        # Inject model env vars into docker exec
+        config = load_models_config()
+        env_flags = [
+            "-e", f"CLIP_TEXT_MODEL={config.get('text_model', DEFAULT_MODELS['text_model'])}",
+            "-e", f"CLIP_VISION_MODEL={config.get('vision_model', DEFAULT_MODELS['vision_model'])}",
+            "-e", f"CLIP_WHISPER_MODEL={config.get('whisper_model', DEFAULT_MODELS['whisper_model'])}",
+        ]
+
         # Build docker exec command
         if len(cmd) >= 2 and cmd[1] == "-c":
             # Shell command string (clip-all mode)
-            docker_cmd = ["docker", "exec", container, "bash", "-c", cmd[2]]
+            docker_cmd = ["docker", "exec"] + env_flags + [container, "bash", "-c", cmd[2]]
         else:
             # Direct script: ["bash", LOCAL_SCRIPT, args...]
             args = cmd[2:]  # skip "bash" and local script path
             docker_cmd = [
-                "docker", "exec", container,
+                "docker", "exec",
+            ] + env_flags + [
+                container,
                 "bash", DOCKER_PIPELINE_SCRIPT,
             ] + args
 
@@ -551,6 +567,149 @@ def log_stream():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# --- Model configuration ---
+
+DEFAULT_MODELS = {
+    "text_model": "qwen3.5:9b",
+    "vision_model": "qwen3-vl:8b",
+    "whisper_model": "large-v3",
+    "ollama_url": "http://ollama:11434",
+}
+
+# Pipeline role descriptions for the UI
+MODEL_ROLES = {
+    "text_model": {
+        "label": "Text Model",
+        "description": "Segment classification (Stage 3) and moment detection (Stage 4). Needs strong reasoning and JSON output.",
+        "provider": "ollama",
+    },
+    "vision_model": {
+        "label": "Vision Model",
+        "description": "Frame analysis and clip title generation (Stage 6). Must support image input.",
+        "provider": "ollama",
+    },
+    "whisper_model": {
+        "label": "Whisper Model",
+        "description": "Audio transcription (Stage 2) and clip captions (Stage 7). Runs via faster-whisper.",
+        "provider": "whisper",
+    },
+}
+
+WHISPER_MODELS = [
+    {"name": "large-v3", "size": "~3 GB", "description": "Best accuracy, recommended for GPU"},
+    {"name": "large-v2", "size": "~3 GB", "description": "Previous best, very accurate"},
+    {"name": "medium", "size": "~1.5 GB", "description": "Good balance of speed and accuracy"},
+    {"name": "small", "size": "~500 MB", "description": "Fast, decent accuracy"},
+    {"name": "base", "size": "~150 MB", "description": "Very fast, lower accuracy"},
+    {"name": "tiny", "size": "~75 MB", "description": "Fastest, lowest accuracy"},
+]
+
+
+def load_models_config():
+    """Load model configuration from config/models.json."""
+    if MODELS_CONFIG.exists():
+        try:
+            with open(MODELS_CONFIG, "r") as f:
+                config = json.load(f)
+            # Merge with defaults for any missing keys
+            for k, v in DEFAULT_MODELS.items():
+                config.setdefault(k, v)
+            return config
+        except Exception:
+            pass
+    return dict(DEFAULT_MODELS)
+
+
+def save_models_config(config):
+    """Save model configuration to config/models.json."""
+    MODELS_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    with open(MODELS_CONFIG, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def query_ollama_models():
+    """Query Ollama for available models. Works both inside and outside Docker."""
+    try:
+        if use_docker_exec():
+            container = get_docker_container()
+            if not container:
+                return []
+            result = subprocess.run(
+                ["docker", "exec", container, "curl", "-sf",
+                 "http://ollama:11434/api/tags"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                return []
+            data = json.loads(result.stdout)
+        else:
+            import urllib.request
+            config = load_models_config()
+            url = config.get("ollama_url", "http://ollama:11434")
+            req = urllib.request.Request(f"{url}/api/tags")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+
+        models = []
+        for m in data.get("models", []):
+            name = m.get("name", "")
+            size_bytes = m.get("size", 0)
+            size_gb = round(size_bytes / (1024 ** 3), 1)
+            details = m.get("details", {})
+            models.append({
+                "name": name,
+                "size_gb": size_gb,
+                "family": details.get("family", ""),
+                "parameter_size": details.get("parameter_size", ""),
+                "quantization": details.get("quantization_level", ""),
+            })
+        return models
+    except Exception as e:
+        print(f"Failed to query Ollama models: {e}")
+        return []
+
+
+@app.route("/api/models")
+def api_models():
+    """Return current model configuration with role metadata."""
+    config = load_models_config()
+    roles = {}
+    for key, meta in MODEL_ROLES.items():
+        roles[key] = {
+            **meta,
+            "current": config.get(key, DEFAULT_MODELS.get(key, "")),
+            "default": DEFAULT_MODELS.get(key, ""),
+        }
+    return jsonify({"config": config, "roles": roles})
+
+
+@app.route("/api/models/available")
+def api_models_available():
+    """Query Ollama for all downloaded models."""
+    ollama_models = query_ollama_models()
+    return jsonify({
+        "ollama": ollama_models,
+        "whisper": WHISPER_MODELS,
+    })
+
+
+@app.route("/api/models", methods=["PUT"])
+def api_models_update():
+    """Update model configuration."""
+    data = request.get_json(force=True)
+    config = load_models_config()
+
+    changed = []
+    for key in ("text_model", "vision_model", "whisper_model"):
+        if key in data and data[key] != config.get(key):
+            old = config.get(key, "")
+            config[key] = data[key]
+            changed.append({"role": key, "old": old, "new": data[key]})
+
+    save_models_config(config)
+    return jsonify({"status": "saved", "config": config, "changed": changed})
 
 
 @app.errorhandler(404)

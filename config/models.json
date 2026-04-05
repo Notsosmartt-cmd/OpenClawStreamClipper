@@ -1,0 +1,6 @@
+{
+  "text_model": "qwen3.5:9b",
+  "vision_model": "qwen3-vl:8b",
+  "whisper_model": "large-v3",
+  "ollama_url": "http://ollama:11434"
+}

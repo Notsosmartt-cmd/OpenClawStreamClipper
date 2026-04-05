@@ -76,9 +76,9 @@ function updateControls() {
     stopBtn.style.display = pipelineRunning ? "inline-block" : "none";
 }
 
-async function apiPost(url, body) {
+async function apiRequest(url, method, body) {
     const res = await fetch(url, {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
     });
@@ -86,6 +86,10 @@ async function apiPost(url, body) {
     let data;
     try { data = JSON.parse(text); } catch { data = { error: text.substring(0, 200) }; }
     return { ok: res.ok, data };
+}
+
+async function apiPost(url, body) {
+    return apiRequest(url, "POST", body);
 }
 
 async function startClip() {
@@ -275,11 +279,179 @@ async function fetchStages() {
     } catch (e) { /* ignore */ }
 }
 
+// --- AI Models ---
+let currentModels = {};
+let pendingModels = {};
+let availableOllama = [];
+let availableWhisper = [];
+
+async function fetchModels() {
+    try {
+        const [configRes, availRes] = await Promise.all([
+            fetch("/api/models"),
+            fetch("/api/models/available"),
+        ]);
+        const configData = await configRes.json();
+        const availData = await availRes.json();
+
+        currentModels = configData.config || {};
+        pendingModels = { ...currentModels };
+        availableOllama = availData.ollama || [];
+        availableWhisper = availData.whisper || [];
+
+        renderModels(configData.roles || {});
+    } catch (e) {
+        console.error("Failed to fetch models:", e);
+        document.getElementById("models-grid").innerHTML =
+            '<div class="empty-state">Failed to load models — is the backend running?</div>';
+    }
+}
+
+function renderModels(roles) {
+    const grid = document.getElementById("models-grid");
+
+    const roleOrder = ["text_model", "vision_model", "whisper_model"];
+    const stageMap = {
+        text_model: ["Stage 3 — Segments", "Stage 4 — Moments"],
+        vision_model: ["Stage 6 — Vision"],
+        whisper_model: ["Stage 2 — Transcription", "Stage 7 — Captions"],
+    };
+    const iconMap = {
+        text_model: "\u{1F4DD}",
+        vision_model: "\u{1F441}",
+        whisper_model: "\u{1F3A4}",
+    };
+
+    grid.innerHTML = roleOrder.map(key => {
+        const role = roles[key];
+        if (!role) return "";
+
+        const current = role.current || "";
+        const defaultModel = role.default || "";
+        const isWhisper = role.provider === "whisper";
+        const icon = iconMap[key] || "";
+        const stages = (stageMap[key] || []).map(s =>
+            `<span class="model-stage-tag">${s}</span>`
+        ).join("");
+
+        let options = "";
+        if (isWhisper) {
+            options = availableWhisper.map(m => {
+                const sel = m.name === current ? "selected" : "";
+                return `<option value="${m.name}" ${sel}>${m.name} (${m.size})</option>`;
+            }).join("");
+            if (!availableWhisper.some(m => m.name === current)) {
+                options = `<option value="${current}" selected>${current}</option>` + options;
+            }
+        } else {
+            options = availableOllama.map(m => {
+                const sel = m.name === current ? "selected" : "";
+                const size = m.size_gb ? `${m.size_gb} GB` : "";
+                const params = m.parameter_size || "";
+                const detail = [params, size].filter(Boolean).join(", ");
+                return `<option value="${m.name}" ${sel}>${m.name}${detail ? ` (${detail})` : ""}</option>`;
+            }).join("");
+            if (!availableOllama.some(m => m.name === current)) {
+                options = `<option value="${current}" selected>${current} (not downloaded)</option>` + options;
+            }
+        }
+
+        const isDefault = current === defaultModel;
+        const defaultBadge = isDefault
+            ? '<span class="badge badge-green" style="font-size: 0.65rem;">default</span>'
+            : `<span class="badge badge-yellow" style="font-size: 0.65rem; cursor: pointer;" onclick="resetModel('${key}')" title="Click to reset">custom</span>`;
+
+        return `
+            <div class="model-card" id="model-card-${key}">
+                <div class="model-card-header">
+                    <span class="model-card-icon">${icon}</span>
+                    <span class="model-card-label">${role.label}</span>
+                    ${defaultBadge}
+                </div>
+                <div class="model-card-desc">${role.description}</div>
+                <div class="model-card-stages">${stages}</div>
+                <select class="model-select" id="sel-${key}" onchange="onModelChange('${key}', this.value)">
+                    ${options}
+                </select>
+            </div>
+        `;
+    }).join("");
+
+    updateSaveBar();
+}
+
+function onModelChange(key, value) {
+    pendingModels[key] = value;
+    updateSaveBar();
+}
+
+function resetModel(key) {
+    const defaults = { text_model: "qwen3.5:9b", vision_model: "qwen3-vl:8b", whisper_model: "large-v3" };
+    const sel = document.getElementById(`sel-${key}`);
+    if (sel && defaults[key]) {
+        sel.value = defaults[key];
+        pendingModels[key] = defaults[key];
+        updateSaveBar();
+    }
+}
+
+function updateSaveBar() {
+    const bar = document.getElementById("models-save-bar");
+    const summary = document.getElementById("models-change-summary");
+
+    const changes = [];
+    for (const key of ["text_model", "vision_model", "whisper_model"]) {
+        if (pendingModels[key] && pendingModels[key] !== currentModels[key]) {
+            const label = { text_model: "Text", vision_model: "Vision", whisper_model: "Whisper" }[key];
+            changes.push(`${label}: ${currentModels[key]} \u2192 ${pendingModels[key]}`);
+        }
+    }
+
+    if (changes.length > 0) {
+        summary.textContent = changes.join(" | ");
+        bar.style.display = "flex";
+    } else {
+        bar.style.display = "none";
+    }
+
+    // Highlight changed cards
+    for (const key of ["text_model", "vision_model", "whisper_model"]) {
+        const card = document.getElementById(`model-card-${key}`);
+        if (card) {
+            card.classList.toggle("model-card-changed",
+                pendingModels[key] !== currentModels[key]);
+        }
+    }
+}
+
+async function saveModels() {
+    const btn = document.getElementById("btn-save-models");
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    try {
+        const { ok, data } = await apiRequest("/api/models", "PUT", pendingModels);
+        if (ok) {
+            currentModels = { ...pendingModels };
+            updateSaveBar();
+            fetchModels();
+        } else {
+            alert(data.error || "Failed to save model configuration");
+        }
+    } catch (e) {
+        alert("Failed to save: " + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
+    }
+}
+
 // --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
     fetchVods();
     fetchClips();
     fetchStages();
+    fetchModels();
     pollStatus();
     setInterval(pollStatus, 3000);
 
@@ -288,4 +460,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-stop").addEventListener("click", stopPipeline);
     document.getElementById("btn-refresh-clips").addEventListener("click", fetchClips);
     document.getElementById("btn-refresh-vods").addEventListener("click", fetchVods);
+    document.getElementById("btn-refresh-models").addEventListener("click", fetchModels);
+    document.getElementById("btn-save-models").addEventListener("click", saveModels);
 });

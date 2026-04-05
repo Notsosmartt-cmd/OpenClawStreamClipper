@@ -175,6 +175,93 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .stage-history-item { display: flex; gap: 8px; padding: 3px 0; }
 .stage-history-item .time { color: var(--text-muted); font-family: var(--mono); min-width: 80px; }
 
+/* --- Model Config Panel --- */
+.models-grid {
+    display: flex; flex-direction: column; gap: 10px;
+}
+
+.model-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.model-card-changed {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.model-card-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+
+.model-card-icon { font-size: 1.1rem; }
+
+.model-card-label {
+    font-size: 0.9rem; font-weight: 600; color: var(--text-primary);
+}
+
+.model-card-desc {
+    font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.model-card-stages {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;
+}
+
+.model-stage-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    background: rgba(124, 92, 252, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(124, 92, 252, 0.25);
+}
+
+.model-select {
+    width: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-family: var(--mono);
+    outline: none;
+    transition: border-color 0.15s;
+    cursor: pointer;
+}
+
+.model-select:focus { border-color: var(--accent); }
+.model-select:hover { border-color: var(--text-muted); }
+
+.models-save-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: rgba(124, 92, 252, 0.08);
+    border: 1px solid rgba(124, 92, 252, 0.25);
+    border-radius: var(--radius);
+}
+
+.models-change-text {
+    font-size: 0.75rem;
+    color: var(--accent);
+    font-family: var(--mono);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 0.85rem; }
 
 @media (max-width: 900px) { .dashboard { grid-template-columns: 1fr; } }

@@ -15,6 +15,7 @@ WHISPER_CACHE="/root/.cache/whisper-models"
 OLLAMA_URL="http://ollama:11434"
 TEXT_MODEL="${CLIP_TEXT_MODEL:-qwen3.5:9b}"
 VISION_MODEL="${CLIP_VISION_MODEL:-qwen3-vl:8b}"
+WHISPER_MODEL="${CLIP_WHISPER_MODEL:-large-v3}"
 
 # Parse arguments
 CLIP_STYLE="auto"
@@ -105,7 +106,7 @@ trap cleanup EXIT
 
 log "Clip style: $CLIP_STYLE"
 [[ -n "$STREAM_TYPE_HINT" ]] && log "Stream type hint: $STREAM_TYPE_HINT"
-log "Text model: $TEXT_MODEL | Vision model: $VISION_MODEL"
+log "Text model: $TEXT_MODEL | Vision model: $VISION_MODEL | Whisper: $WHISPER_MODEL"
 
 # ============================================================
 # STAGE 1 — Discovery
@@ -269,7 +270,8 @@ if data:
     print(json.dumps({'duration_min': round(duration_min, 1), 'segments': len(data), 'words': word_count, 'cached': True}))
 "
 else
-    log "No cached transcription found. Transcribing with faster-whisper (large-v3)..."
+    log "No cached transcription found. Transcribing with faster-whisper ($WHISPER_MODEL)..."
+    export CLIP_WHISPER_MODEL="$WHISPER_MODEL"
     log "Extracting audio track..."
     ffmpeg -y -i "$VOD_PATH" -vn -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_FILE" 2>/dev/null
 
@@ -303,15 +305,16 @@ except ImportError:
 
 cache_dir = "/root/.cache/whisper-models"
 chunk_seconds = 1200  # must match CHUNK_SECONDS above
+whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
 
 # Try GPU first, fall back to CPU
 try:
-    model = WhisperModel("large-v3", device="cuda", compute_type="float16", download_root=cache_dir)
-    print("[WHISPER] Using GPU (float16) with large-v3", file=sys.stderr)
+    model = WhisperModel(whisper_model, device="cuda", compute_type="float16", download_root=cache_dir)
+    print(f"[WHISPER] Using GPU (float16) with {whisper_model}", file=sys.stderr)
 except Exception as e:
     print(f"[WHISPER] GPU failed ({e}), falling back to CPU", file=sys.stderr)
-    model = WhisperModel("large-v3", device="cpu", compute_type="int8", download_root=cache_dir)
-    print("[WHISPER] Using CPU (int8) with large-v3", file=sys.stderr)
+    model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
+    print(f"[WHISPER] Using CPU (int8) with {whisper_model}", file=sys.stderr)
 
 # Transcribe each chunk and merge with corrected timestamps
 chunk_files = sorted(glob.glob("/tmp/clipper/audio_chunks/chunk_*.wav"))
@@ -625,21 +628,27 @@ KEYWORD_SETS = {
         "oh my god", "no way", "clip that", "let's go", "holy shit",
         "what the fuck", "no no no", "yes yes yes", "did you see that",
         "i can't believe", "lmao", "lmfao", "hahaha", "let's gooo",
-        "insane", "unbelievable", "clutch", "oh shit", "poggers", "pog"
+        "insane", "unbelievable", "clutch", "oh shit", "poggers", "pog",
+        "that was crazy", "oh my", "yoooo", "sheeeesh", "banger",
+        "w stream", "dub", "we won", "massive", "legendary"
     ],
     "funny": [
         "i'm dead", "bruh", "that's so bad", "why would you", "bro what",
         "dude", "i can't", "stop", "help", "no he didn't", "she didn't",
         "what is that", "that's crazy", "are you serious", "you're trolling",
         "lol", "haha", "i'm crying", "that's hilarious", "comedy",
-        "wait what", "bro", "nah", "ain't no way"
+        "wait what", "bro", "nah", "ain't no way", "i'm wheezing",
+        "i can't breathe", "that's so funny", "you did not", "caught in 4k",
+        "sus", "down bad", "violated", "cooked", "finished"
     ],
     "emotional": [
         "i love you", "thank you so much", "that means a lot", "i appreciate",
         "i'm sorry", "it's been hard", "i just want to say", "you guys are",
         "honestly", "real talk", "from the bottom of my heart", "grateful",
         "miss you", "struggling", "mental health", "tough time",
-        "i needed that", "means the world", "i can't thank you enough"
+        "i needed that", "means the world", "i can't thank you enough",
+        "i'm gonna cry", "that hit different", "vulnerable", "opening up",
+        "depression", "anxiety", "been through a lot", "love you guys"
     ],
     "hot_take": [
         "hot take", "i don't care what anyone says", "fight me", "unpopular opinion",
@@ -647,14 +656,18 @@ KEYWORD_SETS = {
         "that's not okay", "cancel", "problematic", "woke", "based",
         "ratio", "cope", "you're wrong", "nobody wants to hear this",
         "i said what i said", "don't @ me", "hear me out", "controversial",
-        "honestly though", "people don't want to hear", "the truth is"
+        "honestly though", "people don't want to hear", "the truth is",
+        "i'll say it", "no one talks about", "overrated", "underrated",
+        "mid", "trash take", "delusional"
     ],
     "storytime": [
         "so basically", "let me tell you", "you won't believe", "long story short",
         "so this happened", "i was at", "the craziest thing", "true story",
         "one time", "back when", "so i was", "this one time", "i remember when",
         "what happened was", "the other day", "story time", "gather around",
-        "you want to know", "let me explain", "so get this"
+        "you want to know", "let me explain", "so get this",
+        "i gotta tell you", "the wildest thing", "not gonna lie",
+        "you're not gonna believe this", "so picture this", "fun fact"
     ],
     "reactive": [
         "what is wrong with", "are you kidding", "i'm so done", "this is unacceptable",
@@ -662,18 +675,33 @@ KEYWORD_SETS = {
         "sick of this", "how is this fair", "broken", "scam", "garbage",
         "worst", "terrible", "disgusting", "why does this always",
         "makes my blood boil", "actually insane", "look at this",
-        "did you just see", "watch this", "hold on", "pause"
+        "did you just see", "watch this", "hold on", "pause",
+        "excuse me", "what did i just", "absolutely not", "hell no",
+        "i'm shaking", "trembling", "speechless"
+    ],
+    "dancing": [
+        "dance", "dancing", "twerk", "moves", "hit that", "do it",
+        "go go go", "get it", "vibe", "vibing", "groove", "grooving",
+        "bust a move", "let's dance", "song", "turn up", "body roll",
+        "choreo", "choreography", "performing", "the dance"
+    ],
+    "controversial": [
+        "drama", "beef", "called out", "exposed", "receipts", "caught",
+        "tea", "spill", "shade", "throwing shade", "shots fired",
+        "that's cap", "lying", "fake", "two-faced", "snake",
+        "banned", "canceled", "cancelled", "suspended", "kicked",
+        "he said she said", "clipped out of context", "oh hell no"
     ]
 }
 
 # Segment-specific keyword weight multipliers
 # Boosts keywords that are natural for that segment type
 SEGMENT_KEYWORD_WEIGHTS = {
-    "gaming":       {"hype": 1.5, "funny": 1.0, "emotional": 0.8, "hot_take": 0.7, "storytime": 0.6, "reactive": 1.0},
-    "irl":          {"hype": 0.8, "funny": 1.4, "emotional": 1.4, "hot_take": 1.0, "storytime": 1.3, "reactive": 0.8},
-    "just_chatting": {"hype": 0.7, "funny": 1.3, "emotional": 1.3, "hot_take": 1.4, "storytime": 1.5, "reactive": 0.8},
-    "reaction":     {"hype": 1.0, "funny": 1.2, "emotional": 0.8, "hot_take": 1.5, "storytime": 0.6, "reactive": 1.5},
-    "debate":       {"hype": 0.7, "funny": 0.8, "emotional": 1.0, "hot_take": 1.5, "storytime": 0.8, "reactive": 1.3},
+    "gaming":       {"hype": 1.5, "funny": 1.0, "emotional": 0.8, "hot_take": 0.7, "storytime": 0.6, "reactive": 1.0, "dancing": 0.4, "controversial": 0.6},
+    "irl":          {"hype": 0.8, "funny": 1.4, "emotional": 1.4, "hot_take": 1.0, "storytime": 1.3, "reactive": 0.8, "dancing": 1.5, "controversial": 1.0},
+    "just_chatting": {"hype": 0.7, "funny": 1.3, "emotional": 1.3, "hot_take": 1.4, "storytime": 1.5, "reactive": 0.8, "dancing": 1.2, "controversial": 1.3},
+    "reaction":     {"hype": 1.0, "funny": 1.2, "emotional": 0.8, "hot_take": 1.5, "storytime": 0.6, "reactive": 1.5, "dancing": 0.5, "controversial": 1.4},
+    "debate":       {"hype": 0.7, "funny": 0.8, "emotional": 1.0, "hot_take": 1.5, "storytime": 0.8, "reactive": 1.3, "dancing": 0.3, "controversial": 1.5},
 }
 
 # Keyword thresholds — raised to reduce false positives from overused keywords
@@ -779,9 +807,16 @@ def keyword_scan(segments):
             if total_signals >= threshold:
                 center = window_start + WINDOW_SIZE / 2
                 top_cat = max(categories_found, key=categories_found.get) if categories_found else "hype"
+                # Normalize to 0.0-1.0: threshold is floor (0.0), 10+ signals is ceiling (1.0)
+                # Use sigmoid-like curve so diminishing returns above ~6 signals
+                raw = total_signals - threshold  # signals above threshold
+                max_meaningful = 8.0  # signals above threshold that maps to ~1.0
+                norm_score = min(raw / max_meaningful, 1.0)
+                # Apply slight S-curve for better spread in the middle range
+                norm_score = norm_score ** 0.8  # compress top, expand bottom
                 flagged.append({
                     "timestamp": round(center),
-                    "score": min(round(total_signals), 10),
+                    "score": round(norm_score, 3),
                     "preview": " ".join(s["text"] for s in window_segs[:3])[:120],
                     "categories": list(categories_found.keys()),
                     "primary_category": top_cat,
@@ -941,31 +976,67 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
         if score < 1:
             continue
 
+        # Normalize LLM score from 1-10 to 0.0-1.0
+        norm_score = round(max(0.0, min((score - 1) / 9.0, 1.0)), 3)
+
         category = str(m.get("category", "unknown")).lower().strip()
         cat_map = {
             "comedy": "funny", "humor": "funny", "humour": "funny",
             "emotion": "emotional", "sad": "emotional", "heartfelt": "emotional",
-            "controversy": "hot_take", "controversial": "hot_take", "debate": "hot_take",
+            "controversy": "hot_take", "controversial": "controversial", "debate": "hot_take",
             "hot-take": "hot_take", "hottake": "hot_take", "opinion": "hot_take",
             "rage": "reactive", "anger": "reactive", "frustration": "reactive",
             "ragebait": "reactive", "reaction": "reactive",
             "story": "storytime", "narrative": "storytime", "anecdote": "storytime",
-            "excitement": "hype", "intense": "hype", "skill": "hype", "clutch": "hype"
+            "excitement": "hype", "intense": "hype", "skill": "hype", "clutch": "hype",
+            "dance": "dancing", "dancing": "dancing", "twerk": "dancing", "moves": "dancing"
         }
         category = cat_map.get(category, category)
-        VALID_CATEGORIES = ("hype", "funny", "emotional", "hot_take", "storytime", "reactive")
+        VALID_CATEGORIES = ("hype", "funny", "emotional", "hot_take", "storytime", "reactive", "dancing", "controversial")
         if category not in VALID_CATEGORIES:
             category = "hype"
 
-        results.append({
+        # Parse clip boundaries if LLM provided them
+        clip_start_time = None
+        clip_end_time = None
+        raw_start = m.get("start_time") or m.get("start", "")
+        raw_end = m.get("end_time") or m.get("end", "")
+        if isinstance(raw_start, str) and raw_start:
+            clip_start_time = time_str_to_seconds(raw_start)
+        elif isinstance(raw_start, (int, float)):
+            clip_start_time = int(raw_start)
+        if isinstance(raw_end, str) and raw_end:
+            clip_end_time = time_str_to_seconds(raw_end)
+        elif isinstance(raw_end, (int, float)):
+            clip_end_time = int(raw_end)
+
+        # Validate and clamp boundaries
+        if clip_start_time is not None and clip_end_time is not None:
+            clip_start_time = max(chunk_start, min(clip_start_time, chunk_end))
+            clip_end_time = max(chunk_start, min(clip_end_time, chunk_end))
+            duration = clip_end_time - clip_start_time
+            # Enforce bounds: 15s minimum, 90s maximum
+            if duration < 15:
+                clip_start_time = None
+                clip_end_time = None
+            elif duration > 90:
+                # Trim to 90s centered on the peak timestamp
+                clip_start_time = max(chunk_start, ts - 45)
+                clip_end_time = clip_start_time + 90
+
+        result_entry = {
             "timestamp": ts,
-            "score": min(score, 10),
+            "score": norm_score,
             "preview": str(m.get("why", m.get("reason", "")))[:120],
             "categories": [category],
             "primary_category": category,
             "source": "llm",
             "why": str(m.get("why", m.get("reason", "")))[:200]
-        })
+        }
+        if clip_start_time is not None and clip_end_time is not None:
+            result_entry["clip_start"] = clip_start_time
+            result_entry["clip_end"] = clip_end_time
+        results.append(result_entry)
 
     return results
 
@@ -988,6 +1059,7 @@ SEGMENT_PROMPTS = {
 - Someone off-camera saying something unexpected that changes the situation
 - Situational irony — streamer claims something then reality contradicts them
 - Getting kicked out, confronted, or encountering unexpected resistance
+- DANCING or physical performance — streamer vibing, dancing, doing moves
 - Even small charming or relatable moments count here""",
 
     "just_chatting": """Focus on CONVERSATION moments (lower your bar for what counts — subtle is fine):
@@ -995,11 +1067,12 @@ SEGMENT_PROMPTS = {
 - HOT TAKES: Unpopular opinions, controversial claims, bold statements that will make viewers react
 - Funny stories, witty one-liners, comedic timing
 - Emotional vulnerability, real talk, genuine audience connection
-- Drama, tea-spilling, call-outs, gossip
+- CONTROVERSIAL: Drama, tea-spilling, call-outs, gossip, beef, exposing someone
 - Audience interaction moments that are entertaining
 - Moments where the streamer says something quotable
 - Someone (chat, friend, co-host) calling the streamer out or correcting them
-- The streamer setting something up (bragging, explaining) and then getting undercut""",
+- The streamer setting something up (bragging, explaining) and then getting undercut
+- DANCING or vibing to music, physical comedy""",
 
     "reaction": """Focus on REACTION moments:
 - Strong emotional reactions to content (shock, anger, laughter, disbelief)
@@ -1009,7 +1082,8 @@ SEGMENT_PROMPTS = {
 - Over-the-top reactions that are entertaining to watch
 - Moments where the streamer's reaction IS the content
 - Streamer confidently stating something, then immediately being proven wrong
-- Double-takes, jaw drops, or moments where they have to pause and process""",
+- Double-takes, jaw drops, or moments where they have to pause and process
+- CONTROVERSIAL takes that would blow up on social media""",
 
     "debate": """Focus on DEBATE/ARGUMENT moments:
 - Strongest arguments, mic-drop moments
@@ -1021,13 +1095,13 @@ SEGMENT_PROMPTS = {
 - Someone getting caught in a contradiction or logical trap"""
 }
 
-# Score boost for naturally quieter segments to compete fairly
+# Score boost for naturally quieter segments to compete fairly (0-1 scale)
 SEGMENT_SCORE_BOOST = {
-    "gaming": 0,
-    "irl": 1,
-    "just_chatting": 1,
-    "reaction": 0,
-    "debate": 0,
+    "gaming": 0.0,
+    "irl": 0.10,
+    "just_chatting": 0.10,
+    "reaction": 0.0,
+    "debate": 0.0,
 }
 
 # Build style-specific prompt emphasis
@@ -1039,8 +1113,9 @@ style_prompts = {
     "hot_take": "Prioritize controversial opinions, hot takes, unpopular opinions, bold claims that viewers will debate.",
     "storytime": "Prioritize narrative moments — stories with setup and payoff, anecdotes building to a punchline or reveal.",
     "reactive": "Prioritize strong reactions — rage, shock, disbelief, over-the-top responses to events or content.",
-    "controversial": "Prioritize hot takes, debates, unpopular opinions, edgy comments, reactive moments.",
-    "variety": "Find ONE moment from EACH category. Maximum diversity across hype, funny, emotional, hot_take, storytime, and reactive."
+    "controversial": "Prioritize drama, call-outs, beef, tea-spilling, edgy statements, anything that would blow up on social media.",
+    "dancing": "Prioritize physical performance moments — dancing, moves, vibing, physical comedy, any body-based entertainment.",
+    "variety": "Find ONE moment from EACH category. Maximum diversity across all categories."
 }
 style_hint = style_prompts.get(CLIP_STYLE, style_prompts["auto"])
 
@@ -1105,14 +1180,26 @@ When in doubt, include the moment with a lower score (3-5) rather than skipping 
 Transcript (timestamps MM:SS from stream start):
 {chunk_text}
 
-Respond with ONLY a JSON array. Each element: {{"time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive", "why": "one sentence explaining the SITUATION not just the words"}}
+Respond with ONLY a JSON array. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "why": "one sentence explaining the SITUATION not just the words"}}
+
+IMPORTANT — start_time and end_time define the CLIP BOUNDARIES:
+- start_time: where the moment BEGINS (include setup/context). For storytimes, this is where the story starts.
+- end_time: where the moment ENDS (after the payoff/reaction lands). Don't trail into dead air.
+- Minimum clip: 15 seconds. Maximum clip: 90 seconds. Most clips should be 25-45 seconds.
+- Short reactions/one-liners: 15-25 seconds
+- Standard moments (funny, hype, hot takes): 25-45 seconds
+- Storytime/emotional with narrative arc: 45-75 seconds
+- Only exceed 60 seconds for genuinely exceptional stories with clear setup+payoff
+
 Categories:
 - hype: exciting, intense, clutch plays, celebrations
 - funny: comedy, fails, awkward moments, ironic situations
 - emotional: vulnerable, heartfelt, real talk, genuine moments
-- hot_take: controversial opinions, unpopular takes, bold claims
+- hot_take: unpopular opinions, bold claims that viewers will debate
 - storytime: narrative buildup with payoff, anecdotes, storytelling
 - reactive: strong reactions to something, rage, shock, disbelief
+- dancing: physical performance, dancing, moves, physical comedy
+- controversial: drama, call-outs, edgy statements, tea-spilling, beef
 If nothing stands out at all, respond: []"""
 
     print(f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): {seg_type}, {word_count} words...", file=sys.stderr)
@@ -1121,10 +1208,10 @@ If nothing stands out at all, respond: []"""
     if response:
         chunk_moments = parse_llm_moments(response, int(chunk_start), int(chunk_end))
 
-        # Apply segment score boost for quieter segments
-        boost = SEGMENT_SCORE_BOOST.get(seg_type, 0)
+        # Apply segment score boost for quieter segments (0-1 scale)
+        boost = SEGMENT_SCORE_BOOST.get(seg_type, 0.0)
         for m in chunk_moments:
-            m["score"] = min(m["score"] + boost, 10)
+            m["score"] = min(m["score"] + boost, 1.0)
             m["segment_type"] = seg_type
 
         print(f"  Chunk {chunk_count}: found {len(chunk_moments)} moments", file=sys.stderr)
@@ -1148,15 +1235,16 @@ print(f"[PASS C] Merging and selecting (target: {MAX_CLIPS} clips, max candidate
 
 all_moments = []
 
-# Normalize scores — LLM contextual analysis is trusted more than keywords
-# Keywords are useful for catching moments the LLM missed, but keywords alone
-# (without LLM cross-validation) should score lower since keywords are overused
+# Scores are already 0.0-1.0 from both passes.
+# Keywords are useful for catching moments the LLM missed, but keyword-only
+# moments should be penalized slightly since keywords lack context understanding.
+KEYWORD_CEILING = 0.75  # keyword-only moments can't exceed this without cross-validation
 for m in keyword_moments:
-    m["normalized_score"] = min(m["score"] * 1.0, 8)  # cap at 8, not 10
+    m["normalized_score"] = min(m["score"], KEYWORD_CEILING)
     all_moments.append(m)
 
 for m in llm_moments:
-    m["normalized_score"] = m["score"]
+    m["normalized_score"] = m["score"]  # already 0.0-1.0
     all_moments.append(m)
 
 all_moments.sort(key=lambda x: x["timestamp"])
@@ -1168,15 +1256,25 @@ for m in all_moments:
     for d in deduped:
         if abs(m["timestamp"] - d["timestamp"]) < 25:
             if m["source"] != d["source"]:
-                d["normalized_score"] = min(d["normalized_score"] + 2.0, 10)
+                # Cross-validated: multiplicative boost (×1.25) — much better than additive
+                d["normalized_score"] = min(max(d["normalized_score"], m["normalized_score"]) * 1.25, 1.0)
                 d["cross_validated"] = True
                 for cat in m.get("categories", []):
                     if cat not in d.get("categories", []):
                         d["categories"].append(cat)
-                if m["normalized_score"] > d["normalized_score"] - 2:
+                # Inherit clip boundaries from LLM if keyword doesn't have them
+                if "clip_start" not in d and "clip_start" in m:
+                    d["clip_start"] = m["clip_start"]
+                    d["clip_end"] = m["clip_end"]
+                if m["normalized_score"] > d["normalized_score"] * 0.8:
                     d["preview"] = m.get("why") or m.get("preview", d["preview"])
             elif m["normalized_score"] > d["normalized_score"]:
+                old_boundaries = {k: d.get(k) for k in ("clip_start", "clip_end") if k in d}
                 d.update(m)
+                # Preserve boundaries from earlier entry if new one lacks them
+                for k, v in old_boundaries.items():
+                    if k not in d and v is not None:
+                        d[k] = v
             merged = True
             break
     if not merged:
@@ -1185,30 +1283,71 @@ for m in all_moments:
 
 print(f"  After dedup: {len(deduped)} unique moments ({sum(1 for d in deduped if d.get('cross_validated'))} cross-validated)", file=sys.stderr)
 
-# Apply style weighting
+# --- LENGTH PENALTY FUNCTION ---
+# Prevents over-clipping: longer clips need higher base scores to survive selection.
+# Short punchy clips are favored unless the content genuinely justifies length.
+def length_penalty(duration_sec):
+    """Returns a multiplier 0.0-1.0 based on clip duration."""
+    if duration_sec <= 30:
+        return 1.0       # ideal short-form length, no penalty
+    elif duration_sec <= 45:
+        return 0.95       # slight penalty
+    elif duration_sec <= 60:
+        return 0.85       # needs to be genuinely good
+    elif duration_sec <= 75:
+        return 0.75       # only strong storytime/emotional survives
+    else:
+        return 0.65       # exceptional content only
+
+# Compute clip duration for each moment
+for m in deduped:
+    if "clip_start" in m and "clip_end" in m:
+        m["clip_duration"] = m["clip_end"] - m["clip_start"]
+    else:
+        # Default duration based on category
+        cat = m.get("primary_category", "hype")
+        DEFAULT_DURATIONS = {
+            "storytime": 45, "emotional": 40, "controversial": 35,
+            "hot_take": 35, "funny": 30, "hype": 30,
+            "reactive": 25, "dancing": 25
+        }
+        dur = DEFAULT_DURATIONS.get(cat, 30)
+        m["clip_duration"] = dur
+        # Set default boundaries centered on the peak timestamp
+        half = dur // 2
+        m["clip_start"] = max(0, m["timestamp"] - half)
+        m["clip_end"] = m["clip_start"] + dur
+
+# Apply style weighting and length penalty
 for m in deduped:
     base = m["normalized_score"]
     cat = m.get("primary_category", "hype")
 
     weight_map = {
         "auto": {},
-        "hype": {"hype": 1.4},
-        "funny": {"funny": 1.4},
-        "emotional": {"emotional": 1.4},
-        "hot_take": {"hot_take": 1.4},
-        "storytime": {"storytime": 1.4, "emotional": 1.2},
-        "reactive": {"reactive": 1.4, "hot_take": 1.2},
-        "controversial": {"hot_take": 1.4, "reactive": 1.3},
+        "hype": {"hype": 1.3},
+        "funny": {"funny": 1.3},
+        "emotional": {"emotional": 1.3},
+        "hot_take": {"hot_take": 1.3},
+        "storytime": {"storytime": 1.3, "emotional": 1.15},
+        "reactive": {"reactive": 1.3, "hot_take": 1.15},
+        "controversial": {"controversial": 1.3, "hot_take": 1.2, "reactive": 1.15},
+        "dancing": {"dancing": 1.3, "funny": 1.1},
         "variety": {}
     }
 
     weights = weight_map.get(CLIP_STYLE, {})
     multiplier = weights.get(cat, 1.0)
-    m["final_score"] = min(base * multiplier, 10)
+    styled_score = base * multiplier
 
-    # Cross-validated moments (found by BOTH keyword AND LLM) get a strong boost
+    # Cross-validated moments get multiplicative boost
     if m.get("cross_validated"):
-        m["final_score"] = min(m["final_score"] + 1.5, 10)
+        styled_score *= 1.20
+
+    # Apply length penalty — longer clips need higher base scores
+    lp = length_penalty(m["clip_duration"])
+    m["final_score"] = round(min(styled_score * lp, 1.0), 4)
+    m["length_penalty"] = lp
 
 # ---- TIME-BUCKET DISTRIBUTION ----
 # Divide VOD into equal time buckets and guarantee each bucket gets representation.
@@ -1226,9 +1365,58 @@ for m in deduped:
     bucket_idx = min(int(m["timestamp"] / bucket_duration), NUM_BUCKETS - 1)
     buckets[bucket_idx].append(m)
 
+# --- STREAM POSITION WEIGHTING ---
+# Streamers warm up over time. The best content is typically 20-70% through the stream.
+# Apply a mild position weight to counter early-stream and late-stream bias.
+# Shape: slight penalty at start (cold open), peak at 30-60%, gentle decline at end.
+def position_weight(timestamp, max_t):
+    """Returns a multiplier 0.85-1.05 based on stream position."""
+    if max_t <= 0:
+        return 1.0
+    pos = timestamp / max_t  # 0.0 = start, 1.0 = end
+    if pos < 0.10:
+        return 0.88  # first 10% — intros, setup, low energy
+    elif pos < 0.25:
+        return 0.95  # warming up
+    elif pos < 0.70:
+        return 1.05  # prime content zone
+    elif pos < 0.90:
+        return 1.0   # still good, winding down
+    else:
+        return 0.92  # last 10% — outros, low energy
+
+for m in deduped:
+    pw = position_weight(m["timestamp"], max_time)
+    m["final_score"] = round(min(m["final_score"] * pw, 1.0), 4)
+    m["position_weight"] = pw
+
+# --- WITHIN-BUCKET NORMALIZATION ---
+# Normalize scores within each bucket so moments in quiet segments compete fairly
+# with moments in high-energy segments. A 0.6 in a dead bucket is as valuable as
+# a 0.8 in a bucket where everything scores high.
+for bucket in buckets:
+    if len(bucket) < 2:
+        continue
+    bucket_max = max(m["final_score"] for m in bucket)
+    bucket_min = min(m["final_score"] for m in bucket)
+    if bucket_max - bucket_min < 0.05:
+        continue  # all scores are nearly identical, skip
+    for m in bucket:
+        # Blend: 70% global score + 30% within-bucket normalized score
+        if bucket_max > bucket_min:
+            bucket_norm = (m["final_score"] - bucket_min) / (bucket_max - bucket_min)
+        else:
+            bucket_norm = 0.5
+        m["final_score"] = round(0.70 * m["final_score"] + 0.30 * bucket_norm, 4)
+
 # Sort each bucket by final_score
 for b in buckets:
     b.sort(key=lambda x: x["final_score"], reverse=True)
+
+# Minimum spacing based on clip duration (prevents overlapping clips)
+def min_spacing(m):
+    """Minimum seconds between this clip and neighbors."""
+    return max(30, m.get("clip_duration", 30) + 10)
 
 # Selection: pick top N from each bucket, then fill overflow with best remaining
 selected = []
@@ -1239,8 +1427,9 @@ for i, bucket in enumerate(buckets):
     for m in bucket:
         if picked >= clips_per_bucket:
             break
-        # Check 45-second spacing against already-selected
-        too_close = any(abs(m["timestamp"] - s["timestamp"]) < 45 for s in selected)
+        # Check spacing against already-selected (use clip-duration-aware spacing)
+        spacing = min_spacing(m)
+        too_close = any(abs(m["timestamp"] - s["timestamp"]) < spacing for s in selected)
         if not too_close:
             selected.append(m)
             picked += 1
@@ -1259,7 +1448,8 @@ remaining.sort(key=lambda x: x["final_score"], reverse=True)
 for m in remaining:
     if len(selected) >= MAX_CLIPS:
         break
-    too_close = any(abs(m["timestamp"] - s["timestamp"]) < 45 for s in selected)
+    spacing = min_spacing(m)
+    too_close = any(abs(m["timestamp"] - s["timestamp"]) < spacing for s in selected)
     if not too_close:
         selected.append(m)
 
@@ -1288,26 +1478,49 @@ elif CLIP_STYLE not in ("auto", ""):
     selected.sort(key=lambda x: x["final_score"], reverse=True)
     final = selected[:MAX_CLIPS]
 else:
-    # Auto: already time-distributed, just take what we have
-    final = selected[:MAX_CLIPS]
+    # Auto: category cap — no single category exceeds 50% of clips
+    selected.sort(key=lambda x: x["final_score"], reverse=True)
+    final = []
+    cat_counts = {}
+    max_per_cat = max(2, int(MAX_CLIPS * 0.50))
+    for m in selected:
+        cat = m.get("primary_category", "hype")
+        if cat_counts.get(cat, 0) < max_per_cat:
+            final.append(m)
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        if len(final) >= MAX_CLIPS:
+            break
+    # Backfill if we didn't reach MAX_CLIPS due to category cap
+    if len(final) < MAX_CLIPS:
+        for m in selected:
+            if m not in final:
+                final.append(m)
+                if len(final) >= MAX_CLIPS:
+                    break
 
 final.sort(key=lambda x: x["final_score"], reverse=True)
 
 print(f"  Final selection: {len(final)} clips across {len(set(min(int(m['timestamp']/bucket_duration), NUM_BUCKETS-1) for m in final))} of {NUM_BUCKETS} time buckets", file=sys.stderr)
 
-# Write output
+# Write output with clip boundaries and 0-1 scores
 output = []
 for m in final:
-    output.append({
+    entry = {
         "timestamp": m["timestamp"],
-        "score": round(m["final_score"]),
+        "score": round(m["final_score"], 3),
+        "clip_start": m.get("clip_start", max(0, m["timestamp"] - 15)),
+        "clip_end": m.get("clip_end", m["timestamp"] + 15),
+        "clip_duration": m.get("clip_duration", 30),
         "preview": m.get("preview", "")[:120],
         "category": m.get("primary_category", "unknown"),
         "why": m.get("why", m.get("preview", ""))[:200],
         "source": m.get("source", "unknown"),
         "cross_validated": m.get("cross_validated", False),
-        "segment_type": m.get("segment_type", get_segment_type(m["timestamp"]))
-    })
+        "segment_type": m.get("segment_type", get_segment_type(m["timestamp"])),
+        "length_penalty": m.get("length_penalty", 1.0),
+        "position_weight": m.get("position_weight", 1.0)
+    }
+    output.append(entry)
 
 with open(f"{TEMP_DIR}/hype_moments.json", "w") as f:
     json.dump(output, f, indent=2)
@@ -1323,12 +1536,16 @@ for m in output:
 print(f"\n[PASS C] Selected {len(output)} moments:", file=sys.stderr)
 for m in output:
     xv = " [CROSS-VALIDATED]" if m.get("cross_validated") else ""
-    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
+    dur = m.get("clip_duration", 30)
+    lp = m.get("length_penalty", 1.0)
+    pw = m.get("position_weight", 1.0)
+    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} dur={dur}s lp={lp} pw={pw:.2f} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
 print(f"  Category breakdown: {json.dumps(cats_found)}", file=sys.stderr)
 print(f"  Segment breakdown: {json.dumps(segs_found)}", file=sys.stderr)
 print(f"Detected {len(output)} clip-worthy moments")
 for m in output:
-    print(f"  T={m['timestamp']}s score={m['score']} [{m['category']}] ({m.get('segment_type','')}) — {m.get('why','')[:60]}")
+    dur = m.get("clip_duration", 30)
+    print(f"  T={m['timestamp']}s score={m['score']:.3f} [{m['category']}] ({m.get('segment_type','')}) dur={dur}s — {m.get('why','')[:60]}")
 PYEOF
 
 MOMENT_COUNT=$(python3 -c "import json; m=json.load(open('/tmp/clipper/hype_moments.json')); print(len(m))")
@@ -1416,6 +1633,11 @@ for moment in moments:
     transcript_why = moment.get("why", "")
     segment_type = moment.get("segment_type", "unknown")
 
+    # Carry forward clip boundaries from detection
+    clip_start = moment.get("clip_start", max(0, T - 15))
+    clip_end = moment.get("clip_end", T + 15)
+    clip_duration = moment.get("clip_duration", 30)
+
     # Start with transcript data as the baseline
     entry = {
         "timestamp": T,
@@ -1427,7 +1649,10 @@ for moment in moments:
         "transcript_category": transcript_category,
         "segment_type": segment_type,
         "vision_score": 0,
-        "vision_ok": False
+        "vision_ok": False,
+        "clip_start": clip_start,
+        "clip_end": clip_end,
+        "clip_duration": clip_duration
     }
 
     # Check stage timeout before attempting vision
@@ -1515,7 +1740,9 @@ Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controv
     # Enrich the entry with vision data (if available)
     if best_vision_result:
         entry["vision_ok"] = True
-        entry["vision_score"] = best_vision_score
+        # Normalize vision score from 1-10 to 0-1
+        vision_norm = max(0.0, min((best_vision_score - 1) / 9.0, 1.0))
+        entry["vision_score"] = round(vision_norm, 3)
         # Use vision title/description (usually better than generic)
         v_title = best_vision_result.get("title", "")
         if v_title and v_title != "":
@@ -1523,19 +1750,22 @@ Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controv
         v_desc = best_vision_result.get("description", "")
         if v_desc:
             entry["description"] = v_desc
-        # Blend scores: transcript is primary, vision is a bonus
-        # If vision agrees (high score), boost. If vision disagrees, keep transcript score.
-        if best_vision_score >= 7:
-            entry["score"] = min(transcript_score + 2, 10)
-            print(f"  T={T} vision BOOST: {transcript_score} -> {entry['score']}", file=sys.stderr)
-        elif best_vision_score >= 5:
-            entry["score"] = min(transcript_score + 1, 10)
+        # Blend scores: transcript is primary, vision is a bonus (never penalizes)
+        # Vision >= 0.67 (was 7/10): multiply by 1.15
+        # Vision >= 0.44 (was 5/10): multiply by 1.08
+        # Vision < 0.44: keep transcript score unchanged
+        if vision_norm >= 0.67:
+            entry["score"] = round(min(transcript_score * 1.15, 1.0), 3)
+            print(f"  T={T} vision BOOST: {transcript_score:.3f} -> {entry['score']:.3f}", file=sys.stderr)
+        elif vision_norm >= 0.44:
+            entry["score"] = round(min(transcript_score * 1.08, 1.0), 3)
+        # else: keep transcript_score as-is
     else:
         # Vision failed — that's OK, use transcript data as-is
-        print(f"  T={T} vision failed/no-parse — using transcript score={transcript_score}", file=sys.stderr)
+        print(f"  T={T} vision failed/no-parse — using transcript score={transcript_score:.3f}", file=sys.stderr)
 
     enriched.append(entry)
-    print(f"  T={T} FINAL score={entry['score']} title=\"{entry['title']}\" [{entry['category']}]", file=sys.stderr)
+    print(f"  T={T} FINAL score={entry['score']:.3f} dur={entry['clip_duration']}s title=\"{entry['title']}\" [{entry['category']}]", file=sys.stderr)
 
 # NO FILTERING HERE — every moment goes to rendering.
 # Sort by score descending for rendering priority.
@@ -1548,7 +1778,7 @@ vision_ok_count = sum(1 for e in enriched if e.get("vision_ok"))
 print(f"\\nEnriched {len(enriched)} moments ({vision_ok_count} with vision data). ALL will be rendered.")
 for s in enriched:
     v_tag = "V" if s.get("vision_ok") else "T"
-    print(f"  [{v_tag}] T={s['timestamp']} score={s['score']} [{s['category']}] ({s.get('segment_type','')}) — {s['title']}")
+    print(f"  [{v_tag}] T={s['timestamp']} score={s['score']:.3f} dur={s.get('clip_duration',30)}s [{s['category']}] ({s.get('segment_type','')}) — {s['title']}")
 PYEOF
 
 SCORED_COUNT=$(python3 -c "import json; m=json.load(open('/tmp/clipper/scored_moments.json')); print(len(m))")
@@ -1573,7 +1803,7 @@ unload_ollama "$VISION_MODEL"
 CLIPS_MADE=0
 CLIP_FILES=()
 
-# --- 7a. Generate clip manifest ---
+# --- 7a. Generate clip manifest (now includes clip boundaries) ---
 log "  Generating clip manifest..."
 python3 -c "
 import json
@@ -1583,27 +1813,40 @@ for m in moments:
     title = ''.join(c for c in title if c.isalnum() or c in '-_')[:50]
     if not title:
         title = f'Clip_T{m[\"timestamp\"]}'
-    print(f\"{m['timestamp']}|{title}|{m['score']}|{m.get('category','unknown')}|{m.get('description','')}|{m.get('segment_type','unknown')}\")
+    clip_start = m.get('clip_start', max(0, m['timestamp'] - 15))
+    clip_end = m.get('clip_end', m['timestamp'] + 15)
+    clip_duration = m.get('clip_duration', 30)
+    score_str = f\"{m['score']:.3f}\" if isinstance(m['score'], float) else str(m['score'])
+    print(f\"{m['timestamp']}|{title}|{score_str}|{m.get('category','unknown')}|{m.get('description','')}|{m.get('segment_type','unknown')}|{clip_start}|{clip_duration}\")
 " > "$TEMP_DIR/clip_manifest.txt"
 
 MANIFEST_COUNT=$(wc -l < "$TEMP_DIR/clip_manifest.txt")
 log "  Manifest: $MANIFEST_COUNT clips to process"
 
 # --- 7b. Extract ALL clip audio segments (FFmpeg only, no GPU models) ---
+# Now uses variable clip duration from manifest (fields 7=clip_start, 8=clip_duration)
 log "  Extracting audio for all clips..."
-while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
+while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_DUR; do
     [ -z "$T" ] && continue
-    CLIP_START=$((T - 22))
+    # Use manifest clip boundaries, fallback to legacy fixed window
+    if [ -n "$CLIP_START_SEC" ] && [ -n "$CLIP_DUR" ]; then
+        CLIP_START="$CLIP_START_SEC"
+        CLIP_LENGTH="$CLIP_DUR"
+    else
+        CLIP_START=$((T - 22))
+        CLIP_LENGTH=45
+    fi
     [ "$CLIP_START" -lt 0 ] && CLIP_START=0
     CLIP_AUDIO="$TEMP_DIR/clip_audio_${T}.wav"
 
-    ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
+    ffmpeg -nostdin -y -ss "$CLIP_START" -t "$CLIP_LENGTH" -i "$VOD_PATH" \
         -vn -acodec pcm_s16le -ar 16000 -ac 1 \
         "$CLIP_AUDIO" 2>/dev/null || warn "Audio extraction failed for T=$T"
 done < "$TEMP_DIR/clip_manifest.txt"
 
 # --- 7c. Batch transcribe ALL clips with Whisper (ONE model load) ---
 log "  Batch transcribing all clips (single Whisper load)..."
+export CLIP_WHISPER_MODEL="$WHISPER_MODEL"
 python3 << 'PYTRANSCRIBE'
 import json, sys, os, glob
 
@@ -1611,14 +1854,15 @@ from faster_whisper import WhisperModel
 
 cache_dir = "/root/.cache/whisper-models"
 temp_dir = "/tmp/clipper"
+whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
 
 # Load Whisper ONCE for all clips
 try:
-    model = WhisperModel("large-v3", device="cuda", compute_type="float16", download_root=cache_dir)
-    print("[WHISPER] Batch caption mode: GPU (float16)", file=sys.stderr)
+    model = WhisperModel(whisper_model, device="cuda", compute_type="float16", download_root=cache_dir)
+    print(f"[WHISPER] Batch caption mode: GPU (float16) with {whisper_model}", file=sys.stderr)
 except Exception as e:
     print(f"[WHISPER] GPU failed ({e}), using CPU", file=sys.stderr)
-    model = WhisperModel("large-v3", device="cpu", compute_type="int8", download_root=cache_dir)
+    model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
 
 # Find all clip audio files
 audio_files = sorted(glob.glob(f"{temp_dir}/clip_audio_*.wav"))
@@ -1674,18 +1918,26 @@ log "  Rendering all clips (blur-fill 9:16)..."
 #   while keeping aspect ratio → overlay foreground centered on blurred bg
 BLUR_BG="split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[blurred];[fg]scale=1080:-2:force_original_aspect_ratio=decrease[sharp];[blurred][sharp]overlay=(W-w)/2:(H-h)/2"
 
-while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
+while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_DUR; do
     [ -z "$T" ] && continue
 
-    log "  Rendering: $TITLE (T=${T}s, score=$SCORE, category=$CATEGORY, segment=$SEG_TYPE)"
-
-    CLIP_START=$((T - 22))
+    # Use manifest clip boundaries, fallback to legacy fixed window
+    if [ -n "$CLIP_START_SEC" ] && [ -n "$CLIP_DUR" ]; then
+        CLIP_START="$CLIP_START_SEC"
+        CLIP_LENGTH="$CLIP_DUR"
+    else
+        CLIP_START=$((T - 22))
+        CLIP_LENGTH=45
+    fi
     [ "$CLIP_START" -lt 0 ] && CLIP_START=0
+
+    log "  Rendering: $TITLE (T=${T}s, dur=${CLIP_LENGTH}s, score=$SCORE, category=$CATEGORY, segment=$SEG_TYPE)"
+
     CLIP_SRT="$TEMP_DIR/clip_${T}.srt"
     CLIP_OUTPUT="$CLIPS_DIR/${TITLE}.mp4"
 
-    # Render vertical clip: blur-fill background + burned captions
-    ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
+    # Render vertical clip: blur-fill background + burned captions (variable duration)
+    ffmpeg -nostdin -y -ss "$CLIP_START" -t "$CLIP_LENGTH" -i "$VOD_PATH" \
         -vf "${BLUR_BG},subtitles='${CLIP_SRT}':force_style='FontSize=16,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'" \
         -c:v libx264 -crf 23 -preset medium \
         -c:a aac -b:a 128k \
@@ -1694,7 +1946,7 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
 
     if [ ! -f "$CLIP_OUTPUT" ]; then
         warn "Render failed for $TITLE. Trying without subtitles..."
-        ffmpeg -nostdin -y -ss "$CLIP_START" -t 45 -i "$VOD_PATH" \
+        ffmpeg -nostdin -y -ss "$CLIP_START" -t "$CLIP_LENGTH" -i "$VOD_PATH" \
             -vf "${BLUR_BG}" \
             -c:v libx264 -crf 23 -preset medium \
             -c:a aac -b:a 128k \
@@ -1707,7 +1959,7 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE; do
         FINAL_MB=$((FINAL_SIZE / 1048576))
         log "  Done: $TITLE — ${FINAL_MB}MB (score: $SCORE, category: $CATEGORY, segment: $SEG_TYPE)"
 
-        echo "${TITLE}|${SCORE}|${CATEGORY}|${DESC}|${FINAL_MB}MB|${SEG_TYPE}" >> "$TEMP_DIR/clips_made.txt"
+        echo "${TITLE}|${SCORE}|${CATEGORY}|${DESC}|${FINAL_MB}MB|${SEG_TYPE}|${CLIP_LENGTH}s" >> "$TEMP_DIR/clips_made.txt"
     fi
 done < "$TEMP_DIR/clip_manifest.txt"
 
@@ -1734,13 +1986,18 @@ if os.path.exists(clips_file):
         for line in f:
             parts = line.strip().split("|")
             if len(parts) >= 4:
+                try:
+                    score_val = float(parts[1])
+                except (ValueError, IndexError):
+                    score_val = 0.0
                 clips.append({
                     "title": parts[0],
-                    "score": int(parts[1]) if parts[1].isdigit() else 0,
+                    "score": round(score_val, 3),
                     "category": parts[2],
                     "description": parts[3],
                     "size": parts[4] if len(parts) > 4 else "?",
-                    "segment_type": parts[5] if len(parts) > 5 else "?"
+                    "segment_type": parts[5] if len(parts) > 5 else "?",
+                    "duration": parts[6] if len(parts) > 6 else "30s"
                 })
 
 cats = {}
