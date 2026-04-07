@@ -25,6 +25,8 @@ x-clipper-base: &clipper-base
     - ./workspace:/root/.openclaw/workspace
     - ./vods:/root/VODs
     - ./clips:/root/VODs/Clips_Ready
+    - ./scripts:/root/scripts
+    - ./dashboard:/root/dashboard
   environment:
     - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
   restart: unless-stopped
