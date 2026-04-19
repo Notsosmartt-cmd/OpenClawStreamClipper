@@ -1,23 +1,28 @@
 ---
-title: "Ollama"
+title: "Ollama (retired)"
 type: entity
-tags: [inference-server, llm, docker, gpu]
+tags: [inference-server, llm, docker, gpu, retired]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-18
 ---
 
-# Ollama
+# Ollama *(retired — replaced by LM Studio)*
 
-Local LLM inference server. Hosts and serves [[entities/qwen25]], [[entities/qwen35]], and [[entities/qwen3-vl]] over HTTP on port 11434. Runs as its own Docker container.
+> [!warning] Retired as of 2026-04-18
+> Ollama has been removed from this project. LLM inference now runs via **[[entities/lm-studio]]** (LM Studio), a native Windows application that serves an OpenAI-compatible API on port 1234. The `ollama` Docker container, `Dockerfile.ollama`, and `scripts/entrypoint-ollama.sh` are no longer part of the active stack.
+>
+> **Reason for removal**: Ollama-in-Docker required WSL2 Vulkan driver hacks to use AMD GPUs, and these frequently fell back silently to CPU inference. LM Studio runs natively on Windows and handles NVIDIA+AMD multi-GPU without special drivers.
+
+The content below is preserved for historical reference.
 
 ---
 
-## Role in the system
+## Former role in the system
 
-- Receives inference requests from [[entities/openclaw]] at `http://ollama:11434`
-- Auto-detects available hardware (NVIDIA GPU or CPU)
-- Manages model loading/unloading from VRAM
-- All user interaction routes through the Discord bot — Ollama is never accessed directly
+- Received inference requests from [[entities/openclaw]] at `http://ollama:11434`
+- Auto-detected available hardware (NVIDIA GPU or CPU)
+- Managed model loading/unloading from VRAM
+- All user interaction routed through the Discord bot — Ollama was never accessed directly
 
 ---
 
@@ -35,13 +40,27 @@ Local LLM inference server. Hosts and serves [[entities/qwen25]], [[entities/qwe
 
 ---
 
-## GPU / CPU profiles
+## GPU backend modes
 
-Docker Compose profiles:
-- `--profile gpu` — passes `--gpus=all`; requires `nvidia-container-toolkit` on host
-- `--profile cpu` — identical image without GPU flags
+The `ollama` service is a single unified container. GPU backend is controlled at runtime via `config/hardware.json` (managed by the dashboard Hardware panel). Changing backend requires a `docker compose restart`.
 
-Both profiles share the same named Docker volume `ollama_data`. Models persist across profile switches and container restarts.
+| Backend | Set in `gpu_backend` | Notes |
+|---|---|---|
+| `cuda` | `"cuda"` | NVIDIA CUDA via Container Toolkit. Default. |
+| `mixed` | `"mixed"` | NVIDIA + AMD via Vulkan. `OLLAMA_VULKAN=1` required. |
+| `vulkan` | `"vulkan"` | AMD/Intel via Vulkan. `OLLAMA_VULKAN=1` required. |
+| `cpu` | `"cpu"` | No GPU. All inference on CPU. |
+
+The entrypoint (`scripts/entrypoint-ollama.sh`) reads `config/hardware.json` and sets `CUDA_VISIBLE_DEVICES` / `GGML_VK_VISIBLE_DEVICES` / `OLLAMA_VULKAN` accordingly before calling `exec ollama serve`.
+
+> [!note] OLLAMA_VULKAN requirement
+> Ollama 0.21+ ships with Vulkan disabled by default. `OLLAMA_VULKAN=1` must be set explicitly for `mixed` and `vulkan` backends. Without it, Ollama ignores `GGML_VK_VISIBLE_DEVICES` and falls through to CPU.
+
+> [!warning] Vulkan ICD failure → silent CPU fallback
+> If Vulkan ICDs fail to initialize (NVIDIA ICD injection issues, AMD DZN driver missing), Ollama silently runs all inference on CPU — high CPU usage, zero GPU utilization.
+> `entrypoint-ollama.sh` now runs `vulkaninfo --summary` before starting Ollama in mixed/vulkan modes and **falls back to CUDA automatically** if no real GPU Vulkan devices are found, printing a warning banner. Check with `docker logs ollama | grep "inference compute"`.
+
+The named Docker volume `ollama_data` persists models across restarts and backend switches.
 
 ---
 
@@ -61,9 +80,9 @@ This ensures predictable VRAM state at each stage transition.
 
 ## Container name
 
-- GPU mode: `ollama-gpu`
-- CPU mode: `ollama-cpu`
+- Container name: `ollama`
 - Network alias: `ollama` (used by the clipper container for hostname resolution)
+- Started with: `docker compose up -d` (no profile flags)
 
 ---
 
@@ -71,18 +90,21 @@ This ensures predictable VRAM state at each stage transition.
 
 ```bash
 # Pull models
-docker exec ollama-gpu ollama pull qwen3.5:9b
-docker exec ollama-gpu ollama pull qwen2.5:7b
-docker exec ollama-gpu ollama pull qwen3-vl:8b
+docker exec ollama ollama pull qwen3.5:9b
+docker exec ollama ollama pull qwen2.5:7b
+docker exec ollama ollama pull qwen3-vl:8b
 
 # List downloaded models
-docker exec ollama-gpu ollama list
+docker exec ollama ollama list
 
 # Check currently loaded models (in VRAM)
-docker exec ollama-gpu ollama ps
+docker exec ollama ollama ps
+
+# Verify Vulkan device indices (mixed/vulkan backends)
+docker exec ollama vulkaninfo --summary
 
 # View logs
-docker compose logs -f ollama-gpu
+docker compose logs -f ollama
 ```
 
 ---

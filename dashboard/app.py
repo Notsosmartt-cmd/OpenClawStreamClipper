@@ -31,6 +31,7 @@ DIAGNOSTICS_DIR = CLIPS_DIR / ".diagnostics"
 TRANSCRIPTION_DIR = VODS_DIR / ".transcriptions"
 PROCESSED_LOG = VODS_DIR / "processed.log"
 MODELS_CONFIG = PROJECT_DIR / "config" / "models.json"
+HARDWARE_CONFIG = PROJECT_DIR / "config" / "hardware.json"
 
 # Pipeline script paths
 PIPELINE_SCRIPT = str(PROJECT_DIR / "scripts" / "clip-pipeline.sh")
@@ -73,6 +74,7 @@ def get_docker_container():
         return None
 
 
+
 def use_docker_exec():
     """Whether pipeline should run via docker exec (Windows host mode)."""
     return not INSIDE_DOCKER
@@ -90,6 +92,7 @@ def pipeline_env():
     env["CLIP_TEXT_MODEL"] = config.get("text_model", DEFAULT_MODELS["text_model"])
     env["CLIP_VISION_MODEL"] = config.get("vision_model", DEFAULT_MODELS["vision_model"])
     env["CLIP_WHISPER_MODEL"] = config.get("whisper_model", DEFAULT_MODELS["whisper_model"])
+    env["CLIP_CONTEXT_LENGTH"] = str(config.get("context_length", DEFAULT_MODELS["context_length"]))
     return env
 
 
@@ -104,7 +107,7 @@ def spawn_pipeline(cmd):
         if not container:
             raise RuntimeError(
                 "No stream-clipper Docker container is running. "
-                "Start it with: docker compose --profile gpu up -d"
+                "Start it with: docker compose up -d"
             )
 
         # Inject model env vars into docker exec
@@ -113,6 +116,7 @@ def spawn_pipeline(cmd):
             "-e", f"CLIP_TEXT_MODEL={config.get('text_model', DEFAULT_MODELS['text_model'])}",
             "-e", f"CLIP_VISION_MODEL={config.get('vision_model', DEFAULT_MODELS['vision_model'])}",
             "-e", f"CLIP_WHISPER_MODEL={config.get('whisper_model', DEFAULT_MODELS['whisper_model'])}",
+            "-e", f"CLIP_CONTEXT_LENGTH={config.get('context_length', DEFAULT_MODELS['context_length'])}",
         ]
 
         # Build docker exec command
@@ -344,6 +348,8 @@ def api_status():
     if use_docker_exec():
         docker_ok = get_docker_container() is not None
 
+    lm_studio_ok = check_lm_studio()
+
     return jsonify({
         "running": running,
         "stage": stage,
@@ -351,6 +357,7 @@ def api_status():
         "pid": pipeline_process.pid if pipeline_process and running else None,
         "mode": "docker" if use_docker_exec() else "local",
         "docker": docker_ok,
+        "lm_studio": lm_studio_ok,
     })
 
 
@@ -572,10 +579,11 @@ def log_stream():
 # --- Model configuration ---
 
 DEFAULT_MODELS = {
-    "text_model": "qwen3.5:9b",
-    "vision_model": "qwen3-vl:8b",
+    "text_model": "qwen/qwen3.5-9b",
+    "vision_model": "qwen/qwen3.5-9b",
     "whisper_model": "large-v3",
-    "ollama_url": "http://ollama:11434",
+    "llm_url": "http://host.docker.internal:1234",
+    "context_length": 8192,
 }
 
 # Pipeline role descriptions for the UI
@@ -583,12 +591,12 @@ MODEL_ROLES = {
     "text_model": {
         "label": "Text Model",
         "description": "Segment classification (Stage 3) and moment detection (Stage 4). Needs strong reasoning and JSON output.",
-        "provider": "ollama",
+        "provider": "lmstudio",
     },
     "vision_model": {
         "label": "Vision Model",
         "description": "Frame analysis and clip title generation (Stage 6). Must support image input.",
-        "provider": "ollama",
+        "provider": "lmstudio",
     },
     "whisper_model": {
         "label": "Whisper Model",
@@ -596,6 +604,35 @@ MODEL_ROLES = {
         "provider": "whisper",
     },
 }
+
+# Recommended model IDs for each pipeline role.
+# These are used to guide the user in the dashboard — shown with a ⭐ in the picker.
+SUGGESTED_MODELS = {
+    "text_model": {
+        "id": "qwen/qwen3.5-9b",
+        "reason": "Best reasoning + JSON output for moment detection. Also handles vision "
+                  "(Stage 6) — use the same model for both roles to avoid VRAM swap. ~11 GB VRAM.",
+    },
+    "vision_model": {
+        "id": "qwen/qwen3.5-9b",
+        "reason": "qwen3.5-9b supports both text and vision — setting the same model for "
+                  "both roles skips the Stage 5 unload/reload and saves ~2 min per run. "
+                  "Use qwen/qwen3-vl-8b or qwen/qwen2.5-vl-7b if you prefer a dedicated vision model.",
+        "alternatives": ["qwen/qwen3-vl-8b", "qwen/qwen2.5-vl-7b"],
+    },
+    "whisper_model": {
+        "id": "large-v3",
+        "reason": "Best transcription accuracy. Recommended for GPU. ~3 GB VRAM.",
+    },
+}
+
+# Context length guidance per VRAM tier (informational only — actual value in models.json)
+CONTEXT_LENGTH_GUIDE = [
+    {"value": 4096,  "label": "4096 — ~2 GB KV cache  (8 GB VRAM total)"},
+    {"value": 8192,  "label": "8192 — ~4 GB KV cache  (12 GB VRAM total) ⭐ recommended"},
+    {"value": 16384, "label": "16384 — ~8 GB KV cache (20 GB VRAM total)"},
+    {"value": 32768, "label": "32768 — ~16 GB KV cache (28 GB VRAM total)"},
+]
 
 WHISPER_MODELS = [
     {"name": "large-v3", "size": "~3 GB", "description": "Best accuracy, recommended for GPU"},
@@ -629,45 +666,51 @@ def save_models_config(config):
         json.dump(config, f, indent=2)
 
 
-def query_ollama_models():
-    """Query Ollama for available models. Works both inside and outside Docker."""
-    try:
-        if use_docker_exec():
-            container = get_docker_container()
-            if not container:
-                return []
-            result = subprocess.run(
-                ["docker", "exec", container, "curl", "-sf",
-                 "http://ollama:11434/api/tags"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode != 0:
-                return []
-            data = json.loads(result.stdout)
-        else:
-            import urllib.request
-            config = load_models_config()
-            url = config.get("ollama_url", "http://ollama:11434")
-            req = urllib.request.Request(f"{url}/api/tags")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+# LM Studio reachability cache — avoid hammering /v1/models on every 3-second status poll.
+_lm_studio_cache: dict = {"ok": False, "ts": 0.0}
+_LM_STUDIO_CACHE_TTL = 30  # seconds
 
+
+def check_lm_studio():
+    """Check if LM Studio server is reachable. Result cached for 30 s."""
+    global _lm_studio_cache
+    now = time.time()
+    if now - _lm_studio_cache["ts"] < _LM_STUDIO_CACHE_TTL:
+        return _lm_studio_cache["ok"]
+    try:
+        import urllib.request
+        config = load_models_config()
+        url = config.get("llm_url", "http://host.docker.internal:1234")
+        req = urllib.request.Request(f"{url}/v1/models")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            ok = resp.status == 200
+    except Exception:
+        ok = False
+    _lm_studio_cache = {"ok": ok, "ts": now}
+    return ok
+
+
+def query_lm_studio_models():
+    """Query LM Studio for available models via OpenAI-compatible /v1/models."""
+    try:
+        import urllib.request
+        config = load_models_config()
+        url = config.get("llm_url", "http://host.docker.internal:1234")
+        req = urllib.request.Request(f"{url}/v1/models")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
         models = []
-        for m in data.get("models", []):
-            name = m.get("name", "")
-            size_bytes = m.get("size", 0)
-            size_gb = round(size_bytes / (1024 ** 3), 1)
-            details = m.get("details", {})
+        for m in data.get("data", []):
             models.append({
-                "name": name,
-                "size_gb": size_gb,
-                "family": details.get("family", ""),
-                "parameter_size": details.get("parameter_size", ""),
-                "quantization": details.get("quantization_level", ""),
+                "name": m.get("id", ""),
+                "size_gb": 0,
+                "family": "",
+                "parameter_size": "",
+                "quantization": "",
             })
         return models
     except Exception as e:
-        print(f"Failed to query Ollama models: {e}")
+        print(f"Failed to query LM Studio models: {e}")
         return []
 
 
@@ -682,15 +725,20 @@ def api_models():
             "current": config.get(key, DEFAULT_MODELS.get(key, "")),
             "default": DEFAULT_MODELS.get(key, ""),
         }
-    return jsonify({"config": config, "roles": roles})
+    return jsonify({
+        "config": config,
+        "roles": roles,
+        "suggested": SUGGESTED_MODELS,
+        "context_length_guide": CONTEXT_LENGTH_GUIDE,
+    })
 
 
 @app.route("/api/models/available")
 def api_models_available():
-    """Query Ollama for all downloaded models."""
-    ollama_models = query_ollama_models()
+    """Query LM Studio for loaded models plus Whisper options."""
+    lm_studio_models = query_lm_studio_models()
     return jsonify({
-        "ollama": ollama_models,
+        "lmstudio": lm_studio_models,
         "whisper": WHISPER_MODELS,
     })
 
@@ -707,9 +755,128 @@ def api_models_update():
             old = config.get(key, "")
             config[key] = data[key]
             changed.append({"role": key, "old": old, "new": data[key]})
+    if "context_length" in data:
+        try:
+            ctx = int(data["context_length"])
+            if ctx != config.get("context_length"):
+                config["context_length"] = ctx
+                changed.append({"role": "context_length", "old": config.get("context_length", 8192), "new": ctx})
+        except (ValueError, TypeError):
+            pass
 
     save_models_config(config)
     return jsonify({"status": "saved", "config": config, "changed": changed})
+
+
+# --- Hardware configuration ---
+
+DEFAULT_HARDWARE = {
+    "whisper_device": "cuda",
+}
+
+
+def load_hardware_config():
+    if HARDWARE_CONFIG.exists():
+        try:
+            with open(HARDWARE_CONFIG, "r") as f:
+                config = json.load(f)
+            for k, v in DEFAULT_HARDWARE.items():
+                config.setdefault(k, v)
+            return config
+        except Exception:
+            pass
+    return dict(DEFAULT_HARDWARE)
+
+
+def save_hardware_config(config):
+    HARDWARE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    with open(HARDWARE_CONFIG, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def detect_capabilities():
+    """Probe GPU capabilities available inside the container."""
+    caps = {"cuda": False, "vulkan": False, "nvidia_smi": False, "vulkaninfo": False}
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            caps["cuda"] = True
+            caps["nvidia_smi"] = True
+            caps["nvidia_gpus"] = [g.strip() for g in r.stdout.strip().splitlines()]
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(["vulkaninfo", "--summary"], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            caps["vulkan"] = True
+            caps["vulkaninfo"] = True
+    except Exception:
+        pass
+    return caps
+
+
+@app.route("/api/hardware")
+def api_hardware():
+    config = load_hardware_config()
+    caps = detect_capabilities() if INSIDE_DOCKER else {}
+    return jsonify({
+        "config": config,
+        "defaults": DEFAULT_HARDWARE,
+        "capabilities": caps,
+        "restart_required": False,
+    })
+
+
+@app.route("/api/restart", methods=["POST"])
+def api_restart():
+    """Restart Docker services to apply hardware config changes.
+
+    Only works when dashboard is running outside Docker (Windows host mode).
+    Inside Docker, instruct the user to run 'docker compose restart' manually.
+    """
+    if is_pipeline_running():
+        return jsonify({"error": "Pipeline is running — stop it before restarting"}), 409
+
+    if INSIDE_DOCKER:
+        return jsonify({
+            "error": "Cannot restart from inside Docker. Run:  docker compose restart"
+        }), 400
+
+    try:
+        # Run docker compose restart from the project directory so it finds
+        # docker-compose.yml without needing --file flags.
+        result = subprocess.run(
+            ["docker", "compose", "restart"],
+            capture_output=True, text=True, timeout=120,
+            cwd=str(PROJECT_DIR),
+        )
+        if result.returncode == 0:
+            return jsonify({"status": "restarting",
+                            "message": "Services restarting — page will reload once done"})
+        else:
+            err = (result.stderr or result.stdout or "docker compose restart failed").strip()
+            return jsonify({"error": err}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Restart timed out (120 s) — check Docker Desktop"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/hardware", methods=["PUT"])
+def api_hardware_update():
+    data = request.get_json(force=True)
+    config = load_hardware_config()
+
+    if "whisper_device" in data:
+        config["whisper_device"] = data["whisper_device"]
+
+    save_hardware_config(config)
+    return jsonify({
+        "status": "saved",
+        "config": config,
+        "restart_required": False,
+    })
 
 
 @app.errorhandler(404)

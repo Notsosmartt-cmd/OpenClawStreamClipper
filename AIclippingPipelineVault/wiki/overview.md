@@ -3,7 +3,7 @@ title: "OpenClaw Stream Clipper — Overview"
 type: overview
 tags: [overview, architecture, pipeline]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-19
 ---
 
 # OpenClaw Stream Clipper
@@ -22,27 +22,31 @@ Output: 1080×1920 vertical MP4 clips (~45 seconds each) with burned-in subtitle
 
 ---
 
-## Two-container architecture
+## Architecture: one container + native Windows LLM
 
-| Container | Name | Role |
+| Component | Where | Role |
 |---|---|---|
-| Ollama | `ollama-gpu` / `ollama-cpu` | LLM inference server — hosts Qwen models over HTTP on port 11434 |
-| Stream Clipper | `stream-clipper-gpu` / `stream-clipper-cpu` | OpenClaw agent, Discord gateway, FFmpeg, faster-whisper, web dashboard |
+| [[entities/lm-studio]] | Windows host (native) | LLM inference server — serves Qwen models over OpenAI-compatible HTTP on port 1234 |
+| Stream Clipper | Docker container (`stream-clipper`) | OpenClaw agent, Discord gateway, FFmpeg, faster-whisper, web dashboard |
 
-The two communicate over a Docker bridge network (`clipper-net`). [[entities/openclaw]] calls [[entities/ollama]] at `http://ollama:11434`. The user never touches Ollama directly.
+The pipeline calls LM Studio at `http://host.docker.internal:1234` — Docker's bridge hostname that routes from the container back to the Windows host. The user manages LM Studio (model loading, GPU assignment) through LM Studio's own GUI; the pipeline never touches it except to call `/v1/chat/completions` and `/api/v1/models/unload`.
+
+**Why LM Studio instead of Ollama-in-Docker**: LM Studio runs natively on Windows and supports NVIDIA+AMD multi-GPU without WSL2 Vulkan driver hacks. No Vulkan ICD injection issues. GPU assignment is handled through LM Studio's GUI. See [[entities/lm-studio]].
 
 ---
 
-## Four AI models
+## AI models
 
-| Model | Role | Hardware |
-|---|---|---|
-| [[entities/qwen25]] `qwen2.5:7b` | Discord bot agent — tool calling, user interaction | GPU preferred |
-| [[entities/qwen35]] `qwen3.5:9b` | Pipeline text — segment classification, moment analysis | GPU preferred |
-| [[entities/qwen3-vl]] `qwen3-vl:8b` | Vision enrichment — titles, descriptions, score boosts | GPU preferred |
-| [[entities/faster-whisper]] `large-v3` | Speech-to-text transcription | GPU (float16) → CPU (int8) fallback |
+| Model | LM Studio ID | Role | Hardware |
+|---|---|---|---|
+| [[entities/qwen35]] | `qwen/qwen3.5-35b-a3b` (best) or `qwen/qwen3.5-9b` | Pipeline text — segment classification + moment detection; also Discord agent | GPU (LM Studio manages) |
+| [[entities/qwen3-vl]] | `qwen/qwen3-vl-8b` or `qwen/qwen2.5-vl-7b` | Vision enrichment — frame scoring, titles, descriptions | GPU (LM Studio manages) |
+| [[entities/faster-whisper]] | `large-v3` | Speech-to-text transcription (Stages 2 and 7) | GPU via CUDA → CPU (int8) fallback |
 
-Only **one model occupies VRAM at a time**. The pipeline explicitly unloads models between stages. See [[concepts/vram-budget]].
+Model IDs are set via `config/models.json` (managed through the dashboard Models panel). LM Studio handles GPU assignment. The pipeline unloads models between stages via `POST /api/v1/models/unload`. See [[concepts/vram-budget]] and [[entities/lm-studio]] for 9B vs 35B behavior differences.
+
+> [!note] 35B vs 9B tradeoffs
+> The 35B model (`qwen3.5-35b-a3b`) produces better moment detection but has permanently-enabled thinking mode in LM Studio (cannot be disabled). Pipeline is designed for this — generous `max_tokens` lets it finish reasoning + answer. 9B is much faster and works correctly with `chat_template_kwargs` suppressing thinking. Both are supported.
 
 ---
 
@@ -102,12 +106,13 @@ Full detail: [[concepts/clipping-pipeline]]
 ## Key design decisions
 
 - **Local-only inference**: all models run on user hardware; no API keys, no per-token costs
-- **One model in VRAM at a time**: explicit unloading between stages prevents OOM; `OLLAMA_MAX_LOADED_MODELS=1`
-- **Whisper runs on GPU when available**: unloads Ollama first, loads Whisper GPU, then reverses; CPU int8 fallback
+- **LM Studio for LLM inference**: runs natively on Windows; supports NVIDIA+AMD multi-GPU without WSL2 driver hacks; OpenAI-compatible API
+- **One model in VRAM at a time**: explicit unloading between stages prevents OOM; pipeline calls `POST /api/v1/models/unload` at stage transitions
+- **Whisper runs on GPU when available**: runs inside Docker with NVIDIA CUDA; unloads LLM model first; CPU int8 fallback
 - **Vision is non-gatekeeping**: vision enrichment can only boost scores, never eliminate clips; frame content is often visually boring even when audio is clip-worthy
 - **Time-bucket distribution**: prevents early-VOD bias by guaranteeing clip selection from each time bucket
 - **Blur-fill rendering**: full 16:9 content visible on 9:16 canvas — no information loss from hard crop
-- **Two text models**: `qwen3.5:9b` for pipeline (better moment detection), `qwen2.5:7b` for Discord (reliable tool calling with small models)
+- **Two text models**: `qwen3.5-9b-instruct` for pipeline (better moment detection), `qwen2.5-7b-instruct` for Discord (reliable tool calling with small models)
 
 ---
 
@@ -115,10 +120,10 @@ Full detail: [[concepts/clipping-pipeline]]
 
 | File | Purpose |
 |---|---|
-| `docker-compose.yml` | Containers, volumes, GPU/CPU profiles, Ollama env vars |
-| `Dockerfile` | CUDA 12.3 + Node.js 22 + Python + OpenClaw + Whisper large-v3 |
+| `docker-compose.yml` | Single `stream-clipper` service; NVIDIA GPU for Whisper; `extra_hosts` for `host.docker.internal` |
+| `Dockerfile` | CUDA 12.3 + Node.js 22 + Python + OpenClaw + Whisper large-v3 (stream-clipper image) |
 | `scripts/clip-pipeline.sh` | The full 8-stage pipeline (~1,700 lines) |
-| `scripts/entrypoint.sh` | Container startup: Ollama wait, model pull, gateway + dashboard start |
+| `scripts/entrypoint.sh` | Container startup: LM Studio wait, gateway + dashboard start |
 | `config/openclaw.json` | Model providers, agent config, compaction settings, Discord channels |
 | `config/exec-approvals.json` | Command execution allowlist for the agent |
 | `workspace/AGENTS.md` | Agent behavior rules, style/type inference, exec rules |

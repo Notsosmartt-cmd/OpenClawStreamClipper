@@ -282,8 +282,10 @@ async function fetchStages() {
 // --- AI Models ---
 let currentModels = {};
 let pendingModels = {};
-let availableOllama = [];
+let availableLmStudio = [];
 let availableWhisper = [];
+let suggestedModels = {}; // keyed by role: { id, reason, alternatives? }
+let contextLengthGuide = []; // [{value, label}]
 
 async function fetchModels() {
     try {
@@ -296,8 +298,10 @@ async function fetchModels() {
 
         currentModels = configData.config || {};
         pendingModels = { ...currentModels };
-        availableOllama = availData.ollama || [];
+        availableLmStudio = availData.lmstudio || [];
         availableWhisper = availData.whisper || [];
+        suggestedModels = configData.suggested || {};
+        contextLengthGuide = configData.context_length_guide || [];
 
         renderModels(configData.roles || {});
     } catch (e) {
@@ -322,61 +326,138 @@ function renderModels(roles) {
         whisper_model: "\u{1F3A4}",
     };
 
-    grid.innerHTML = roleOrder.map(key => {
+    const modelCards = roleOrder.map(key => {
         const role = roles[key];
         if (!role) return "";
 
         const current = role.current || "";
-        const defaultModel = role.default || "";
         const isWhisper = role.provider === "whisper";
         const icon = iconMap[key] || "";
+        const suggestion = suggestedModels[key] || {};
+        const suggestedId = suggestion.id || "";
+        const suggestedReason = suggestion.reason || "";
+        const suggestedAlts = suggestion.alternatives || [];
+
         const stages = (stageMap[key] || []).map(s =>
             `<span class="model-stage-tag">${s}</span>`
         ).join("");
 
+        // Helper: is a model ID a match for the suggestion (exact or alternative)
+        const isSuggestedMatch = (id) =>
+            id === suggestedId || suggestedAlts.some(a => id.toLowerCase().includes(a.toLowerCase()));
+
         let options = "";
+        let statusHtml = "";
+
         if (isWhisper) {
             options = availableWhisper.map(m => {
                 const sel = m.name === current ? "selected" : "";
-                return `<option value="${m.name}" ${sel}>${m.name} (${m.size})</option>`;
+                const star = m.name === suggestedId ? "⭐ " : "";
+                return `<option value="${m.name}" ${sel}>${star}${m.name} (${m.size}) — ${m.description}</option>`;
             }).join("");
             if (!availableWhisper.some(m => m.name === current)) {
                 options = `<option value="${current}" selected>${current}</option>` + options;
             }
         } else {
-            options = availableOllama.map(m => {
-                const sel = m.name === current ? "selected" : "";
-                const size = m.size_gb ? `${m.size_gb} GB` : "";
-                const params = m.parameter_size || "";
-                const detail = [params, size].filter(Boolean).join(", ");
-                return `<option value="${m.name}" ${sel}>${m.name}${detail ? ` (${detail})` : ""}</option>`;
-            }).join("");
-            if (!availableOllama.some(m => m.name === current)) {
-                options = `<option value="${current}" selected>${current} (not downloaded)</option>` + options;
+            // LM Studio models
+            if (availableLmStudio.length === 0) {
+                // LM Studio unreachable or no models loaded
+                options = `<option value="${current}" selected>${current}</option>`;
+                statusHtml = `
+                    <div class="model-status model-status-warn">
+                        ⚠ LM Studio returned no models — make sure the server is running and at least one model is loaded.
+                    </div>`;
+            } else {
+                options = availableLmStudio.map(m => {
+                    const sel = m.name === current ? "selected" : "";
+                    const star = isSuggestedMatch(m.name) ? "⭐ " : "";
+                    return `<option value="${m.name}" ${sel}>${star}${m.name}</option>`;
+                }).join("");
+
+                const currentInList = availableLmStudio.some(m => m.name === current);
+                if (!currentInList) {
+                    // Current model isn't loaded in LM Studio
+                    options = `<option value="${current}" selected>⚠ ${current} — not loaded in LM Studio</option>` + options;
+                    statusHtml = `
+                        <div class="model-status model-status-warn">
+                            ⚠ <strong>${current}</strong> isn't currently loaded in LM Studio.
+                            Open LM Studio, load this model, then refresh — or pick a loaded model below.
+                        </div>`;
+                } else if (suggestedId && current !== suggestedId && !isSuggestedMatch(current)) {
+                    // Model is loaded but isn't the suggested one — soft guidance
+                    const suggestedLoaded = availableLmStudio.some(m => isSuggestedMatch(m.name));
+                    if (suggestedLoaded) {
+                        statusHtml = `
+                            <div class="model-status model-status-tip">
+                                💡 <strong>${suggestedId}</strong> is recommended for this role — it's loaded and available above.
+                                <span class="model-status-reason">${suggestedReason}</span>
+                            </div>`;
+                    }
+                }
             }
         }
 
-        const isDefault = current === defaultModel;
-        const defaultBadge = isDefault
-            ? '<span class="badge badge-green" style="font-size: 0.65rem;">default</span>'
-            : `<span class="badge badge-yellow" style="font-size: 0.65rem; cursor: pointer;" onclick="resetModel('${key}')" title="Click to reset">custom</span>`;
+        // Badge: green if using suggested model, yellow if custom
+        const usingRecommended = isWhisper
+            ? current === suggestedId
+            : isSuggestedMatch(current);
+        const badge = usingRecommended
+            ? '<span class="badge badge-green" style="font-size: 0.65rem;">recommended</span>'
+            : `<span class="badge badge-yellow" style="font-size: 0.65rem; cursor: pointer;" onclick="resetModel('${key}')" title="Click to switch to recommended model">custom</span>`;
 
         return `
             <div class="model-card" id="model-card-${key}">
                 <div class="model-card-header">
                     <span class="model-card-icon">${icon}</span>
                     <span class="model-card-label">${role.label}</span>
-                    ${defaultBadge}
+                    ${badge}
                 </div>
                 <div class="model-card-desc">${role.description}</div>
                 <div class="model-card-stages">${stages}</div>
                 <select class="model-select" id="sel-${key}" onchange="onModelChange('${key}', this.value)">
                     ${options}
                 </select>
+                ${statusHtml}
             </div>
         `;
     }).join("");
 
+    // Context length card
+    const currentCtx = pendingModels.context_length || currentModels.context_length || 8192;
+    const ctxOptions = contextLengthGuide.length
+        ? contextLengthGuide.map(g =>
+            `<option value="${g.value}" ${g.value === currentCtx ? "selected" : ""}>${g.label}</option>`
+          ).join("")
+        : `<option value="${currentCtx}" selected>${currentCtx}</option>`;
+
+    const ctxChanged = pendingModels.context_length !== undefined &&
+                       pendingModels.context_length !== (currentModels.context_length || 8192);
+    const ctxBadge = ctxChanged
+        ? '<span class="badge badge-yellow" style="font-size:0.65rem;">unsaved</span>'
+        : '<span class="badge badge-green" style="font-size:0.65rem;">active</span>';
+
+    const ctxCard = `
+        <div class="model-card ${ctxChanged ? "model-card-changed" : ""}" id="model-card-context_length">
+            <div class="model-card-header">
+                <span class="model-card-icon">📐</span>
+                <span class="model-card-label">Context Window</span>
+                ${ctxBadge}
+            </div>
+            <div class="model-card-desc">
+                Token budget for LLM prompt + response. Set at model load time via LM Studio API.
+                Larger context = more VRAM for the KV cache. Tune to your GPU.
+            </div>
+            <select class="model-select" id="sel-context_length"
+                    onchange="onModelChange('context_length', parseInt(this.value))">
+                ${ctxOptions}
+            </select>
+            <div class="model-status model-status-tip" style="margin-top:8px;">
+                ⚠ Takes effect when the model is loaded fresh. If already loaded in LM Studio with
+                a different context, unload it first — the pipeline will reload it automatically.
+            </div>
+        </div>`;
+
+    grid.innerHTML = modelCards + ctxCard;
     updateSaveBar();
 }
 
@@ -386,12 +467,19 @@ function onModelChange(key, value) {
 }
 
 function resetModel(key) {
-    const defaults = { text_model: "qwen3.5:9b", vision_model: "qwen3-vl:8b", whisper_model: "large-v3" };
+    const suggestion = suggestedModels[key];
+    if (!suggestion) return;
+    const suggestedId = suggestion.id;
     const sel = document.getElementById(`sel-${key}`);
-    if (sel && defaults[key]) {
-        sel.value = defaults[key];
-        pendingModels[key] = defaults[key];
+    if (!sel || !suggestedId) return;
+    // Only switch if the suggested model is actually in the list
+    const optionExists = Array.from(sel.options).some(o => o.value === suggestedId);
+    if (optionExists) {
+        sel.value = suggestedId;
+        pendingModels[key] = suggestedId;
         updateSaveBar();
+    } else {
+        alert(`${suggestedId} isn't loaded in LM Studio yet.\nOpen LM Studio → load that model → then refresh.`);
     }
 }
 
@@ -406,6 +494,10 @@ function updateSaveBar() {
             changes.push(`${label}: ${currentModels[key]} \u2192 ${pendingModels[key]}`);
         }
     }
+    if (pendingModels.context_length !== undefined &&
+        pendingModels.context_length !== (currentModels.context_length || 8192)) {
+        changes.push(`Context: ${currentModels.context_length || 8192} \u2192 ${pendingModels.context_length}`);
+    }
 
     if (changes.length > 0) {
         summary.textContent = changes.join(" | ");
@@ -415,11 +507,14 @@ function updateSaveBar() {
     }
 
     // Highlight changed cards
-    for (const key of ["text_model", "vision_model", "whisper_model"]) {
+    for (const key of ["text_model", "vision_model", "whisper_model", "context_length"]) {
         const card = document.getElementById(`model-card-${key}`);
         if (card) {
-            card.classList.toggle("model-card-changed",
-                pendingModels[key] !== currentModels[key]);
+            const isChanged = key === "context_length"
+                ? (pendingModels.context_length !== undefined &&
+                   pendingModels.context_length !== (currentModels.context_length || 8192))
+                : pendingModels[key] !== currentModels[key];
+            card.classList.toggle("model-card-changed", isChanged);
         }
     }
 }
@@ -446,12 +541,161 @@ async function saveModels() {
     }
 }
 
+// --- Hardware Configuration ---
+let currentHardware = {};
+let pendingHardware = {};
+
+const WHISPER_DESCS = {
+    cuda: "float16 — fast, requires NVIDIA GPU (~6–7 GB VRAM).",
+    cpu:  "int8 — works everywhere, slower. Uses system RAM.",
+};
+
+async function fetchHardware() {
+    try {
+        const res = await fetch("/api/hardware");
+        const data = await res.json();
+        currentHardware = data.config || {};
+        pendingHardware = { ...currentHardware };
+        renderHardware(data);
+    } catch (e) {
+        console.error("Failed to fetch hardware config:", e);
+        document.getElementById("hardware-grid").innerHTML =
+            '<div class="empty-state">Failed to load hardware config</div>';
+    }
+}
+
+function renderHardware(data) {
+    const grid = document.getElementById("hardware-grid");
+    const config = data.config || {};
+    const whisperDevice = pendingHardware.whisper_device ?? config.whisper_device ?? "cuda";
+
+    const whisperOptions = [
+        { value: "cuda", label: "GPU — NVIDIA CUDA (float16)" },
+        { value: "cpu",  label: "CPU (int8)" },
+    ].map(o =>
+        `<option value="${o.value}" ${whisperDevice === o.value ? "selected" : ""}>${o.label}</option>`
+    ).join("");
+
+    grid.innerHTML = `
+        <div class="hw-form">
+            <div class="hw-field">
+                <label class="hw-label">Whisper Transcription Device</label>
+                <select class="model-select" id="sel-whisper_device" onchange="onHardwareDropdown('whisper_device', this.value)">
+                    ${whisperOptions}
+                </select>
+                <div class="hw-hint">${WHISPER_DESCS[whisperDevice] || ""}</div>
+            </div>
+            <div class="hw-hint hw-hint-note" style="margin-top: 10px;">
+                💡 LLM GPU assignment is managed in <strong>LM Studio</strong> — use its model load dialog to choose which GPU(s) each model uses. No restart required for LLM GPU changes.
+            </div>
+        </div>`;
+
+    updateHardwareSaveBar();
+    document.getElementById("hardware-restart-notice").style.display = "none";
+}
+
+function onHardwareDropdown(key, value) {
+    pendingHardware[key] = value;
+    renderHardware({ config: pendingHardware });
+    updateHardwareSaveBar();
+}
+
+function updateHardwareSaveBar() {
+    const bar = document.getElementById("hardware-save-bar");
+    const summary = document.getElementById("hardware-change-summary");
+    const changed = pendingHardware.whisper_device !== undefined &&
+                    pendingHardware.whisper_device !== currentHardware.whisper_device;
+    if (changed) {
+        summary.textContent = `Whisper: ${currentHardware.whisper_device} \u2192 ${pendingHardware.whisper_device}`;
+        bar.style.display = "flex";
+    } else {
+        bar.style.display = "none";
+    }
+}
+
+async function saveHardware() {
+    const btn = document.getElementById("btn-save-hardware");
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    try {
+        const { ok, data } = await apiRequest("/api/hardware", "PUT", pendingHardware);
+        if (ok) {
+            currentHardware = { ...data.config };
+            pendingHardware = { ...currentHardware };
+            updateHardwareSaveBar();
+
+            // Show restart notice with button + fallback command
+            document.getElementById("hardware-restart-cmd").textContent =
+                "Or run manually:  docker compose restart";
+            document.getElementById("hardware-restart-status").textContent = "";
+            document.getElementById("hardware-restart-notice").style.display = "block";
+        } else {
+            alert(data.error || "Failed to save hardware configuration");
+        }
+    } catch (e) {
+        alert("Failed to save: " + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Save";
+    }
+}
+
+async function restartServices() {
+    const btn = document.getElementById("btn-restart-services");
+    const status = document.getElementById("hardware-restart-status");
+    btn.disabled = true;
+    btn.textContent = "Restarting...";
+    status.textContent = "";
+
+    try {
+        const { ok, data } = await apiRequest("/api/restart", "POST", {});
+        if (ok) {
+            status.textContent = "✓ Restarting…";
+            btn.textContent = "Restarting…";
+            setTimeout(async () => {
+                status.textContent = "Waiting for container…";
+                let attempts = 0;
+                const poll = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const res = await fetch("/api/status");
+                        const s = await res.json();
+                        if (s.docker && s.lm_studio) {
+                            clearInterval(poll);
+                            status.textContent = "✓ Services back online";
+                            btn.textContent = "Restart Services";
+                            btn.disabled = false;
+                            fetchModels();
+                        }
+                    } catch (_) {}
+                    if (attempts > 30) {
+                        clearInterval(poll);
+                        status.textContent = "Timeout — check Docker Desktop";
+                        btn.textContent = "Restart Services";
+                        btn.disabled = false;
+                    }
+                }, 5000);
+            }, 5000);
+        } else {
+            status.textContent = "✗ " + (data.error || "Restart failed");
+            btn.textContent = "Restart Services";
+            btn.disabled = false;
+        }
+    } catch (e) {
+        status.textContent = "✗ " + e.message;
+        btn.textContent = "Restart Services";
+        btn.disabled = false;
+    }
+}
+
 // --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
     fetchVods();
     fetchClips();
     fetchStages();
     fetchModels();
+    fetchHardware();
     pollStatus();
     setInterval(pollStatus, 3000);
 
@@ -462,4 +706,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-refresh-vods").addEventListener("click", fetchVods);
     document.getElementById("btn-refresh-models").addEventListener("click", fetchModels);
     document.getElementById("btn-save-models").addEventListener("click", saveModels);
+    document.getElementById("btn-refresh-hardware").addEventListener("click", fetchHardware);
+    document.getElementById("btn-save-hardware").addEventListener("click", saveHardware);
+    document.getElementById("btn-restart-services").addEventListener("click", restartServices);
 });

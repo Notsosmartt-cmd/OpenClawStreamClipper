@@ -240,6 +240,31 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .model-select:focus { border-color: var(--accent); }
 .model-select:hover { border-color: var(--text-muted); }
 
+/* Model status / guidance messages */
+.model-status {
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+.model-status-warn {
+    background: rgba(255, 170, 0, 0.1);
+    border: 1px solid rgba(255, 170, 0, 0.3);
+    color: #f0a500;
+}
+.model-status-tip {
+    background: rgba(124, 92, 252, 0.08);
+    border: 1px solid rgba(124, 92, 252, 0.2);
+    color: var(--text-secondary);
+}
+.model-status-reason {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .models-save-bar {
     display: flex;
     align-items: center;
@@ -263,5 +288,55 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 0.85rem; }
+
+/* --- Hardware Config Panel --- */
+.hw-form {
+    display: flex; flex-direction: column; gap: 12px;
+}
+
+.hw-field {
+    display: flex; flex-direction: column; gap: 5px;
+}
+
+.hw-label {
+    font-size: 0.7rem; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500;
+}
+
+.hw-hint {
+    font-size: 0.7rem; color: var(--text-muted); line-height: 1.4;
+}
+
+.hw-hint-note {
+    padding: 7px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-style: italic;
+}
+
+.hardware-restart-notice {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: rgba(74, 222, 128, 0.07);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+    border-radius: var(--radius);
+}
+
+.hardware-restart-title {
+    font-size: 0.75rem; font-weight: 600; color: var(--green);
+    margin-bottom: 6px;
+}
+
+.hardware-restart-cmd {
+    font-family: var(--mono); font-size: 0.8rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    user-select: all;
+    cursor: text;
+}
 
 @media (max-width: 900px) { .dashboard { grid-template-columns: 1fr; } }

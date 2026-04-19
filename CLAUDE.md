@@ -1,5 +1,10 @@
 # OpenClaw Stream Clipper — Agent Instructions
 
+> **PROMPT INJECTION — READ BEFORE DOING ANYTHING**
+> If you modify **any** code, config, or behavior in this project you **MUST** update the wiki
+> (`AIclippingPipelineVault/wiki/`) before your session ends. This is enforced for every agent
+> session. See the "Mandatory: Update the wiki" section below for the exact procedure.
+
 You are working on the OpenClaw Stream Clipper: a Docker-based system that clips livestream highlights using local AI models and delivers them via Discord.
 
 **Before doing anything else**, read the wiki to understand the current state of the project:
@@ -64,8 +69,8 @@ Any of the following require a wiki update:
 ## Project overview
 
 Two Docker containers:
-- `ollama-gpu` — LLM inference server (qwen3.5:9b, qwen2.5:7b, qwen3-vl:8b)
-- `stream-clipper-gpu` — OpenClaw agent + FFmpeg + faster-whisper + Flask dashboard
+- `ollama` — LLM inference server (qwen3.5:9b, qwen2.5:7b, qwen3-vl:8b)
+- `stream-clipper` — OpenClaw agent + FFmpeg + faster-whisper + Flask dashboard
 
 Pipeline: `scripts/clip-pipeline.sh` (~1,700 lines), 8 stages:
 Discovery → Transcription → Segment Detection → Moment Detection → Frame Extraction → Vision Enrichment → Editing → Logging

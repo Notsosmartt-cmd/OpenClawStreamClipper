@@ -12,10 +12,13 @@ CLIPS_DIR="${CLIP_CLIPS_DIR:-/root/VODs/Clips_Ready}"
 TEMP_DIR="/tmp/clipper"
 PROCESSED_LOG="${VODS_DIR}/processed.log"
 WHISPER_CACHE="/root/.cache/whisper-models"
-OLLAMA_URL="http://ollama:11434"
-TEXT_MODEL="${CLIP_TEXT_MODEL:-qwen3.5:9b}"
-VISION_MODEL="${CLIP_VISION_MODEL:-qwen3-vl:8b}"
+LLM_URL="${CLIP_LLM_URL:-http://host.docker.internal:1234}"
+TEXT_MODEL="${CLIP_TEXT_MODEL:-qwen/qwen3.5-9b}"
+VISION_MODEL="${CLIP_VISION_MODEL:-qwen/qwen3.5-9b}"
 WHISPER_MODEL="${CLIP_WHISPER_MODEL:-large-v3}"
+# Context length passed to LM Studio when loading models.
+# Tune based on VRAM: 4096 (~2 GB KV), 8192 (~4 GB), 16384 (~8 GB), 32768 (~16 GB).
+CONTEXT_LENGTH="${CLIP_CONTEXT_LENGTH:-8192}"
 
 # Parse arguments
 CLIP_STYLE="auto"
@@ -35,13 +38,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Always write a persistent log file ---
-# This ensures logs are available regardless of whether the pipeline was
-# started manually or by the bot via exec. Tee duplicates all output to
-# both stdout (for OpenClaw/terminal) and the log file.
+# PIPELINE_LOG: ephemeral per-run log in /tmp — cleared by the EXIT trap.
+# PERSISTENT_LOG: timestamped file in Clips_Ready/.pipeline_logs/ that
+# survives the cleanup trap and is always available for post-run review.
 PIPELINE_LOG="$TEMP_DIR/pipeline.log"
 mkdir -p "$TEMP_DIR"
-exec > >(tee -a "$PIPELINE_LOG") 2>&1
-echo "=== Pipeline started at $(date -Iseconds) | style=$CLIP_STYLE vod=$TARGET_VOD type=$STREAM_TYPE_HINT ===" >> "$PIPELINE_LOG"
+
+LOG_TIMESTAMP=$(date -u +%Y%m%d_%H%M%S)
+LOG_VOD_SLUG=$(basename "${TARGET_VOD:-unknown}" | sed 's/\.[^.]*$//' | tr ' ' '_' | tr -cd '[:alnum:]_-' | cut -c1-40)
+PERSISTENT_LOG_DIR="${CLIPS_DIR}/.pipeline_logs"
+mkdir -p "$PERSISTENT_LOG_DIR"
+PERSISTENT_LOG="${PERSISTENT_LOG_DIR}/${LOG_TIMESTAMP}_${LOG_VOD_SLUG}.log"
+
+exec > >(tee -a "$PIPELINE_LOG" "$PERSISTENT_LOG") 2>&1
+echo "=== Pipeline started at $(date -Iseconds) | style=$CLIP_STYLE vod=$TARGET_VOD type=$STREAM_TYPE_HINT ==="
+echo "=== Persistent log: $PERSISTENT_LOG ==="
 
 # Colors for log output
 RED='\033[0;31m'
@@ -63,14 +74,30 @@ set_stage() {
     log ">>> $1"
 }
 
-# Unload an Ollama model from VRAM so Whisper (or another model) can use it.
-# Uses keep_alive=0 which tells Ollama to immediately release VRAM.
-unload_ollama() {
+# Unload a model from LM Studio to free VRAM before Whisper loads.
+# LM Studio's JIT+TTL handles lifecycle automatically, but explicit
+# unload ensures VRAM is freed before transcription stages.
+unload_model() {
     local model="$1"
-    log "Unloading $model from VRAM..."
-    curl -sf "$OLLAMA_URL/api/generate" \
-        -d "{\"model\": \"$model\", \"keep_alive\": 0}" > /dev/null 2>&1 || true
+    log "Requesting unload of '$model' from VRAM..."
+    curl -sf -X POST "$LLM_URL/api/v1/models/unload" \
+        -H "Content-Type: application/json" \
+        -d "{\"instance_id\": \"$model\"}" > /dev/null 2>&1 || true
     sleep 1  # brief pause for VRAM release
+}
+
+load_model() {
+    # Load a model into LM Studio with a specific context length.
+    # If the model is already loaded, LM Studio returns an error — that's fine,
+    # we log a warning and continue (inference will use the currently-loaded context).
+    local model="$1"
+    local ctx="${2:-$CONTEXT_LENGTH}"
+    log "Pre-loading '$model' into LM Studio (context_length=$ctx)..."
+    curl -sf -X POST "$LLM_URL/api/v1/models/load" \
+        -H "Content-Type: application/json" \
+        -d "{\"model\": \"$model\", \"context_length\": $ctx}" > /dev/null 2>&1 || \
+        warn "Model pre-load returned an error — '$model' may already be loaded (context may differ)"
+    sleep 2  # allow model to fully initialize before first inference request
 }
 
 cleanup() {
@@ -241,9 +268,9 @@ log "VOD duration: $((VOD_DURATION / 60)) minutes ($VOD_DURATION seconds)"
 set_stage "Stage 2/8 — Audio Transcription"
 log "=== Stage 2/8 — Audio Transcription ==="
 
-# Free VRAM: unload any Ollama models before Whisper needs the GPU
-unload_ollama "$TEXT_MODEL"
-unload_ollama "$VISION_MODEL"
+# Free VRAM: unload any LM Studio models before Whisper needs the GPU
+unload_model "$TEXT_MODEL"
+unload_model "$VISION_MODEL"
 
 AUDIO_FILE="$TEMP_DIR/audio.wav"
 TRANSCRIPT_CACHE_DIR="${VODS_DIR}/.transcriptions"
@@ -306,13 +333,18 @@ except ImportError:
 cache_dir = "/root/.cache/whisper-models"
 chunk_seconds = 1200  # must match CHUNK_SECONDS above
 whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
+whisper_device = os.environ.get("CLIP_WHISPER_DEVICE", "cuda")
+whisper_compute = os.environ.get("CLIP_WHISPER_COMPUTE", "float16" if whisper_device == "cuda" else "int8")
 
-# Try GPU first, fall back to CPU
-try:
-    model = WhisperModel(whisper_model, device="cuda", compute_type="float16", download_root=cache_dir)
-    print(f"[WHISPER] Using GPU (float16) with {whisper_model}", file=sys.stderr)
-except Exception as e:
-    print(f"[WHISPER] GPU failed ({e}), falling back to CPU", file=sys.stderr)
+if whisper_device == "cuda":
+    try:
+        model = WhisperModel(whisper_model, device="cuda", compute_type=whisper_compute, download_root=cache_dir)
+        print(f"[WHISPER] Using GPU ({whisper_compute}) with {whisper_model}", file=sys.stderr)
+    except Exception as e:
+        print(f"[WHISPER] GPU failed ({e}), falling back to CPU", file=sys.stderr)
+        model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
+        print(f"[WHISPER] Using CPU (int8) with {whisper_model}", file=sys.stderr)
+else:
     model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
     print(f"[WHISPER] Using CPU (int8) with {whisper_model}", file=sys.stderr)
 
@@ -402,14 +434,18 @@ log "Transcription complete. Output: $TEMP_DIR/transcript.json"
 set_stage "Stage 3/8 — Segment Detection"
 log "=== Stage 3/8 — Segment Detection ==="
 
+# Ensure the text model is loaded with the right context before first LLM call.
+# After Stage 2 (Whisper), all models are unloaded, so we load fresh here.
+load_model "$TEXT_MODEL"
+
 python3 << PYEOF
-import json, sys, time
+import json, re, sys, time
 try:
     import urllib.request
 except:
     pass
 
-OLLAMA_URL = "$OLLAMA_URL"
+LLM_URL = "$LLM_URL"
 TEXT_MODEL = "$TEXT_MODEL"
 TEMP_DIR = "/tmp/clipper"
 STREAM_TYPE_HINT = "$STREAM_TYPE_HINT"
@@ -487,26 +523,61 @@ Respond with ONLY the single type name. Nothing else."""
     payload = json.dumps({
         "model": TEXT_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "think": False,
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 10, "num_ctx": 8192}
+        "temperature": 0.1,
+        # 3000 tokens: Qwen3.5-35B-A3B ignores chat_template_kwargs and uses
+        # ~1500–2500 reasoning tokens on a simple classification before writing
+        # the 1-word answer. 1024 caused finish=length on almost every chunk,
+        # silently defaulting everything to just_chatting.
+        "max_tokens": 3000,
+        "chat_template_kwargs": {"enable_thinking": False},
     }).encode()
 
     seg_type = "just_chatting"  # default
     try:
         req = urllib.request.Request(
-            f"{OLLAMA_URL}/api/chat",
+            f"{LLM_URL}/v1/chat/completions",
             data=payload,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             result = json.loads(resp.read().decode())
-            answer = result.get("message", {}).get("content", "").strip().lower()
-            # Extract the type from the response (model might add extra text)
-            for t in ["gaming", "irl", "just_chatting", "reaction", "debate"]:
-                if t in answer:
-                    seg_type = t
-                    break
+            msg = result["choices"][0]["message"]
+            raw = msg.get("content") or ""
+            finish_reason = result["choices"][0].get("finish_reason", "?")
+            reasoning_tokens = result.get("usage", {}).get(
+                "completion_tokens_details", {}).get("reasoning_tokens", 0)
+            if not raw:
+                reasoning_content = str(msg.get("reasoning_content", ""))
+                if finish_reason == "stop" and reasoning_content:
+                    # Natural termination: model finished thinking, answer is in
+                    # reasoning_content (35B ignores enable_thinking=False).
+                    print(f"  Segment classify: reasoning_content fallback "
+                          f"(finish=stop, reasoning_tokens={reasoning_tokens})",
+                          file=sys.stderr)
+                    raw = reasoning_content
+                elif finish_reason == "length" and reasoning_content:
+                    # Cut off mid-think: scan the last 600 chars of reasoning for
+                    # a conclusion. Models often write their tentative answer
+                    # ("this is gaming", "just_chatting content") near the end of
+                    # reasoning before being truncated.
+                    tail = reasoning_content[-600:]
+                    print(f"  Segment classify: scanning tail of truncated reasoning "
+                          f"(finish=length, reasoning_tokens={reasoning_tokens})",
+                          file=sys.stderr)
+                    raw = tail
+                else:
+                    r_preview = reasoning_content[:80]
+                    print(f"  Segment classify: empty content (finish={finish_reason}, "
+                          f"reasoning_tokens={reasoning_tokens}, preview={r_preview!r})",
+                          file=sys.stderr)
+            if raw:
+                answer = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip().lower()
+                # Extract the type from the response (model might add extra text)
+                for t in ["gaming", "irl", "just_chatting", "reaction", "debate"]:
+                    if t in answer:
+                        seg_type = t
+                        break
     except Exception as e:
         print(f"  Segment classification failed at {int(chunk_start)}s: {e}", file=sys.stderr)
 
@@ -579,7 +650,7 @@ try:
 except:
     pass
 
-OLLAMA_URL = "$OLLAMA_URL"
+LLM_URL = "$LLM_URL"
 TEXT_MODEL = "$TEXT_MODEL"
 CLIP_STYLE = "$CLIP_STYLE"
 TEMP_DIR = "/tmp/clipper"
@@ -871,47 +942,105 @@ def time_str_to_seconds(time_str):
         pass
     return None
 
-def call_ollama(prompt, model=TEXT_MODEL, max_retries=2, timeout=120, num_predict=800, num_ctx=32768, allow_think=False):
-    """Call Ollama API. Handles both thinking and non-thinking models.
+def call_llm(prompt, model=TEXT_MODEL, max_retries=2, timeout=600, max_tokens=8000):
+    """Call LM Studio (OpenAI-compatible) API.
 
-    For thinking models (qwen3-vl, qwen3.5): thinking tokens count toward num_predict.
-    If content comes back empty but thinking exists, we retry with a larger budget.
+    === Token budget ===
+    max_tokens=8000: The Qwen3.5-35B-A3B model has a default thinking budget
+    of ~8192 tokens and CANNOT have thinking disabled via chat_template_kwargs
+    in LM Studio (confirmed: LM Studio's OpenAI endpoint does not forward this
+    to the model's chat template for the 35B variant). The model WILL use
+    ~3000–6000 tokens on reasoning before producing its answer. Setting
+    max_tokens=8000 ensures it can finish thinking AND write the JSON output
+    without hitting the limit (finish_reason=length with empty content).
+
+    Smaller models (9B) have thinking disabled by default, so their token
+    use is much lower (~100–200 tokens). 8000 is still correct for them —
+    they just finish early.
+
+    === Timeout ===
+    timeout=600: At ~30 tok/s output, 8000 tokens takes ~267 s of generation
+    plus ~15 s for prefill. 600 s gives a 2× safety margin and prevents
+    queue backup — if a call times out, LM Studio still processes it, and a
+    retry floods the queue with duplicate requests, stalling all subsequent
+    chunks.
+
+    === reasoning_content fallback ===
+    When content is empty with finish_reason=stop, the 35B model has finished
+    naturally but put its answer in reasoning_content. Extract it from there.
+    finish_reason=length means the token limit was hit mid-think — retry.
+
+    Strips any stray <think>...</think> tags as a safety net.
     """
-    current_predict = num_predict
-
-    for attempt in range(max_retries + 1):  # +1 for thinking retry
+    for attempt in range(max_retries + 1):
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "think": allow_think,
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": current_predict, "num_ctx": num_ctx}
+            "temperature": 0.3,
+            "max_tokens": max_tokens,
+            "chat_template_kwargs": {"enable_thinking": False},
         }).encode()
 
         try:
             req = urllib.request.Request(
-                f"{OLLAMA_URL}/api/chat",
+                f"{LLM_URL}/v1/chat/completions",
                 data=payload,
                 headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode())
-                msg = result.get("message", {})
-                content = msg.get("content", "")
-                thinking = msg.get("thinking", "")
+                msg = result["choices"][0]["message"]
+                content = msg.get("content") or ""
+                finish_reason = result["choices"][0].get("finish_reason", "?")
+                usage = result.get("usage", {})
+                reasoning_tokens = usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0)
 
-                # If model returned thinking but empty content, it exhausted tokens on thinking
-                if not content and thinking and current_predict < num_predict * 3:
-                    think_tokens = len(thinking.split())
-                    new_predict = current_predict + think_tokens + 200
-                    print(f"  Thinking model used {think_tokens} think tokens, content empty. Retrying with num_predict={new_predict}", file=sys.stderr)
-                    current_predict = new_predict
+                if not content:
+                    reasoning_content = str(msg.get("reasoning_content", ""))
+                    if finish_reason == "stop" and reasoning_content:
+                        # 35B+ models that ignore chat_template_kwargs put their
+                        # entire answer in reasoning_content and return empty
+                        # content when they finish naturally (finish_reason=stop).
+                        # Extract the usable answer from reasoning_content.
+                        print(
+                            f"  LLM reasoning_content fallback (attempt {attempt+1}): "
+                            f"finish={finish_reason}, reasoning_tokens={reasoning_tokens}, "
+                            f"total_tokens={usage.get('completion_tokens', '?')}",
+                            file=sys.stderr
+                        )
+                        content = reasoning_content
+                    else:
+                        # Token limit hit mid-think: content is genuinely empty.
+                        r_preview = reasoning_content[:120]
+                        print(
+                            f"  LLM returned empty content (attempt {attempt+1}): "
+                            f"finish={finish_reason}, reasoning_tokens={reasoning_tokens}, "
+                            f"total_tokens={usage.get('completion_tokens', '?')}, "
+                            f"reasoning_preview={r_preview!r}",
+                            file=sys.stderr
+                        )
+                        if attempt < max_retries:
+                            time.sleep(5)
+                        continue
+
+                # Strip thinking tokens emitted inline (toggle OFF mode).
+                # Also strips any <think> wrapper that may appear in reasoning_content.
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                if not content:
+                    # reasoning_content was entirely a <think> block — retry
+                    if attempt < max_retries:
+                        time.sleep(5)
                     continue
-
+                if reasoning_tokens > 0:
+                    print(f"  LLM used {reasoning_tokens} reasoning tokens "
+                          f"(thinking not fully disabled — check LM Studio settings)",
+                          file=sys.stderr)
                 return content
+
         except Exception as e:
-            print(f"  Ollama call attempt {attempt+1}/{max_retries} failed: {e}", file=sys.stderr)
-            if attempt < max_retries - 1:
+            print(f"  LLM call attempt {attempt+1}/{max_retries+1} failed: {e}", file=sys.stderr)
+            if attempt < max_retries:
                 time.sleep(5)
     return None
 
@@ -1204,7 +1333,7 @@ If nothing stands out at all, respond: []"""
 
     print(f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): {seg_type}, {word_count} words...", file=sys.stderr)
 
-    response = call_ollama(prompt, num_predict=800)
+    response = call_llm(prompt)  # uses call_llm default max_tokens (3000)
     if response:
         chunk_moments = parse_llm_moments(response, int(chunk_start), int(chunk_end))
 
@@ -1584,8 +1713,15 @@ done <<< "$TIMESTAMPS"
 
 log "Extracted frames for $FRAME_COUNT moments"
 
-# Free VRAM: unload text model before loading vision model
-unload_ollama "$TEXT_MODEL"
+# Free VRAM before vision stage.
+# If TEXT_MODEL and VISION_MODEL are the same (e.g. qwen3.5-9b for both),
+# skip the unload/reload cycle — the model is already loaded and ready.
+if [ "$TEXT_MODEL" != "$VISION_MODEL" ]; then
+    unload_model "$TEXT_MODEL"
+    load_model "$VISION_MODEL"
+else
+    log "Text and vision model are the same ('$TEXT_MODEL') — skipping VRAM swap"
+fi
 
 # ============================================================
 # STAGE 6 — Vision Enrichment (NOT a gatekeeper)
@@ -1596,13 +1732,13 @@ set_stage "Stage 6/8 — Vision Enrichment"
 log "=== Stage 6/8 — Vision Enrichment ==="
 
 python3 << PYEOF
-import json, base64, os, sys, time
+import json, re, base64, os, sys, time
 try:
     import urllib.request
 except:
     pass
 
-OLLAMA_URL = "$OLLAMA_URL"
+LLM_URL = "$LLM_URL"
 VISION_MODEL = "$VISION_MODEL"
 TEMP_DIR = "/tmp/clipper"
 
@@ -1623,8 +1759,8 @@ enriched = []
 
 # Total stage timeout: 20 minutes max for all vision calls combined
 VISION_STAGE_START = time.time()
-VISION_STAGE_TIMEOUT = 1200  # 20 minutes
-VISION_PER_MOMENT_TIMEOUT = 90  # 90 seconds per moment (includes model load time)
+VISION_STAGE_TIMEOUT = 3600  # 1 hour — 35B model: up to ~220s/moment × 11 moments + margin
+VISION_PER_MOMENT_TIMEOUT = 300  # 5 min per moment — 35B models need ~200s per vision call
 
 for moment in moments:
     T = moment["timestamp"]
@@ -1692,25 +1828,52 @@ Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controv
 
         payload = json.dumps({
             "model": VISION_MODEL,
-            "messages": [{"role": "user", "content": prompt, "images": [img_b64]}],
-            "think": True,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+            ]}],
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 800, "num_ctx": 8192}
+            "temperature": 0.3,
+            # 6000 tokens: Qwen3.5-35B-A3B cannot have thinking disabled in LM Studio.
+            # It uses ~2000–4000 reasoning tokens on vision prompts before writing
+            # the JSON answer (~100 tokens). 6000 gives a buffer above its natural
+            # stopping point so it terminates cleanly (finish_reason=stop, not length).
+            "max_tokens": 6000,
+            "chat_template_kwargs": {"enable_thinking": False},
         }).encode()
 
         try:
             req = urllib.request.Request(
-                f"{OLLAMA_URL}/api/chat",
+                f"{LLM_URL}/v1/chat/completions",
                 data=payload,
                 headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=VISION_PER_MOMENT_TIMEOUT) as resp:
                 result = json.loads(resp.read().decode())
-                msg = result.get("message", {})
-                response_text = msg.get("content", "")
-                thinking_text = msg.get("thinking", "")
-                if thinking_text:
-                    print(f"  T={T} frame={frame_idx} thinking={len(thinking_text)}chars", file=sys.stderr)
+
+            msg = result["choices"][0]["message"]
+            raw_content = msg.get("content") or ""
+            finish_reason = result["choices"][0].get("finish_reason", "?")
+            reasoning_tokens = result.get("usage", {}).get(
+                "completion_tokens_details", {}).get("reasoning_tokens", 0)
+
+            if not raw_content:
+                reasoning_content = str(msg.get("reasoning_content", ""))
+                if finish_reason == "stop" and reasoning_content:
+                    # 35B+ models put answer in reasoning_content when they
+                    # finish naturally and chat_template_kwargs has no effect.
+                    print(f"  T={T} frame={frame_idx} reasoning_content fallback "
+                          f"(finish={finish_reason}, reasoning_tokens={reasoning_tokens})",
+                          file=sys.stderr)
+                    raw_content = reasoning_content
+                else:
+                    r_preview = reasoning_content[:80]
+                    print(f"  T={T} frame={frame_idx} empty content "
+                          f"(finish={finish_reason}, reasoning_tokens={reasoning_tokens}, "
+                          f"preview={r_preview!r})", file=sys.stderr)
+                    continue
+
+            response_text = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
 
             clean = response_text.strip()
             if "\`\`\`" in clean:
@@ -1724,13 +1887,21 @@ Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controv
             start = clean.find("{")
             end = clean.rfind("}") + 1
             if start >= 0 and end > start:
-                parsed = json.loads(clean[start:end])
-                v_score = int(parsed.get("score", 0))
-                if v_score > best_vision_score:
-                    best_vision_score = v_score
-                    best_vision_result = parsed
-                print(f"  T={T} frame={frame_idx} vision_score={v_score}", file=sys.stderr)
-                break
+                try:
+                    parsed = json.loads(clean[start:end])
+                    v_score = int(parsed.get("score", 0))
+                    if v_score > best_vision_score:
+                        best_vision_score = v_score
+                        best_vision_result = parsed
+                    if reasoning_tokens > 0:
+                        print(f"  T={T} frame={frame_idx} vision_score={v_score} "
+                              f"(thinking not disabled: {reasoning_tokens} reasoning tokens used)",
+                              file=sys.stderr)
+                    else:
+                        print(f"  T={T} frame={frame_idx} vision_score={v_score}", file=sys.stderr)
+                    break
+                except (json.JSONDecodeError, ValueError):
+                    print(f"  T={T} frame={frame_idx} JSON parse error: {clean[:80]}", file=sys.stderr)
             else:
                 print(f"  T={T} frame={frame_idx} no JSON in response: {response_text[:80]}", file=sys.stderr)
 
@@ -1798,7 +1969,7 @@ set_stage "Stage 7/8 — Editing and Export"
 log "=== Stage 7/8 — Editing and Export ==="
 
 # Free VRAM: unload vision model before Whisper needs the GPU for caption transcription
-unload_ollama "$VISION_MODEL"
+unload_model "$VISION_MODEL"
 
 CLIPS_MADE=0
 CLIP_FILES=()
@@ -1855,14 +2026,20 @@ from faster_whisper import WhisperModel
 cache_dir = "/root/.cache/whisper-models"
 temp_dir = "/tmp/clipper"
 whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
+whisper_device = os.environ.get("CLIP_WHISPER_DEVICE", "cuda")
+whisper_compute = os.environ.get("CLIP_WHISPER_COMPUTE", "float16" if whisper_device == "cuda" else "int8")
 
 # Load Whisper ONCE for all clips
-try:
-    model = WhisperModel(whisper_model, device="cuda", compute_type="float16", download_root=cache_dir)
-    print(f"[WHISPER] Batch caption mode: GPU (float16) with {whisper_model}", file=sys.stderr)
-except Exception as e:
-    print(f"[WHISPER] GPU failed ({e}), using CPU", file=sys.stderr)
+if whisper_device == "cuda":
+    try:
+        model = WhisperModel(whisper_model, device="cuda", compute_type=whisper_compute, download_root=cache_dir)
+        print(f"[WHISPER] Batch caption mode: GPU ({whisper_compute}) with {whisper_model}", file=sys.stderr)
+    except Exception as e:
+        print(f"[WHISPER] GPU failed ({e}), using CPU", file=sys.stderr)
+        model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
+else:
     model = WhisperModel(whisper_model, device="cpu", compute_type="int8", download_root=cache_dir)
+    print(f"[WHISPER] Batch caption mode: CPU (int8) with {whisper_model}", file=sys.stderr)
 
 # Find all clip audio files
 audio_files = sorted(glob.glob(f"{temp_dir}/clip_audio_*.wav"))

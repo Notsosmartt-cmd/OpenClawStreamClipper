@@ -3,7 +3,7 @@ title: "Context and Token Management"
 type: concept
 tags: [context, tokens, compaction, session, openclaw, qwen25]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-17
 ---
 
 # Context and Token Management
@@ -122,8 +122,8 @@ If the bot starts responding with text instead of running the pipeline:
 
 ```bash
 # Clear stale sessions
-docker exec stream-clipper-gpu bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-docker restart stream-clipper-gpu
+docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
+docker restart stream-clipper
 # Wait ~15 seconds for Discord reconnection
 ```
 

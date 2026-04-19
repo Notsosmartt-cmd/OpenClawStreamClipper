@@ -11,42 +11,50 @@ else
   echo "WARNING: DISCORD_BOT_TOKEN not set. Bot will not connect to Discord."
 fi
 
-# --- Wait for Ollama ---
-echo "Waiting for Ollama to become reachable..."
+# --- Read hardware config and export Whisper device vars ---
+# LLM backend is now managed by LM Studio on the host.
+# Only Whisper's device (cuda / cpu) is configured here.
+HARDWARE_CONFIG="/root/.openclaw/hardware.json"
+if [ -f "$HARDWARE_CONFIG" ]; then
+  WHISPER_DEVICE=$(python3 -c "import json; d=json.load(open('$HARDWARE_CONFIG')); print(d.get('whisper_device','cuda'))" 2>/dev/null || echo "cuda")
+  export CLIP_WHISPER_DEVICE="$WHISPER_DEVICE"
+  if [ "$WHISPER_DEVICE" = "cuda" ]; then
+    export CLIP_WHISPER_COMPUTE="float16"
+  else
+    export CLIP_WHISPER_COMPUTE="int8"
+  fi
+  echo "Hardware: whisper=$WHISPER_DEVICE ($CLIP_WHISPER_COMPUTE)"
+else
+  export CLIP_WHISPER_DEVICE="cuda"
+  export CLIP_WHISPER_COMPUTE="float16"
+  echo "Hardware: no config found — defaulting Whisper to CUDA"
+fi
+
+# --- Wait for LM Studio ---
+# LM Studio must be running on the Windows host with "Serve on Local Network" enabled.
+# Default port is 1234. Accessible from this container at host.docker.internal:1234.
+LM_STUDIO_URL="http://host.docker.internal:1234"
+echo "Waiting for LM Studio server at ${LM_STUDIO_URL}..."
 RETRIES=0
-MAX_RETRIES=60
-until curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; do
+MAX_RETRIES=30
+until curl -sf "${LM_STUDIO_URL}/v1/models" > /dev/null 2>&1; do
   RETRIES=$((RETRIES + 1))
   if [ "$RETRIES" -ge "$MAX_RETRIES" ]; then
-    echo "ERROR: Ollama not reachable after $MAX_RETRIES attempts. Exiting."
-    exit 1
+    echo "WARNING: LM Studio not reachable after $MAX_RETRIES attempts (${MAX_RETRIES}x 5s)."
+    echo "  ► Make sure LM Studio is running with 'Serve on Local Network' enabled."
+    echo "  ► The pipeline will fail when it first calls the LLM if LM Studio is not up."
+    break
   fi
-  echo "  Ollama not ready, retrying in 5s... ($RETRIES/$MAX_RETRIES)"
+  echo "  LM Studio not ready, retrying in 5s... ($RETRIES/$MAX_RETRIES)"
   sleep 5
 done
-echo "Ollama is reachable."
+if curl -sf "${LM_STUDIO_URL}/v1/models" > /dev/null 2>&1; then
+  echo "LM Studio server is reachable."
+fi
 
-# --- Pull models if missing ---
-pull_if_missing() {
-  local model="$1"
-  if ! curl -sf http://ollama:11434/api/tags | grep -q "\"$model\""; then
-    echo "Pulling model: $model (this may take a while on first run)..."
-    curl -sf http://ollama:11434/api/pull -d "{\"name\": \"$model\"}" | \
-      while IFS= read -r line; do
-        STATUS=$(echo "$line" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-        if [ -n "$STATUS" ]; then
-          echo "  [$model] $STATUS"
-        fi
-      done
-    echo "Model $model ready."
-  else
-    echo "Model $model already present."
-  fi
-}
-
-pull_if_missing "qwen3-vl:8b"
-pull_if_missing "qwen2.5:7b"
-pull_if_missing "qwen3.5:9b"
+# Models are managed in LM Studio's GUI — no auto-pull needed.
+# Set model names in the dashboard Model Settings panel to match your
+# LM Studio model IDs (check GET http://host.docker.internal:1234/v1/models).
 
 # --- Create workspace dirs if missing ---
 mkdir -p /root/VODs/Clips_Ready /tmp/clipper /root/VODs/.transcriptions

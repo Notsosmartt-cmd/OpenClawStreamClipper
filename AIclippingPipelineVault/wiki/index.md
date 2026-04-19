@@ -10,17 +10,18 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ## Entities
 
 ### Models
-- [[entities/faster-whisper]] — Speech-to-text; large-v3 on GPU (float16); falls back to CPU (int8); Stages 2 and 7
-- [[entities/qwen25]] — Discord agent model (qwen2.5:7b); reliable tool calling; 32K context
-- [[entities/qwen35]] — Pipeline text model (qwen3.5:9b); segment classification + moment analysis; think=false required
-- [[entities/qwen3-vl]] — Vision model (qwen3-vl:8b); non-gatekeeping enrichment; think=true required
+- [[entities/faster-whisper]] — Speech-to-text; large-v3 on GPU (float16) or CPU (int8); Stages 2 and 7
+- [[entities/qwen35]] — Pipeline text model (`qwen/qwen3.5-9b` or `qwen/qwen3.5-35b-a3b`); segment classification + moment analysis; 35B has permanent thinking mode
+- [[entities/qwen3-vl]] — Vision model (`qwen/qwen3-vl-8b`); non-gatekeeping enrichment; Stage 6
+- [[entities/qwen25]] — Discord agent model (older reference; current setup uses same LM Studio model for agent and pipeline)
 
 ### Infrastructure
 - [[entities/openclaw]] — Agent framework (Node.js); Discord gateway; runs exec tool to invoke pipeline
-- [[entities/ollama]] — Local LLM inference server; one model in VRAM at a time; explicit unloading between stages
+- [[entities/lm-studio]] — LLM inference server (native Windows); OpenAI-compatible API on port 1234; 9B vs 35B behavior; reasoning_content fallback
+- [[entities/ollama]] — *Retired* — former LLM inference container; replaced by LM Studio as of 2026-04-18
 - [[entities/ffmpeg]] — Video/audio processing; blur-fill 9:16 rendering; subtitle burn-in
 - [[entities/discord-bot]] — Primary user interface; natural-language commands; delivers clip attachments
-- [[entities/dashboard]] — Web UI (Flask, port 5000); 8-stage monitor; SSE streaming; docker exec bridge
+- [[entities/dashboard]] — Web UI (Flask, port 5000); 8-stage monitor; SSE streaming; docker exec bridge; Models + Hardware panels
 
 ## Concepts
 
@@ -34,10 +35,10 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ### System
 - [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence
 - [[concepts/context-management]] — Token compaction, session reset, history limit, compat flags
-- [[concepts/deployment]] — Hardware requirements, Docker setup, volume mounts, common operations
+- [[concepts/deployment]] — Hardware requirements, LM Studio setup, Docker setup, step-by-step guide
 
 ### Reference
-- [[concepts/bugs-and-fixes]] — 10 bugs found and fixed; symptoms, root causes, solutions
+- [[concepts/bugs-and-fixes]] — 21 bugs documented; symptoms, root causes, solutions (includes 35B thinking mode bugs)
 - [[concepts/open-questions]] — Score normalization, variable clip length, model switcher UI, known gaps
 
 ## Sources

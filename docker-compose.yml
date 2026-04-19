@@ -1,46 +1,59 @@
-x-ollama-base: &ollama-base
-  image: ollama/ollama:latest
-  volumes:
-    - ollama_data:/root/.ollama
-  environment:
-    - OLLAMA_HOST=0.0.0.0
-    - OLLAMA_KEEP_ALIVE=5m
-    - OLLAMA_CONTEXT_LENGTH=32768
-    - OLLAMA_MAX_LOADED_MODELS=1
-    - OLLAMA_FLASH_ATTENTION=1
-  restart: unless-stopped
-  healthcheck:
-    test: ["CMD-SHELL", "ollama list || exit 1"]
-    interval: 60s
-    timeout: 10s
-    retries: 10
-    start_period: 60s
-
-x-clipper-base: &clipper-base
-  build:
-    context: .
-    dockerfile: Dockerfile
-  volumes:
-    - ./config:/root/.openclaw
-    - ./workspace:/root/.openclaw/workspace
-    - ./vods:/root/VODs
-    - ./clips:/root/VODs/Clips_Ready
-    - ./scripts:/root/scripts
-    - ./dashboard:/root/dashboard
-  environment:
-    - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-  restart: unless-stopped
+# OpenClaw Stream Clipper — Docker Compose
+#
+# LLM inference is handled by LM Studio running natively on the Windows host.
+# Access it from this container at http://host.docker.internal:1234
+# (OpenAI-compatible API, port 1234 is LM Studio's default).
+#
+# This container provides:
+#   - faster-whisper transcription (CUDA via NVIDIA Container Toolkit)
+#   - OpenClaw Discord gateway
+#   - FFmpeg clip rendering
+#   - Flask web dashboard (port 5000)
+#
+# GPU backend for LLM is managed entirely in LM Studio's GUI.
+# Whisper's CUDA/CPU device is set via config/hardware.json → dashboard Hardware panel.
+#
+# ── Starting ────────────────────────────────────────────────────────────────
+#   docker compose up -d --build
+#
+# ── Applying hardware config changes (Whisper device) ───────────────────────
+#   docker compose restart          (or use dashboard "Restart Services" button)
+# ────────────────────────────────────────────────────────────────────────────
 
 services:
-  # ---- GPU profile ----
-  ollama-gpu:
-    <<: *ollama-base
-    container_name: ollama-gpu
-    profiles: ["gpu"]
+
+  # ── Stream Clipper ───────────────────────────────────────────────────────────
+  # Pipeline engine, OpenClaw gateway, web dashboard.
+  # Whisper uses CUDA (NVIDIA) for transcription.
+  # LLM inference calls go to LM Studio on the host at host.docker.internal:1234.
+  stream-clipper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stream-clipper
+    volumes:
+      - ./config:/root/.openclaw
+      - ./workspace:/root/.openclaw/workspace
+      - ./vods:/root/VODs
+      - ./clips:/root/VODs/Clips_Ready
+      - ./scripts:/root/scripts
+      - ./dashboard:/root/dashboard
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+    ports:
+      - "5000:5000"
+    extra_hosts:
+      # Allows the container to reach LM Studio running on the Windows host.
+      # Docker Desktop for Windows sets this automatically; this line also
+      # makes it work on native Linux Docker Engine hosts.
+      - "host.docker.internal:host-gateway"
     networks:
       clipper-net:
         aliases:
-          - ollama
+          - stream-clipper
+    restart: unless-stopped
+    # NVIDIA for Whisper transcription — CUDA regardless of LLM backend.
+    # Remove if no NVIDIA GPU (Whisper will fall back to CPU via hardware.json).
     deploy:
       resources:
         reservations:
@@ -48,54 +61,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-  stream-clipper-gpu:
-    <<: *clipper-base
-    container_name: stream-clipper-gpu
-    profiles: ["gpu"]
-    ports:
-      - "5000:5000"
-    depends_on:
-      ollama-gpu:
-        condition: service_healthy
-    networks:
-      clipper-net:
-        aliases:
-          - stream-clipper
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # ---- CPU profile ----
-  ollama-cpu:
-    <<: *ollama-base
-    container_name: ollama-cpu
-    profiles: ["cpu"]
-    networks:
-      clipper-net:
-        aliases:
-          - ollama
-
-  stream-clipper-cpu:
-    <<: *clipper-base
-    container_name: stream-clipper-cpu
-    profiles: ["cpu"]
-    ports:
-      - "5000:5000"
-    depends_on:
-      ollama-cpu:
-        condition: service_healthy
-    networks:
-      clipper-net:
-        aliases:
-          - stream-clipper
-
-volumes:
-  ollama_data:
 
 networks:
   clipper-net:

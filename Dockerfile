@@ -5,7 +5,10 @@ ENV WHISPER_MODEL_DIR=/root/.cache/whisper-models
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 
 # System packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::https::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
@@ -18,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Node.js 22 LTS via NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # OpenClaw

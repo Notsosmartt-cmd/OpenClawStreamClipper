@@ -3,7 +3,7 @@ title: "OpenClaw"
 type: entity
 tags: [agent-framework, orchestration, discord, nodejs]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-17
 ---
 
 # OpenClaw
@@ -14,7 +14,7 @@ An open-source autonomous AI agent framework (Node.js) that serves as the orches
 
 ## Role in the system
 
-- Runs as a **persistent daemon** inside the `stream-clipper-gpu` container
+- Runs as a **persistent daemon** inside the `stream-clipper` container
 - Connects to Discord through the official bot gateway API (WebSocket)
 - Listens for messages in configured channels
 - Routes inference requests to [[entities/ollama]] at `http://ollama:11434`
@@ -113,14 +113,14 @@ OpenClaw reads two workspace markdown files as its operating instructions:
 If the bot stops calling `exec` (describes instead of doing):
 ```bash
 # Clear stale sessions
-docker exec stream-clipper-gpu bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-docker restart stream-clipper-gpu
+docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
+docker restart stream-clipper
 # Wait ~15s for Discord reconnection
 ```
 
 If it ran a hallucinated/broken command, run the pipeline manually:
 ```bash
-docker exec -d stream-clipper-gpu bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod NAME"
+docker exec -d stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod NAME"
 ```
 
 ---

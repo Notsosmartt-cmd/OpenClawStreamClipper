@@ -1,0 +1,32 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OLLAMA_HOST=0.0.0.0
+ENV OLLAMA_KEEP_ALIVE=5m
+ENV OLLAMA_CONTEXT_LENGTH=32768
+ENV OLLAMA_MAX_LOADED_MODELS=1
+ENV OLLAMA_FLASH_ATTENTION=1
+
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::https::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    curl wget ca-certificates python3 zstd \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    libdrm2 \
+    libdrm-amdgpu1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama — the Linux installer includes the Vulkan/llama.cpp backend
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+COPY scripts/entrypoint-ollama-vulkan.sh /entrypoint-ollama-vulkan.sh
+RUN sed -i 's/\r$//' /entrypoint-ollama-vulkan.sh && chmod +x /entrypoint-ollama-vulkan.sh
+
+EXPOSE 11434
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=10 \
+    CMD ollama list || exit 1
+
+ENTRYPOINT ["/entrypoint-ollama-vulkan.sh"]

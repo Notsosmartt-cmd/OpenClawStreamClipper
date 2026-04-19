@@ -1,185 +1,231 @@
 ---
 title: "Deployment"
 type: concept
-tags: [deployment, docker, setup, hardware, cuda, portability]
+tags: [deployment, docker, setup, hardware, cuda, lm-studio, windows]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-19
 ---
 
 # Deployment
 
-How to deploy, run, and maintain the OpenClaw Stream Clipper. Fully Docker-based.
+How to set up, run, and maintain the OpenClaw Stream Clipper.
 
 ---
 
-## Hardware requirements
+## Architecture
+
+One Docker container + LM Studio on the Windows host:
+
+| Component | Where | Role |
+|---|---|---|
+| `stream-clipper` | Docker container | Pipeline, OpenClaw gateway, Whisper, FFmpeg, Flask dashboard |
+| [[entities/lm-studio]] | Windows host (native) | LLM inference — OpenAI-compatible API on port 1234 |
+
+The container calls LM Studio at `http://host.docker.internal:1234` (set via `extra_hosts: host.docker.internal:host-gateway` in `docker-compose.yml`). There is **no Ollama container** — [[entities/ollama]] is retired.
+
+---
+
+## Hardware Requirements
 
 | Component | Minimum | Recommended |
 |---|---|---|
-| GPU | NVIDIA 8GB VRAM | NVIDIA 16GB VRAM (RTX 4060 Ti 16GB, RTX 3090, RTX 5060 Ti) |
+| GPU | NVIDIA 8GB VRAM | NVIDIA 16GB+ VRAM (RTX 3090, 4090, 5060 Ti) |
 | RAM | 16 GB | 32 GB+ |
 | CPU | 8 cores | 12+ cores |
-| Storage | 50 GB | 100 GB+ (VODs are large) |
+| Storage | 50 GB | 200 GB+ (models ~25 GB + VODs) |
 
-16GB VRAM is the comfortable target — `qwen3.5:9b` at 32K context uses ~11.2GB, leaving ~5GB headroom. See [[concepts/vram-budget]].
-
-A CPU-only profile is available but LLM inference and transcription will be significantly slower.
+For the 35B model: 24GB+ VRAM. LM Studio supports splitting across two GPUs.
 
 ---
 
-## Software prerequisites
+## Software Prerequisites
 
-- **Windows 10/11 or Linux** (tested on Windows 11 with WSL2)
-- **Docker Desktop** with WSL2 backend (Windows) or Docker Engine (Linux)
-- **NVIDIA Container Toolkit** for GPU access
-  - Windows: included with Docker Desktop when using WSL2 + NVIDIA drivers
-  - Linux: [install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-- **NVIDIA GPU drivers** (version 535+ recommended)
-- **A Discord Bot Token** (Discord Developer Portal)
+- **Windows 10/11** (tested on Windows 11; Linux also works)
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** with WSL2 backend
+- **NVIDIA GPU drivers** (535+ recommended)
+- **NVIDIA Container Toolkit** — included with Docker Desktop on Windows when NVIDIA drivers are installed
+- **[LM Studio](https://lmstudio.ai)** 0.3.x or later
 
 ---
 
-## First-time setup
+## Setup (Step-by-Step)
+
+### Step 1 — Install Prerequisites
+
+1. Install Docker Desktop. Enable WSL2 integration.
+2. Install LM Studio.
+3. Verify Docker GPU access: `docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi`
+
+### Step 2 — Clone
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/OpenClawClipperDocker.git
-cd OpenClawClipperDocker
-
-# 2. Create .env file with Discord bot token
-cp .env.example .env
-# Edit .env: DISCORD_BOT_TOKEN=your-token-here
-
-# 3. Set up OpenClaw config
-cp config/openclaw.example.json config/openclaw.json
-cp config/exec-approvals.example.json config/exec-approvals.json
-# The __DISCORD_BOT_TOKEN__ placeholder is auto-replaced at container startup
-
-# 4. Start the stack
-docker compose --profile gpu up -d    # GPU mode
-docker compose --profile cpu up -d    # CPU mode
-
-# 5. Models are auto-pulled on first startup via entrypoint.sh
-# First startup: 10-20 minutes while Ollama models download (~16GB)
-# Whisper large-v3 is pre-baked in the Docker image — no separate pull
+git clone https://github.com/YOUR_USERNAME/OpenClawStreamClipper.git
+cd OpenClawStreamClipper
 ```
 
+### Step 3 — Create Config Files
+
+```bash
+cp config/openclaw.example.json config/openclaw.json
+cp config/exec-approvals.example.json config/exec-approvals.json
+cp .env.example .env
+# Leave DISCORD_BOT_TOKEN blank for now
+```
+
+### Step 4 — Set Up LM Studio
+
+1. Open LM Studio → Models tab → Download:
+   - `qwen3.5-9b` Q4_K_M (~6 GB) — fast, works well
+   - `qwen3.5-35b-a3b` Q4_K_M (~20 GB) — best quality, slower
+   - `qwen3-vl-8b` Q4_K_M (~5 GB) — vision model
+2. Go to Developer tab → Load the text model → Enable **"Serve on Local Network"** → **Start Server**
+3. Confirm: `Server running at http://0.0.0.0:1234`
+
+### Step 5 — Build and Start Container
+
+```bash
+docker compose up -d --build
+```
+
+First build: 5–15 minutes (downloads CUDA base image, pre-bakes Whisper large-v3).
+
+Watch startup:
+```bash
+docker compose logs -f stream-clipper
+```
+
+Expected output:
+```
+=== OpenClaw Stream Clipper ===
+Hardware: whisper=cuda (float16)
+LM Studio server is reachable.
+Starting web dashboard on port 5000...
+Starting OpenClaw gateway...
+```
+
+### Step 6 — Configure Models in Dashboard
+
+Open **http://localhost:5000** → Models panel:
+- Set **Text Model** to match your LM Studio model ID (e.g., `qwen/qwen3.5-35b-a3b`)
+- Set **Vision Model** (e.g., `qwen/qwen3-vl-8b`)
+- Set **Context Length** based on VRAM (8192 default; 32768 if 24GB+ VRAM)
+- Click **Save**
+
+### Step 7 — Test Pipeline
+
+1. Drop a `.mp4` or `.mkv` into `vods/`
+2. Dashboard → select VOD → Clip Selected → watch Pipeline Monitor
+3. Clips appear in `clips/` when done
+
+### Step 8 — Discord Bot (Optional, Do Last)
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) → New Application → Bot → Add Bot
+2. Enable **Message Content Intent** under Privileged Gateway Intents
+3. Copy the bot token
+4. Edit `.env`: `DISCORD_BOT_TOKEN=your-token-here`
+5. Restart: `docker compose down && docker compose up -d`
+6. OAuth2 → URL Generator → scopes: `bot` → permissions: Send Messages, Read Message History, Attach Files → invite URL → invite to server
+7. Test: message the bot `clip my stream`
+
 ---
 
-## Docker image details
-
-Base image: `nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04`
-
-Image layers added by `Dockerfile`:
-- CUDA 12.3 + cuDNN 9 (GPU acceleration for Whisper)
-- Node.js 22 LTS (required by OpenClaw)
-- Python 3 + faster-whisper (with GPU support)
-- FFmpeg
-- OpenClaw (installed via npm)
-- Whisper large-v3 model weights (~3GB, pre-downloaded at build time)
-- Flask + dashboard
-- Pipeline script + entrypoint
-
----
-
-## Container names and network
-
-| Container | Profile | Purpose |
-|---|---|---|
-| `ollama-gpu` | `gpu` | LLM inference |
-| `ollama-cpu` | `cpu` | LLM inference |
-| `stream-clipper-gpu` | `gpu` | Pipeline + agent + dashboard |
-| `stream-clipper-cpu` | `cpu` | Pipeline + agent + dashboard |
-
-Network: `clipper-net` (Docker bridge). Ollama accessible at hostname `ollama` on port 11434.
-
----
-
-## Volume mounts
+## Volume Mounts
 
 | Host path | Container path | Purpose |
 |---|---|---|
-| `./config` | `/root/.openclaw` | OpenClaw config, sessions, exec approvals |
-| `./workspace` | `/root/.openclaw/workspace` | AGENTS.md, skills |
+| `./config` | `/root/.openclaw` | OpenClaw config, exec-approvals, models.json, hardware.json |
+| `./workspace` | `/root/.openclaw/workspace` | AGENTS.md, SKILL.md |
 | `./vods` | `/root/VODs` | Input VOD files |
-| `./clips` | `/root/VODs/Clips_Ready` | Output rendered clips |
-| `./scripts` | `/root/scripts` | Pipeline script |
-| `./dashboard` | `/root/dashboard` | Web dashboard |
-| `ollama_data` (named) | `/root/.ollama` | Ollama model storage |
+| `./clips` | `/root/VODs/Clips_Ready` | Output clips, pipeline logs, diagnostics |
+| `./scripts` | `/root/scripts` | Pipeline script (live-mounted — no rebuild needed for script changes) |
+| `./dashboard` | `/root/dashboard` | Dashboard files (live-mounted) |
+
+> [!note] Live script editing
+> `./scripts` is mounted directly into the container. Changes to `clip-pipeline.sh` take effect immediately on the next pipeline run — no container rebuild needed.
 
 ---
 
-## Common operations
+## Common Operations
 
 ```bash
 # Start / stop
-docker compose --profile gpu up -d
-docker compose --profile gpu down
+docker compose up -d
+docker compose down
 
-# Restart after config changes
-docker compose --profile gpu restart
+# Rebuild after Dockerfile changes (preserves config and clips)
+docker compose up -d --build
 
-# View logs
-docker compose logs -f stream-clipper-gpu
-docker compose logs -f ollama-gpu
+# Restart to pick up config changes (models.json, hardware.json)
+docker compose restart
 
-# Update pipeline (preserves models)
-docker compose build --no-cache stream-clipper-gpu
-docker compose --profile gpu up -d
-
-# Full reset — DELETES models from volume
-docker compose --profile gpu down -v
-
-# Manage Ollama models
-docker exec ollama-gpu ollama list
-docker exec ollama-gpu ollama ps
-docker exec ollama-gpu ollama pull qwen3.5:9b
+# View container logs
+docker compose logs -f stream-clipper
 
 # Enter container shell
-docker exec -it stream-clipper-gpu bash
+docker exec -it stream-clipper bash
 
-# Monitor running pipeline
-docker exec stream-clipper-gpu bash -c "cat /tmp/clipper/pipeline_stage.txt"
-docker exec stream-clipper-gpu bash -c "tail -f /tmp/clipper/pipeline.log"
-docker exec stream-clipper-gpu bash -c "cat /tmp/clipper/pipeline_stages.log"
+# Run pipeline manually
+docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod VODNAME"
+
+# Check current pipeline stage
+docker exec stream-clipper bash -c "cat /tmp/clipper/pipeline_stage.txt"
+
+# Tail live pipeline log
+docker exec stream-clipper bash -c "tail -f /tmp/clipper/pipeline.log"
+
+# List VODs
+docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --list"
+
+# Clear processed log (force re-process all VODs)
+echo "" > vods/processed.log
+
+# Clear stale bot sessions (fixes "bot describes but doesn't run")
+docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
+docker compose restart
 ```
 
 ---
 
-## Exec approvals
+## Persistent Pipeline Logs
 
-`config/exec-approvals.json` controls which shell commands the agent can run. Without this file, the `exec` tool is not exposed to the model at all (bot will describe commands instead of running them).
+Every pipeline run writes to two log locations:
+- `/tmp/clipper/pipeline.log` — ephemeral, used for live SSE streaming in dashboard; deleted by EXIT cleanup trap
+- `clips/.pipeline_logs/YYYYMMDD_HHMMSS_VODNAME.log` — **persistent**, survives cleanup, always available for post-run review
 
-Default (allow all):
-```json
-{"*": {"allowlist": [{"pattern": "*"}]}}
-```
-
-Restricted:
-```json
-{"*": {"allowlist": [{"pattern": "bash /root/scripts/clip-pipeline.sh*"}]}}
-```
+The persistent log path is printed at pipeline startup: `=== Persistent log: /root/VODs/Clips_Ready/.pipeline_logs/... ===`
 
 ---
 
-## Build context optimization
+## Config Files Reference
 
-`.dockerignore` excludes: `vods/`, `clips/`, `.git`, `config/`, `workspace/`, docs, env files.
-
-Build context: ~107KB (was 32GB before `.dockerignore` was added — BUG 4 in [[concepts/bugs-and-fixes]]).
+| File | Purpose |
+|---|---|
+| `config/models.json` | `text_model`, `vision_model`, `whisper_model`, `llm_url`, `context_length` |
+| `config/hardware.json` | `whisper_device`: `"cuda"` or `"cpu"` |
+| `config/openclaw.json` | OpenClaw agent: LM Studio provider, Discord token, compaction, exec config |
+| `config/exec-approvals.json` | Command allowlist — must have `{"pattern": "*"}` for pipeline to run |
+| `.env` | `DISCORD_BOT_TOKEN` — injected into openclaw.json at startup |
 
 ---
 
-## Portability
+## Verifying GPU / LM Studio
 
-The system is fully self-contained in one project directory. To deploy on a new machine: copy the directory, install Docker, create `.env`, start the stack. Models download automatically via `entrypoint.sh`.
+```bash
+# Check NVIDIA CUDA is available in container (for Whisper)
+docker exec stream-clipper nvidia-smi
 
-To migrate models without re-downloading: export the `ollama_data` Docker volume.
+# Check LM Studio is reachable from container
+docker exec stream-clipper curl -s http://host.docker.internal:1234/v1/models | python3 -m json.tool
+
+# Check which models are loaded in LM Studio
+curl http://localhost:1234/v1/models
+```
 
 ---
 
 ## Related
-- [[concepts/vram-budget]] — hardware requirements derived from VRAM needs
-- [[entities/ollama]] — Ollama environment variables
-- [[entities/dashboard]] — web dashboard access
-- [[concepts/bugs-and-fixes]] — especially BUG 4 (build context), BUG 5 (Windows cross-platform)
+
+- [[entities/lm-studio]] — LM Studio API, model IDs, 9B vs 35B behavior differences
+- [[entities/dashboard]] — Web dashboard access and features
+- [[concepts/vram-budget]] — VRAM requirements per model and stage
+- [[concepts/bugs-and-fixes]] — Common errors and their fixes

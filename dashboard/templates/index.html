@@ -97,6 +97,31 @@
             </div>
         </div>
 
+        <!-- Hardware -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Hardware</span>
+                <button id="btn-refresh-hardware" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
+            </div>
+            <div class="panel-body">
+                <div id="hardware-grid" class="models-grid">
+                    <div class="empty-state">Loading hardware configuration...</div>
+                </div>
+                <div id="hardware-save-bar" class="models-save-bar" style="display: none;">
+                    <span id="hardware-change-summary" class="models-change-text"></span>
+                    <button id="btn-save-hardware" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Save</button>
+                </div>
+                <div id="hardware-restart-notice" class="hardware-restart-notice" style="display: none;">
+                    <div class="hardware-restart-title">&#x26A0; Restart required to apply changes</div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px;">
+                        <button id="btn-restart-services" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Restart Services</button>
+                        <span id="hardware-restart-status" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                    </div>
+                    <div class="hardware-restart-cmd" id="hardware-restart-cmd" style="margin-top: 6px;"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Pipeline Monitor -->
         <div class="panel">
             <div class="panel-header">Pipeline Monitor</div>

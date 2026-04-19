@@ -3,7 +3,7 @@ title: "Discord Bot"
 type: entity
 tags: [discord, interface, delivery, bot, natural-language]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-17
 ---
 
 # Discord Bot
@@ -69,15 +69,15 @@ The token is injected into `openclaw.json` at container startup by `entrypoint.s
 **Bot responds with text but doesn't run the pipeline:**
 - Context overflow — clear sessions and restart:
   ```bash
-  docker exec stream-clipper-gpu bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-  docker restart stream-clipper-gpu
+  docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
+  docker restart stream-clipper
   ```
 
 **Bot ran a weird/broken command (hallucination):**
 - 7B models occasionally hallucinate creative but broken invocations
 - Run the pipeline manually instead:
   ```bash
-  docker exec -d stream-clipper-gpu bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod NAME"
+  docker exec -d stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod NAME"
   ```
 
 **Bot says "already running" but GPU is idle:**
