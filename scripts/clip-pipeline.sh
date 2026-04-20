@@ -19,6 +19,14 @@ WHISPER_MODEL="${CLIP_WHISPER_MODEL:-large-v3}"
 # Context length passed to LM Studio when loading models.
 # Tune based on VRAM: 4096 (~2 GB KV), 8192 (~4 GB), 16384 (~8 GB), 32768 (~16 GB).
 CONTEXT_LENGTH="${CLIP_CONTEXT_LENGTH:-8192}"
+# Caption rendering: set CLIP_CAPTIONS=false to skip subtitle burn-in
+CAPTIONS_ENABLED="${CLIP_CAPTIONS:-true}"
+# Hook caption: AI-generated punchy title at the top of the video (toggle via CLIP_HOOK_CAPTION=false)
+HOOK_CAPTION_ENABLED="${CLIP_HOOK_CAPTION:-true}"
+# Speed-up: CLIP_SPEED=1.25 speeds video and audio together.
+# Pitch tracks speed proportionally (rubberband=tempo=N:pitch=N) so the voice
+# naturally sounds like someone talking faster — no chipmunk and no separate control.
+CLIP_SPEED="${CLIP_SPEED:-1.0}"
 
 # Parse arguments
 CLIP_STYLE="auto"
@@ -51,7 +59,7 @@ mkdir -p "$PERSISTENT_LOG_DIR"
 PERSISTENT_LOG="${PERSISTENT_LOG_DIR}/${LOG_TIMESTAMP}_${LOG_VOD_SLUG}.log"
 
 exec > >(tee -a "$PIPELINE_LOG" "$PERSISTENT_LOG") 2>&1
-echo "=== Pipeline started at $(date -Iseconds) | style=$CLIP_STYLE vod=$TARGET_VOD type=$STREAM_TYPE_HINT ==="
+echo "=== Pipeline started at $(date -Iseconds) | style=$CLIP_STYLE vod=$TARGET_VOD type=$STREAM_TYPE_HINT speed=$CLIP_SPEED ==="
 echo "=== Persistent log: $PERSISTENT_LOG ==="
 
 # Colors for log output
@@ -98,6 +106,30 @@ load_model() {
         -d "{\"model\": \"$model\", \"context_length\": $ctx}" > /dev/null 2>&1 || \
         warn "Model pre-load returned an error — '$model' may already be loaded (context may differ)"
     sleep 2  # allow model to fully initialize before first inference request
+}
+
+rescale_srt() {
+    # Divide all SRT timestamps by speed factor so subtitles stay in sync with
+    # sped-up video. Called once per clip when CLIP_SPEED != 1.0.
+    # Args: <src_srt> <dst_srt> <speed_factor>
+    local src="$1" dst="$2" speed="$3"
+    python3 - "$src" "$dst" "$speed" <<'PYRESCALE'
+import sys, re
+src, dst, speed = sys.argv[1], sys.argv[2], float(sys.argv[3])
+def scale_ts(m):
+    h, mn, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    total_ms = (h * 3600 + mn * 60 + s) * 1000 + ms
+    new_ms = int(round(total_ms / speed))
+    h2, r = divmod(new_ms, 3600000)
+    mn2, r = divmod(r, 60000)
+    s2, ms2 = divmod(r, 1000)
+    return f"{h2:02d}:{mn2:02d}:{s2:02d},{ms2:03d}"
+pat = re.compile(r'(\d{2}):(\d{2}):(\d{2}),(\d{3})')
+with open(src) as f:
+    content = f.read()
+with open(dst, "w") as f:
+    f.write(pat.sub(scale_ts, content))
+PYRESCALE
 }
 
 cleanup() {
@@ -1824,7 +1856,7 @@ Context: {context_hint}
 
 Consider what makes viewers share clips: funny moments, fails, skill, reactions, drama, IRL situations.
 
-Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controversy/emotional/irl", "title": "short viral title", "description": "one sentence"}}"""
+Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controversy/emotional/irl", "title": "short viral title for the filename", "description": "one sentence", "hook": "punchy 1-line hook shown at top of the video, max 8 words, written in the voice and slang of a {stream_type} content creator, no hashtags"}}"""
 
         payload = json.dumps({
             "model": VISION_MODEL,
@@ -1921,6 +1953,9 @@ Respond ONLY with JSON: {{"score": N, "category": "comedy/skill/reaction/controv
         v_desc = best_vision_result.get("description", "")
         if v_desc:
             entry["description"] = v_desc
+        v_hook = best_vision_result.get("hook", "")
+        if v_hook:
+            entry["hook"] = v_hook
         # Blend scores: transcript is primary, vision is a bonus (never penalizes)
         # Vision >= 0.67 (was 7/10): multiply by 1.15
         # Vision >= 0.44 (was 5/10): multiply by 1.08
@@ -1980,15 +2015,16 @@ python3 -c "
 import json
 moments = json.load(open('/tmp/clipper/scored_moments.json'))
 for m in moments:
-    title = m['title'].replace(' ', '_').replace('/', '-').replace('\"', '')
-    title = ''.join(c for c in title if c.isalnum() or c in '-_')[:50]
+    title = m['title'].replace('/', '-').replace('\\\\', '-').replace('|', '-').replace('\"', '').replace("'", '')
+    title = ''.join(c for c in title if c.isalnum() or c in ' -')[:50].strip()
     if not title:
-        title = f'Clip_T{m[\"timestamp\"]}'
+        title = f'Clip T{m[\"timestamp\"]}'
     clip_start = m.get('clip_start', max(0, m['timestamp'] - 15))
     clip_end = m.get('clip_end', m['timestamp'] + 15)
     clip_duration = m.get('clip_duration', 30)
     score_str = f\"{m['score']:.3f}\" if isinstance(m['score'], float) else str(m['score'])
-    print(f\"{m['timestamp']}|{title}|{score_str}|{m.get('category','unknown')}|{m.get('description','')}|{m.get('segment_type','unknown')}|{clip_start}|{clip_duration}\")
+    hook = m.get('hook', m.get('title', '')).replace('|', '-').replace('\n', ' ').strip()
+    print(f\"{m['timestamp']}|{title}|{score_str}|{m.get('category','unknown')}|{m.get('description','')}|{hook}|{m.get('segment_type','unknown')}|{clip_start}|{clip_duration}\")
 " > "$TEMP_DIR/clip_manifest.txt"
 
 MANIFEST_COUNT=$(wc -l < "$TEMP_DIR/clip_manifest.txt")
@@ -1997,7 +2033,7 @@ log "  Manifest: $MANIFEST_COUNT clips to process"
 # --- 7b. Extract ALL clip audio segments (FFmpeg only, no GPU models) ---
 # Now uses variable clip duration from manifest (fields 7=clip_start, 8=clip_duration)
 log "  Extracting audio for all clips..."
-while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_DUR; do
+while IFS='|' read -r T TITLE SCORE CATEGORY DESC HOOK SEG_TYPE CLIP_START_SEC CLIP_DUR; do
     [ -z "$T" ] && continue
     # Use manifest clip boundaries, fallback to legacy fixed window
     if [ -n "$CLIP_START_SEC" ] && [ -n "$CLIP_DUR" ]; then
@@ -2088,14 +2124,29 @@ PYTRANSCRIBE
 # a blurred, zoomed copy of the same frame filling the background.
 # This preserves all stream content instead of hard-cropping the sides.
 log "  Rendering all clips (blur-fill 9:16)..."
+log "  Render settings: speed=${CLIP_SPEED} captions=${CAPTIONS_ENABLED} hook=${HOOK_CAPTION_ENABLED}"
 
-# Blur-fill filter chain:
-#   split into two streams → background gets scaled to fill 1080x1920,
-#   cropped, and heavily blurred → foreground scales to fit width (1080)
-#   while keeping aspect ratio → overlay foreground centered on blurred bg
-BLUR_BG="split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[blurred];[fg]scale=1080:-2:force_original_aspect_ratio=decrease[sharp];[blurred][sharp]overlay=(W-w)/2:(H-h)/2"
+# Build blur-fill filter chain. When speed > 1.0, setpts=PTS/SPEED is prepended
+# so both background and foreground branches see the adjusted presentation timestamps.
+if [ "$CLIP_SPEED" != "1.0" ]; then
+    _SPEED_VF="setpts=PTS/${CLIP_SPEED},"
+else
+    _SPEED_VF=""
+fi
+BLUR_BG="${_SPEED_VF}split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[blurred];[fg]scale=1080:-2:force_original_aspect_ratio=decrease[sharp];[blurred][sharp]overlay=(W-w)/2:(H-h)/2"
 
-while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_DUR; do
+# Build audio filter when speed is non-default.
+# rubberband=tempo=N:pitch=N — pitch tracks speed proportionally so the voice
+# sounds like the person is naturally talking faster (not chipmunk, not pitched down).
+if [ "$CLIP_SPEED" != "1.0" ]; then
+    AUDIO_FLAG=(-af "rubberband=tempo=${CLIP_SPEED}:pitch=${CLIP_SPEED}")
+    log "  Audio filter: rubberband=tempo=${CLIP_SPEED}:pitch=${CLIP_SPEED}"
+else
+    AUDIO_FLAG=()
+    log "  Audio filter: none (1x speed)"
+fi
+
+while IFS='|' read -r T TITLE SCORE CATEGORY DESC HOOK SEG_TYPE CLIP_START_SEC CLIP_DUR; do
     [ -z "$T" ] && continue
 
     # Use manifest clip boundaries, fallback to legacy fixed window
@@ -2113,9 +2164,37 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_D
     CLIP_SRT="$TEMP_DIR/clip_${T}.srt"
     CLIP_OUTPUT="$CLIPS_DIR/${TITLE}.mp4"
 
-    # Render vertical clip: blur-fill background + burned captions (variable duration)
+    # When speed-up is active, rescale SRT timestamps (divide by speed factor)
+    # so subtitles stay in sync with the sped-up video stream.
+    if [ "$CLIP_SPEED" != "1.0" ]; then
+        CLIP_SRT_RENDER="$TEMP_DIR/clip_${T}_scaled.srt"
+        rescale_srt "$CLIP_SRT" "$CLIP_SRT_RENDER" "$CLIP_SPEED"
+    else
+        CLIP_SRT_RENDER="$CLIP_SRT"
+    fi
+
+    # Build video filter chain in layers: blur-fill → hook caption → bottom subtitles
+    RENDER_VF="${BLUR_BG}"
+
+    # Layer 1: hook caption at top (white box, bold black text, AI-generated for stream niche)
+    if [ "$HOOK_CAPTION_ENABLED" = "true" ] && [ -n "$HOOK" ]; then
+        HOOK_FILE="$TEMP_DIR/clip_${T}_hook.txt"
+        HOOK_TEXT="$HOOK" python3 -c "
+import os, textwrap
+hook = os.environ.get('HOOK_TEXT', '').strip()
+lines = textwrap.wrap(hook, 22)[:3]
+print('\n'.join(lines) if lines else hook[:60])
+" > "$HOOK_FILE"
+        RENDER_VF="${RENDER_VF},drawtext=textfile='${HOOK_FILE}':fontsize=40:fontcolor=black:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:box=1:boxcolor=white@0.92:boxborderw=22:x=(w-text_w)/2:y=55:line_spacing=8"
+    fi
+
+    # Layer 2: bottom captions (word-level SRT subtitles)
+    if [ "$CAPTIONS_ENABLED" != "false" ]; then
+        RENDER_VF="${RENDER_VF},subtitles='${CLIP_SRT_RENDER}':force_style='FontSize=11,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'"
+    fi
     ffmpeg -nostdin -y -ss "$CLIP_START" -t "$CLIP_LENGTH" -i "$VOD_PATH" \
-        -vf "${BLUR_BG},subtitles='${CLIP_SRT}':force_style='FontSize=16,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'" \
+        -vf "$RENDER_VF" \
+        "${AUDIO_FLAG[@]}" \
         -c:v libx264 -crf 23 -preset medium \
         -c:a aac -b:a 128k \
         -movflags +faststart \
@@ -2125,6 +2204,7 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC SEG_TYPE CLIP_START_SEC CLIP_D
         warn "Render failed for $TITLE. Trying without subtitles..."
         ffmpeg -nostdin -y -ss "$CLIP_START" -t "$CLIP_LENGTH" -i "$VOD_PATH" \
             -vf "${BLUR_BG}" \
+            "${AUDIO_FLAG[@]}" \
             -c:v libx264 -crf 23 -preset medium \
             -c:a aac -b:a 128k \
             -movflags +faststart \

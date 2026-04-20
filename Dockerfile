@@ -17,6 +17,7 @@ RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
     python3-pip \
     ca-certificates \
     gnupg \
+    fonts-dejavu-core \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Node.js 22 LTS via NodeSource

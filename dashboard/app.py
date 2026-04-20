@@ -82,7 +82,7 @@ def use_docker_exec():
 
 # --- Pipeline management ---
 
-def pipeline_env():
+def pipeline_env(captions=True, speed="1.0", hook_caption=True):
     """Build environment dict for direct pipeline subprocess (inside Docker)."""
     env = os.environ.copy()
     env["CLIP_VODS_DIR"] = str(VODS_DIR)
@@ -93,10 +93,13 @@ def pipeline_env():
     env["CLIP_VISION_MODEL"] = config.get("vision_model", DEFAULT_MODELS["vision_model"])
     env["CLIP_WHISPER_MODEL"] = config.get("whisper_model", DEFAULT_MODELS["whisper_model"])
     env["CLIP_CONTEXT_LENGTH"] = str(config.get("context_length", DEFAULT_MODELS["context_length"]))
+    env["CLIP_CAPTIONS"] = "true" if captions else "false"
+    env["CLIP_SPEED"] = str(speed)
+    env["CLIP_HOOK_CAPTION"] = "true" if hook_caption else "false"
     return env
 
 
-def spawn_pipeline(cmd):
+def spawn_pipeline(cmd, captions=True, speed="1.0", hook_caption=True):
     """Launch pipeline subprocess.
 
     Outside Docker: runs via 'docker exec' inside the container.
@@ -117,6 +120,9 @@ def spawn_pipeline(cmd):
             "-e", f"CLIP_VISION_MODEL={config.get('vision_model', DEFAULT_MODELS['vision_model'])}",
             "-e", f"CLIP_WHISPER_MODEL={config.get('whisper_model', DEFAULT_MODELS['whisper_model'])}",
             "-e", f"CLIP_CONTEXT_LENGTH={config.get('context_length', DEFAULT_MODELS['context_length'])}",
+            "-e", f"CLIP_CAPTIONS={'true' if captions else 'false'}",
+            "-e", f"CLIP_SPEED={speed}",
+            "-e", f"CLIP_HOOK_CAPTION={'true' if hook_caption else 'false'}",
         ]
 
         # Build docker exec command
@@ -159,7 +165,7 @@ def spawn_pipeline(cmd):
     kwargs = dict(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env=pipeline_env(),
+        env=pipeline_env(captions=captions, speed=speed, hook_caption=hook_caption),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -371,6 +377,9 @@ def api_clip():
     style = data.get("style", "auto").strip() or "auto"
     type_hint = data.get("type", "").strip()
     force = data.get("force", False)
+    captions = data.get("captions", True)
+    speed = str(data.get("speed", "1.0"))
+    hook_caption = data.get("hook_caption", True)
 
     if not vod:
         return jsonify({"error": "No VOD specified"}), 400
@@ -391,7 +400,7 @@ def api_clip():
             cmd.extend(["--type", type_hint])
 
         try:
-            pipeline_process = spawn_pipeline(cmd)
+            pipeline_process = spawn_pipeline(cmd, captions=captions, speed=speed, hook_caption=hook_caption)
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
 
@@ -408,6 +417,9 @@ def api_clip_all():
     data = request.get_json(force=True) if request.data else {}
     style = data.get("style", "auto").strip() or "auto"
     force = data.get("force", False)
+    captions = data.get("captions", True)
+    speed = str(data.get("speed", "1.0"))
+    hook_caption = data.get("hook_caption", True)
 
     with pipeline_lock:
         if is_pipeline_running():
@@ -437,7 +449,7 @@ def api_clip_all():
         )
 
         try:
-            pipeline_process = spawn_pipeline(["bash", "-c", cmd_str])
+            pipeline_process = spawn_pipeline(["bash", "-c", cmd_str], captions=captions, speed=speed, hook_caption=hook_caption)
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
 

@@ -7,6 +7,42 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-04-20] update | Hook caption, title spaces, 2× speed, fonts
+
+Multiple Stage 7 rendering additions:
+- **Hook caption**: AI-generated punchy top-of-video title in the style/voice of the stream niche. New `hook` field added to Stage 6 LLM prompt and manifest. `CLIP_HOOK_CAPTION` env var (default `true`); dashboard "Hook caption" checkbox toggle. Rendered via FFmpeg `drawtext` filter (DejaVuSans-Bold, white box, black text, top-center, y=55). `fonts-dejavu-core` added to Dockerfile.
+- **Title spaces**: Clip filenames now use spaces instead of underscores (e.g. `Epic Clutch Play.mp4`). Title sanitization updated in manifest generation Python block.
+- **2× speed**: Added `2.0` option to the dashboard Speed dropdown.
+- Hook text wraps at 22 chars/line (max 3 lines) via Python `textwrap`, written to per-clip `clip_{T}_hook.txt` temp file to avoid shell quoting issues.
+
+Pages touched: [[concepts/clip-rendering]].
+
+Files changed: `scripts/clip-pipeline.sh`, `dashboard/app.py`, `dashboard/templates/index.html`, `dashboard/static/app.js`, `Dockerfile`.
+
+---
+
+## [2026-04-19] update | Simplified pitch: proportional to speed, no separate control
+
+Removed independent voice pitch control. Pitch now always equals speed (`rubberband=tempo=N:pitch=N`) so voice sounds like a natural fast-talker. Removed `CLIP_PITCH` env var, Voice pitch dropdown from dashboard, and all `pitch` parameters from `app.py` and `app.js`. Pages touched: [[concepts/clip-rendering]].
+
+---
+
+## [2026-04-19] update | Speed-up + pitch shift for clip rendering
+
+Added video speed-up and voice pitch controls to Stage 7 rendering. `CLIP_SPEED` (1.0/1.1/1.25/1.5) prepends `setpts=PTS/N` to the blur-fill filter chain and drives `rubberband=tempo=N:pitch=P` on the audio stream. `CLIP_PITCH` (1.0/1.059/1.122/1.189) sets the voice pitch ratio independently of tempo (no chipmunk effect at default 1.0). SRT timestamps are rescaled by `1/speed` via `rescale_srt()` when speed ≠ 1.0. Dashboard gains Speed and Voice pitch dropdowns in Clip Controls. Pages touched: [[concepts/clip-rendering]].
+
+Files changed: `scripts/clip-pipeline.sh`, `dashboard/app.py`, `dashboard/templates/index.html`, `dashboard/static/app.js`.
+
+---
+
+## [2026-04-19] update | Caption size reduced + dashboard caption toggle
+
+Reduced subtitle font size from 16 → 11 in Stage 7 FFmpeg render. Added `CLIP_CAPTIONS` env var (default `true`) to pipeline — when `false`, renders without subtitle filter. Dashboard Clip Controls panel gains a **Captions** checkbox (checked by default) that controls the toggle via the `/api/clip` and `/api/clip-all` POST bodies. Pages touched: [[concepts/clip-rendering]].
+
+Files changed: `scripts/clip-pipeline.sh`, `dashboard/app.py`, `dashboard/templates/index.html`, `dashboard/static/app.js`.
+
+---
+
 ## [2026-04-19] update | README rewrite + wiki deployment update; classification system documented
 
 Complete `README.md` rewrite to reflect current architecture (LM Studio, no Ollama). Major additions:

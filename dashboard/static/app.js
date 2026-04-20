@@ -97,8 +97,11 @@ async function startClip() {
     const style = document.getElementById("sel-style").value;
     const type = document.getElementById("inp-type").value.trim();
     const force = document.getElementById("chk-force").checked;
+    const captions = document.getElementById("chk-captions").checked;
+    const hook_caption = document.getElementById("chk-hook-caption").checked;
+    const speed = document.getElementById("sel-speed").value;
 
-    const { ok, data } = await apiPost("/api/clip", { vod: selectedVod, style, type, force });
+    const { ok, data } = await apiPost("/api/clip", { vod: selectedVod, style, type, force, captions, hook_caption, speed });
     if (ok) {
         pipelineRunning = true;
         updateControls();
@@ -114,8 +117,11 @@ async function startClipAll() {
     if (pipelineRunning) return;
     const style = document.getElementById("sel-style").value;
     const force = document.getElementById("chk-force").checked;
+    const captions = document.getElementById("chk-captions").checked;
+    const hook_caption = document.getElementById("chk-hook-caption").checked;
+    const speed = document.getElementById("sel-speed").value;
 
-    const { ok, data } = await apiPost("/api/clip-all", { style, force });
+    const { ok, data } = await apiPost("/api/clip-all", { style, force, captions, hook_caption, speed });
     if (ok) {
         pipelineRunning = true;
         updateControls();
