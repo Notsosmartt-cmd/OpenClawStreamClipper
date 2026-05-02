@@ -1,7 +1,10 @@
 {
-  "text_model": "google/gemma-4-26b-a4b",
-  "vision_model": "google/gemma-4-26b-a4b",
+  "text_model": "qwen/qwen3.6-35b-a3b",
+  "vision_model": "qwen/qwen3.6-35b-a3b",
   "whisper_model": "large-v3",
   "llm_url": "http://host.docker.internal:1234",
-  "context_length": 32768
+  "context_length": 32768,
+  "text_model_passb": null,
+  "vision_model_stage6": null,
+  "_phase_5_note": "Phase 5.1 split: `text_model_passb` and `vision_model_stage6` optionally override `text_model` / `vision_model` for those specific stages. When null (the default), they fall back to the unified model. Stage 3 segment classification always uses `text_model` regardless. Recommended split on a 48 GB rig: text_model_passb = 'qwen/qwen3-32b' (text-only, non-thinking, ~28 GB BF16, ~3x cheaper than multimodal for Pass B's classification workload), vision_model_stage6 = 'qwen/qwen3-vl-8b' (vision-specialist, ~10 GB FP8, stronger on Twitch OCR). The two can be co-resident; no hot-swap needed."
 }

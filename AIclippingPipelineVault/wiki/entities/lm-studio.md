@@ -1,7 +1,7 @@
 ---
 title: "LM Studio"
 type: entity
-tags: [inference-server, llm, windows, gpu, openai-compatible]
+tags: [inference-server, llm, windows, gpu, openai-compatible, infrastructure, hub]
 sources: 0
 updated: 2026-04-19
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Discord Bot"
 type: entity
-tags: [discord, interface, delivery, bot, natural-language]
+tags: [discord, interface, delivery, bot, natural-language, hub]
 sources: 2
 updated: 2026-04-17
 ---

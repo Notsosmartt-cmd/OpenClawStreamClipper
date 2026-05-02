@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "description": "Phase 0.3 regex denylist — terms that commonly propagate as hallucinations in generated clip metadata when the transcript / chat / OCR never mentioned them. A term here only fails a claim when the same term is ABSENT from all references (transcript window, overlay OCR, chat). Compiled with re.IGNORECASE; patterns use Python regex with word-boundary anchors.",
+  "categories": {
+    "platform_meta_tics": {
+      "description": "Generic YouTube/TikTok creator CTAs that don't belong in a clip title",
+      "patterns": [
+        "\\bsubscribe\\b",
+        "don'?t forget to",
+        "like and subscribe",
+        "hit the bell",
+        "notification squad",
+        "smash that like"
+      ]
+    },
+    "twitch_jargon_overclaims": {
+      "description": "Twitch-specific events that MUST be backed by transcript or EventSub ground truth — this is the 'gifted subs' failure mode from ClippingResearch.md",
+      "patterns": [
+        "\\bgifted subs?\\b",
+        "\\bgifted subscriptions?\\b",
+        "\\bsub train\\b",
+        "\\b(raid|raided|raiding)\\b",
+        "\\bhype train\\b",
+        "\\bbit(s)? rain\\b",
+        "\\bcheer(ed|ing)?\\b",
+        "\\bprime sub(s|scription)?\\b",
+        "\\btier 3\\b",
+        "\\bre-?sub(scribed|scription)?\\b",
+        "\\bfirst-?time sub(scriber)?\\b",
+        "\\bsub-?bomb(ing)?\\b",
+        "\\bdonated subs?\\b"
+      ]
+    },
+    "generic_creator_templates": {
+      "description": "Filler phrases that usually mean the model is pattern-matching against training data, not the clip",
+      "patterns": [
+        "in this video",
+        "today we(?:'|'|\\s+ar)",
+        "let'?s dive in",
+        "welcome back",
+        "stay tuned"
+      ]
+    },
+    "sports_highlight_tropes": {
+      "description": "Overused sports/esports clichés the model reaches for when it doesn't have real HUD OCR",
+      "patterns": [
+        "\\bclutch play\\b",
+        "\\bgame-?winning\\b",
+        "\\btriple-?kill\\b",
+        "\\bquad(ra)?-?kill\\b",
+        "\\bpenta-?kill\\b",
+        "\\back?-ace\\b"
+      ]
+    }
+  },
+  "thresholds": {
+    "pass_b_min_overlap": 0.15,
+    "stage_6_min_overlap": 0.20
+  }
+}

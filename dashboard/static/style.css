@@ -340,3 +340,33 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 @media (max-width: 900px) { .dashboard { grid-template-columns: 1fr; } }
+
+/* --- Folder Settings Panel --- */
+.folder-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.folder-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-family: var(--mono);
+    outline: none;
+    transition: border-color 0.15s;
+}
+.folder-input:focus { border-color: var(--accent); }
+.folder-input:hover { border-color: var(--text-muted); }
+
+.folder-browse-btn {
+    white-space: nowrap;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}

@@ -1,7 +1,7 @@
 ---
 title: "OpenClaw Stream Clipper — Detailed System Summary"
 type: source
-tags: [source, architecture, reference]
+tags: [source, architecture, reference, hub]
 file: "OpenClaw_Stream_Clipper_Summary.md"
 location: project root
 ingested: 2026-04-07

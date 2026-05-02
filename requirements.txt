@@ -1,0 +1,12 @@
+# Base Python dependencies for the stream-clipper container.
+#
+# These are installed regardless of the `ORIGINALITY_STACK` build argument.
+# Edit this file to change the pinned versions — the Docker image will
+# rebuild from these requirements rather than a hardcoded pip command.
+
+# Transcription (Stages 2 and 7). Requires CUDA libs from the nvidia/cuda
+# base image when run on GPU; falls back to CPU int8 automatically.
+faster-whisper
+
+# Web dashboard backend (port 5000).
+flask

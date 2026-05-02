@@ -1,0 +1,20 @@
+# Originality-stack extras. Added to the image only when the Docker build
+# arg ORIGINALITY_STACK=full (the default).
+#
+# To skip these at build time — smaller image, no voiceover / music
+# tier-C / face-pan support — build with:
+#
+#     docker compose build --build-arg ORIGINALITY_STACK=slim
+#
+# Features that depend on each package:
+#   piper-tts              → Wave D voiceover (scripts/lib/piper_vo.py)
+#   librosa + soundfile    → Wave D tier-C music matching (scripts/lib/scan_music.py)
+#   opencv-python-headless → Wave E face-tracked camera pan (scripts/lib/face_pan.py)
+#
+# Each helper already degrades gracefully when its dependency is missing:
+# the pipeline logs a warning and falls back to the next-best render path.
+
+piper-tts
+librosa
+soundfile
+opencv-python-headless

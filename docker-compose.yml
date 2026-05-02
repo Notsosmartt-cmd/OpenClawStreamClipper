@@ -38,6 +38,14 @@ services:
       - ./clips:/root/VODs/Clips_Ready
       - ./scripts:/root/scripts
       - ./dashboard:/root/dashboard
+      # Model caches live on the HOST so the image stays slim and users can
+      # inspect / replace weights without rebuilding. First pipeline run
+      # populates these; subsequent runs reuse the cache.
+      - ./models/whisper:/root/.cache/whisper-models
+      - ./models/piper:/root/.cache/piper
+      # Optional music-bed library (wave D). Empty folder is fine — music
+      # features simply skip when no tracks are present.
+      - ./music:/root/music
     environment:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
     ports:

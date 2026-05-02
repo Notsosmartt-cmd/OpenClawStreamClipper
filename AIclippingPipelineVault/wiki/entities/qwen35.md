@@ -1,7 +1,7 @@
 ---
 title: "qwen3.5:9b"
 type: entity
-tags: [model, llm, alibaba, qwen, reasoning, pipeline]
+tags: [model, llm, alibaba, qwen, reasoning, pipeline, infrastructure, stage-3, stage-4, stage-6, text, vision, hub]
 sources: 2
 updated: 2026-04-07
 ---

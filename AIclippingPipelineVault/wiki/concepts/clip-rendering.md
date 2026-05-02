@@ -1,50 +1,60 @@
 ---
 title: "Clip Rendering (Stage 7)"
 type: concept
-tags: [rendering, ffmpeg, blur-fill, captions, subtitles, 9:16, vertical]
-sources: 2
-updated: 2026-04-20
+tags: [rendering, ffmpeg, blur-fill, smart-crop, captions, subtitles, 9:16, vertical, originality, stitch, stage-7, video]
+sources: 3
+updated: 2026-04-25
 ---
 
 # Clip Rendering (Stage 7)
 
-The final production stage. Converts approved moments into finished 1080×1920 vertical video clips with burned-in captions, ready for TikTok/Reels/Shorts.
+The final production stage. Converts approved moments into finished 1080×1920 vertical clips with burned-in captions, ready for TikTok/Reels/Shorts. As of the [[concepts/originality-stack]] additions, every clip is rendered through per-clip randomized parameters and one of four framing modes.
 
-Uses [[entities/ffmpeg]] and [[entities/faster-whisper]] (for captions). Runs after [[concepts/vision-enrichment]] unloads the vision model.
+Uses [[entities/ffmpeg]] and [[entities/faster-whisper]] (for captions). Runs after [[concepts/vision-enrichment]] unloads the vision model (or skips the swap when text and vision use the same multimodal model).
 
 ---
 
 ## Stage 7 sub-steps
 
-1. **Generate clip manifest** — vision-generated titles used as filenames (sanitized, e.g. `IRL_Fat_Sack_Checkout_Fiasco.mp4`), written to `clip_manifest.txt`
-2. **Extract clip audio** — single FFmpeg pass extracts 45-second audio segments for all clips
-3. **Batch caption transcription** — single Whisper model load; transcribes all clip audio segments; outputs individual SRT files with word-level timestamps
-4. **Render all clips** — FFmpeg blur-fill pipeline per clip
-5. Unload Whisper, proceed to Stage 8
+1. **Generate clip manifest** — vision-generated titles used as filenames (sanitized, e.g. `IRL_Fat_Sack_Checkout_Fiasco.mp4`), written to `clip_manifest.txt`. Columns now include `clip_start` + `clip_duration` so variable lengths propagate from Stage 4.
+2. **Extract clip audio** — single FFmpeg pass extracts variable-length audio segments for all clips.
+3. **Batch caption transcription** — single Whisper model load; transcribes all clip audio segments; outputs individual SRT files with word-level timestamps.
+4. **Render solo + narrative clips** — per-clip FFmpeg pipeline with randomized params, framing mode, optional TTS voiceover + music bed. Stitch-group members are deferred to step 5.
+5. **Stage 7e — stitch render** — `scripts/lib/stitch_render.py` concatenates each stitch group's members with `xfade` transitions into one composite clip.
+6. Unload Whisper, proceed to Stage 8.
 
 ---
 
-## Blur-fill 9:16 technique
+## Framing modes (Wave B)
 
-> [!note] Previous approach: hard crop (now obsolete)
-> Earlier versions hard-cropped the 16:9 frame to 9:16 by cutting left/right edges. This discarded ~44% of the horizontal content. A streamer visible on the right side of frame would be cut out entirely.
+Controlled by `CLIP_FRAMING`. Four modes select a different base filter chain before the hook and subtitle layers are appended.
 
-Current technique: **blur-fill**. Full 16:9 frame is preserved. Black bars are replaced with a blurred, zoomed version of the same frame.
+| Mode | Summary |
+|---|---|
+| `blur_fill` | Legacy look — full 16:9 foreground over blurred-fill background. Kept for backward compatibility. |
+| `smart_crop` **(default)** | Uses vision-returned `chrome_regions` bboxes to crop out chat / logo / webcam border / alerts before the blur-fill composition. Falls back to `blur_fill` if no regions detected. |
+| `centered_square` | Foreground 1080×810 centered at `y=555` over blurred-fill bg. Leaves space top and bottom for hook + captions. |
+| `camera_pan` | Uses the precomputed face-track path from Stage 6.5 ([[entities/face-pan]]). Falls back to `blur_fill` per clip when no faces were found. |
 
-**FFmpeg filter chain:**
+### Legacy blur-fill FFmpeg chain
+
 ```
 [input] split [bg][fg]
-[bg] scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920, boxblur=25:5 [blurred_bg]
-[fg] scale=1080:608:force_original_aspect_ratio=decrease [fg_scaled]
+[bg] scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920, boxblur=<R>:<P> [blurred_bg]
+[fg] scale=1080:-2:force_original_aspect_ratio=decrease [fg_scaled]
 [blurred_bg][fg_scaled] overlay=(W-w)/2:(H-h)/2 [video]
-[video] subtitles=clip.srt [output]
+[video] eq=... , hue=h=<H>° [, vignette] [, shake] [, drawtext (hook)] [, subtitles] [output]
 ```
 
-What this produces:
-- 1080×1920 output (9:16)
-- **Background**: blurred + zoomed version of the original 16:9 frame fills the vertical canvas
-- **Foreground**: original full 16:9 frame, scaled to fit width, centered vertically
-- No content is cropped out — everything visible in the original is visible in the clip
+Where `<R>`, `<P>`, `<H>`, and the subsequent eq / hue / vignette / shake / hook / subtitle styling are all per-clip randomized — see wave A below. When `CLIP_ORIGINALITY=false` these collapse to the pre-April-2026 fixed values (`boxblur=25:5`, no eq stack, fixed hook/subtitle palette).
+
+### Smart-crop specifics
+
+The vision model returns `chrome_regions: [{x, y, w, h, label}, ...]` for chat / logo / webcam / alert / score UI. Stage 7 computes the largest remaining rectangle (x0/y0/x1/y1 walk — each region shaves off the side it sits on) and prepends `crop=W:H:X:Y` before the blur-fill chain so the cropped-out chrome never appears in the output. Minimum remaining size is 640×360 — below that Stage 7 reverts to `blur_fill` for safety.
+
+### Camera-pan specifics
+
+Stage 6.5 emits a `crop=w:h:x='<piecewise-linear expr over t>':y='<expr>',scale=1080:1920:flags=lanczos` filter string per clip. Stage 7 splices it in place of the blur-fill filter. Up to 32 keyframes per clip.
 
 ---
 
@@ -53,32 +63,60 @@ What this produces:
 | Property | Value |
 |---|---|
 | Resolution | 1080×1920 (9:16 vertical) |
-| Video codec | H.264 (`libx264`) |
-| Quality | CRF 23, preset `medium` |
-| Audio codec | AAC, 128kbps |
-| Duration | 45 seconds (T − 22s to T + 23s) |
+| Video codec | H.264 (`libx264`), profile High@4.2, `yuv420p` |
+| Quality | CRF 20, preset `slow`, 18 Mbps target / 20 Mbps max / 40 Mbps bufsize |
+| Frame rate | 30 fps (CFR) |
+| Audio codec | AAC, 192 kbps |
+| Duration | Per-category variable: hype/reactive 18–25 s, funny 20–30 s, emotional 40–55 s, storytime 50–80 s (narrative groups up to 90 s) |
 | Subtitles | Burned-in (not soft subtitles) |
+
+The old defaults (CRF 23, preset medium, 128 kbps audio) are still used by the fallback render path when the primary render fails.
 
 ---
 
-## Subtitle/caption style
+## Wave A — Per-clip randomization
 
-Generated by [[entities/faster-whisper]] as SRT with word-level timestamps.
+Every clip in a batch is rendered with its own deterministic-but-unique set of parameters seeded from the moment timestamp. `scripts/lib/originality.py` emits the shell vars; Stage 7 `eval`s them into the filter graph. See [[concepts/originality-stack]] §Wave A for the full table.
 
-ASS subtitle style parameters:
-- **Font**: bold, size 11
-- **Color**: white (`FFFFFF`)
-- **Outline**: black, 2px (`OutlineColour=000000, Outline=2`)
-- **Alignment**: bottom-center (`Alignment=2`)
-- **Margin**: 40px from bottom (`MarginV=40`)
+- Blur radius `[18, 32]`, passes `[3, 6]`
+- Mirror 45 % of clips when `mirror_safe=true`
+- `eq` stack: `brightness ±0.05`, `saturation [0.92, 1.18]`, `contrast [0.95, 1.15]`, `gamma [0.93, 1.08]`, `hue ±6°`
+- 30 % chance of `vignette=angle=PI/5`
+- 35 % chance of a micro-`shake` via time-varying crop (`sin(t)/cos(t)` offsets)
+- Hook palette rotated from 6 combinations (color / box / border)
+- Subtitle style rotated from 5 variants (color / outline / margin)
 
-The bottom alignment was a deliberate fix from an earlier version that placed captions center-frame, where they obscured gameplay or the streamer's face.
+---
 
-### Caption toggle
+## Wave C — Stitch rendering
 
-Captions can be disabled via the **Clip Controls** panel in the [[entities/dashboard]] (Captions checkbox, on by default). When disabled, the subtitle filter is skipped entirely and the clip renders with blur-fill only.
+`scripts/lib/stitch_render.py` handles `group_kind=stitch` (see [[concepts/originality-stack]] §Wave C).
 
-Implemented via `CLIP_CAPTIONS` env var (`true`/`false`). The pipeline reads `CAPTIONS_ENABLED="${CLIP_CAPTIONS:-true}"` at startup. When `false`, `RENDER_VF` is set to `${BLUR_BG}` only (no subtitles filter).
+1. Render each group member to a short intermediate MP4 through the same framing chain (with its own per-member randomization — each sub-clip can flip, boost saturation differently, etc.).
+2. Concatenate with `xfade` transitions (0.35 s, selected from a 7-element pool keyed by originality seed). Falls back to `concat` demuxer when a member is shorter than the transition duration.
+3. Apply the first member's hook text as a `drawtext` overlay on the concat.
+4. Write to `clips/<Title>.mp4` and append to `clips_made.txt` so Stage 8 picks it up.
+
+---
+
+## Audio layers (Wave D)
+
+When `CLIP_TTS_VO=true`, Stage 7 invokes `scripts/lib/piper_vo.py` which calls [[entities/piper]] and pads the WAV to exactly `clip_duration` with silence positioning the utterance according to `placement`. The render loop builds a `filter_complex` amix graph:
+
+```
+[0:a]volume=0.45[src_audio];                       # source ducked to -8 dB
+[1:a]volume=2.3,apad=whole_dur=<DUR>[vo_audio];    # VO boosted ~+7 dB
+[2:a]atrim=0:<DUR>,volume=0.08[music_audio];       # music bed at -22 dB (looped via -stream_loop -1)
+[src_audio][vo_audio][music_audio]amix=inputs=3:duration=first:dropout_transition=0[aout]
+```
+
+Music-bed path is chosen via `scripts/lib/music_pick.py` (tier A folder convention by default, tier C [[entities/librosa]]-scored when `CLIP_MUSIC_TIER_C=true`). If neither VO nor music is enabled, the simple `-af rubberband=...` path is used as before.
+
+---
+
+## Captions and hook text
+
+Subtitle style (ASS font/color/margin), per-clip palette randomization, and the AI-generated hook card rendered at the top of the video are all covered in [[concepts/captions]].
 
 ---
 
@@ -88,62 +126,9 @@ Clip filenames use the AI-generated title with spaces — e.g. `Epic Clutch Play
 
 ---
 
-## Hook caption (top-of-video title)
-
-A punchy AI-generated hook displayed at the **top** of the video in a white box with black bold text — the TikTok/Reels style hook card. Generated by [[entities/qwen3-vl]] during Stage 6 vision enrichment as part of the same LLM call that produces the clip title and description.
-
-### How it works
-
-The Stage 6 prompt requests a `hook` field: *"punchy 1-line hook shown at top of video, max 8 words, written in the voice and slang of a `{stream_type}` content creator, no hashtags"*. The hook is stored in `scored_moments.json`, written into the clip manifest, and rendered via FFmpeg's `drawtext` filter.
-
-**FFmpeg filter:**
-```
-drawtext=textfile='/tmp/clipper/clip_{T}_hook.txt'
-  :fontsize=40
-  :fontcolor=black
-  :fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
-  :box=1
-  :boxcolor=white@0.92
-  :boxborderw=22
-  :x=(w-text_w)/2
-  :y=55
-  :line_spacing=8
-```
-
-The hook text is written to a per-clip temp file (to avoid shell quoting issues with apostrophes). Python's `textwrap.wrap(hook, 22)` wraps it to max 3 lines of 22 chars each.
-
-If vision enrichment failed to generate a hook, the clip title is used as fallback.
-
-### Toggle
-
-Controlled by `CLIP_HOOK_CAPTION` env var (default `true`). Dashboard "Hook caption" checkbox (on by default). Passes through `app.py` → `spawn_pipeline()` the same way captions and speed do.
-
-> [!note] Font requirement
-> `fonts-dejavu-core` must be installed in the Docker image. Added to `Dockerfile` as of 2026-04-20. Requires a container rebuild (`docker compose up -d --build`).
-
----
-
 ## Speed control
 
-The dashboard Clip Controls panel exposes a **Speed** dropdown: `1×` (default), `1.1×`, `1.25×`, `1.5×`.
-
-Pitch tracks speed proportionally — no separate control needed. At 1.25× the voice sounds like the person is naturally talking faster, not like a chipmunk.
-
-### How speed-up works
-
-**Video:** `setpts=PTS/N` is prepended to the blur-fill filter chain so both background and foreground branches receive the adjusted presentation timestamps. The `-t CLIP_LENGTH` input seek flag still controls how much source material to read; output duration = `CLIP_LENGTH / speed`.
-
-**Audio:** `rubberband=tempo=N:pitch=N` — pitch and tempo are both set to the same speed ratio. The Rubber Band Library does high-quality time-stretching. Because pitch rises in proportion to speed, the result sounds like a natural fast-talker rather than either a chipmunk (pitch too high vs tempo) or a slowed-down voice (pitch=1.0, which would sound slightly deadened).
-
-`rubberband` is compiled into Ubuntu 22.04's `apt install ffmpeg` (`--enable-librubberband`) — no special build required.
-
-**SRT subtitle rescaling:** When speed ≠ 1.0, all SRT timestamps are divided by the speed factor via `rescale_srt()` before the render command. This keeps subtitles in sync with the sped-up video. A per-clip `clip_${T}_scaled.srt` is written to `$TEMP_DIR`; the original is left untouched.
-
-### When to use
-
-- **1.1×**: barely perceptible speed-up, good for padding out slow moments
-- **1.25×**: noticeable but natural-feeling — the sweet spot for just-chatting clips
-- **1.5×**: aggressive; works for very slow speakers or filler-heavy segments
+Dashboard **Speed** dropdown (`1×` / `1.1×` / `1.25×` / `1.5×`) applies `setpts` to video and `rubberband` (pitch-tracked) to audio; SRT timestamps are rescaled to match. Full details: [[concepts/speed-control]].
 
 ---
 
@@ -171,6 +156,8 @@ Diagnostic JSON saved to `clips/.diagnostics/` for post-hoc analysis.
 ## Related
 - [[entities/ffmpeg]] — does the rendering
 - [[entities/faster-whisper]] — generates word-level SRT subtitles
-- [[concepts/vision-enrichment]] — Stage 6 that generates the titles used as filenames
+- [[concepts/captions]] — subtitle style, hook card, per-clip palette randomization
+- [[concepts/speed-control]] — setpts + rubberband speed-up, SRT rescaling
+- [[concepts/vision-enrichment]] — Stage 6 that generates titles and hook text
 - [[concepts/clipping-pipeline]] — Stage 7 in context
 - [[concepts/open-questions]] — variable clip length discussion

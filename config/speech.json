@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "Phase 3 speech-pipeline config (see IMPLEMENTATION_PLAN.md). Controls which ASR backend to use, the model, device/compute defaults, and optional pre-processing steps.",
+  "backend": "whisperx",
+  "backend_description": "whisperx | faster-whisper. WhisperX bundles VAD + batched faster-whisper + forced alignment in one library and produces better word-level timestamps plus far fewer hallucinated segments than raw faster-whisper on long files. Falls back automatically to faster-whisper when the whisperx package isn't importable.",
+  "model": "large-v3-turbo",
+  "model_description": "large-v3-turbo is the free ~2.5x speedup over large-v3 with <1% WER loss. large-v3 is the quality ceiling. medium / small useful only for low-VRAM rigs.",
+  "device": "auto",
+  "compute_type": "auto",
+  "device_description": "auto = cuda→cpu fallback. compute_type auto = float16 on GPU / int8 on CPU. Set explicitly to pin.",
+  "batch_size": 16,
+  "language": "en",
+  "alignment": {
+    "enabled": true,
+    "description": "Run wav2vec2 forced alignment after ASR to get frame-accurate word-level timestamps. Required for the subtitle layer that Stage 7 burns in — without it, word timings come straight from Whisper decoding which can drift by 200-500 ms on long clips."
+  },
+  "vocal_separation": {
+    "enabled": false,
+    "backend": "demucs",
+    "model": "htdemucs_ft",
+    "description": "Run Demucs v4 vocals stem separation before transcription. Adds ~60-120s overhead per hour of audio on a 4090 (much longer on CPU). Enable for streams with heavy background music / game audio drowning the streamer — IRL content, DJ sets, concerts, music-game streams. Default off because most Twitch content doesn't need it."
+  },
+  "streamer_prompts_path": "/root/.openclaw/streamer_prompts.json",
+  "fallback_chunk_seconds": 1200,
+  "fallback_chunk_seconds_description": "Only used by the faster-whisper fallback path. WhisperX's VAD-based chunking replaces this."
+}

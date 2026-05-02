@@ -5,8 +5,51 @@
   "showAttachments": false,
   "hideUnresolved": false,
   "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "entities",
+      "color": {
+        "a": 1,
+        "rgb": 5984992
+      }
+    },
+    {
+      "query": " concepts",
+      "color": {
+        "a": 1,
+        "rgb": 16750131
+      }
+    },
+    {
+      "query": " sources",
+      "color": {
+        "a": 1,
+        "rgb": 13437940
+      }
+    },
+    {
+      "query": "overview",
+      "color": {
+        "a": 1,
+        "rgb": 3339570
+      }
+    },
+    {
+      "query": " index",
+      "color": {
+        "a": 1,
+        "rgb": 4125879
+      }
+    },
+    {
+      "query": " log",
+      "color": {
+        "a": 1,
+        "rgb": 15462900
+      }
+    }
+  ],
   "collapse-display": false,
   "showArrow": false,
   "textFadeMultiplier": -2.7,
@@ -17,6 +60,6 @@
   "repelStrength": 10,
   "linkStrength": 1,
   "linkDistance": 250,
-  "scale": 0.713275462622445,
+  "scale": 0.362887369301215,
   "close": true
 }

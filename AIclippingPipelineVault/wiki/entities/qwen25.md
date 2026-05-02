@@ -1,7 +1,7 @@
 ---
 title: "qwen2.5:7b"
 type: entity
-tags: [model, llm, alibaba, qwen, discord, agent, tool-calling]
+tags: [model, llm, alibaba, qwen, discord, agent, tool-calling, infrastructure, text]
 sources: 2
 updated: 2026-04-07
 ---

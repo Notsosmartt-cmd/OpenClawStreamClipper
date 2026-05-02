@@ -62,6 +62,34 @@ mkdir -p /root/VODs/Clips_Ready /tmp/clipper /root/VODs/.transcriptions
 # --- Ensure scripts are executable ---
 chmod +x /root/scripts/*.sh 2>/dev/null || true
 
+# --- Best-effort default-asset fetch ---
+# Keeps the "zero user intervention" UX even though assets are mounted from
+# the host. Whisper is NOT fetched here — faster-whisper lazy-downloads on
+# first pipeline call, and the Whisper weights are large (~3 GB) so we
+# prefer not to block container startup on a network round-trip.
+# Piper voice (~20 MB) is fetched eagerly so voiceover works the moment the
+# user toggles TTS. Failure is non-fatal — piper_vo.py will retry on demand.
+PIPER_DIR="/root/.cache/piper"
+DEFAULT_PIPER_VOICE="${PIPER_VOICE:-en_US-amy-low}"
+if [ -z "$(ls -A "$PIPER_DIR" 2>/dev/null)" ]; then
+  echo "Piper cache at $PIPER_DIR is empty — fetching default voice $DEFAULT_PIPER_VOICE..."
+  if python3 /root/scripts/lib/fetch_assets.py piper "$DEFAULT_PIPER_VOICE" >/dev/null 2>&1; then
+    echo "  ✓ Piper voice cached."
+  else
+    echo "  ✗ Piper voice fetch failed (network?). Voiceover will retry on demand."
+  fi
+else
+  echo "Piper cache at $PIPER_DIR is already populated."
+fi
+
+# Whisper cache status message (informational only — no fetch here).
+WHISPER_DIR="/root/.cache/whisper-models"
+if [ -z "$(ls -A "$WHISPER_DIR" 2>/dev/null)" ]; then
+  echo "Whisper cache at $WHISPER_DIR is empty — the first pipeline run will download ~3 GB."
+else
+  echo "Whisper cache at $WHISPER_DIR is already populated."
+fi
+
 # --- Start Dashboard ---
 echo "Starting web dashboard on port 5000..."
 python3 /root/dashboard/app.py &

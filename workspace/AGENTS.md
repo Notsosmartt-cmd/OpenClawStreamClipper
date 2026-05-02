@@ -33,6 +33,8 @@ bash /root/scripts/clip-pipeline.sh --list 2>&1
 ```
 
 ## STYLE (pick from user's words, default "auto")
+
+Emotion-coded styles (existing):
 - funny/comedy → `--style funny`
 - hype/exciting → `--style hype`
 - emotional → `--style emotional`
@@ -42,6 +44,14 @@ bash /root/scripts/clip-pipeline.sh --list 2>&1
 - reactive/rage → `--style reactive`
 - dancing/moves → `--style dancing`
 - variety/mix → `--style variety`
+
+Tier-4 interaction-coded styles (new — bias toward conversation/interaction patterns):
+- conversation/interview/dialog/discussion/guest → `--style conversational`
+- informational/info/substance/rant/explainer/deep dive → `--style informational`
+- freestyle/rap battle/rap/verse/bars → `--style freestyle`
+- chat/reading chat/chat moments → `--style chatlive`
+- spicy/callout/beef/tea → `--style spicy`
+
 - otherwise → `--style auto`
 
 ## STREAM TYPE (optional --type flag, extract from user's words)

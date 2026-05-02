@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "description": "Two-tier grounding cascade. Tier 1: regex denylist + content-word overlap (stdlib, <5 ms). Tier 2: LLM-as-judge using the pipeline's main text model. Replaces the previous 3-tier MiniCheck NLI + Lynx-8B cascade (retired 2026-05-01). Bind-mounted into the container at /root/.openclaw/grounding.json. Runtime override via CLIP_GROUNDING_CONFIG env var.",
+  "tier_1": {
+    "enabled": true,
+    "description": "Regex denylist + content-word overlap. Stdlib only, always available. Hard-event check (Phase 2.4d) short-circuits when a denylist hit's keyword maps to a zero-count event in chat — that's the single sharpest anti-hallucination signal and runs regardless of judge availability.",
+    "pass_b_min_overlap": 0.15,
+    "stage_6_min_overlap": 0.15,
+    "clear_pass_overlap": 0.55
+  },
+  "judge": {
+    "enabled": true,
+    "description": "LLM-as-judge using the pipeline's main text model. Resolves via cfg.model -> CLIP_GROUNDING_JUDGE_MODEL -> CLIP_TEXT_MODEL -> qwen/qwen3.5-9b fallback. Returns 5-dimensional scores (grounding/setup_payoff/speaker/conceptual/callback) collapsed to a 0-10 weighted mean. Pass = weighted >= pass_threshold.",
+    "model": null,
+    "model_description": "null = resolve at runtime to whatever CLIP_TEXT_MODEL the pipeline loaded. Override here only if you want grounding to use a different model than detection.",
+    "timeout_s": 30,
+    "pass_threshold": 5.0,
+    "weights": {
+      "grounding": 0.55,
+      "setup_payoff": 0.15,
+      "speaker": 0.05,
+      "conceptual": 0.15,
+      "callback": 0.10
+    },
+    "_self_judging_note": "The same model that generates Pass B 'why' / Stage 6 title is now also the judge. Self-judging tends to inflate faithfulness ratings 5-15 pp vs an independent model. Tier 1's hard-event check (event_contradicts_ground_truth) is the structural safety net that no LLM rubber-stamping can defeat."
+  },
+  "regeneration": {
+    "enabled": true,
+    "description": "On a Stage 6 grounding fail, retry the vision call ONCE with a stricter prompt that names the violation. If the retry also fails, null the field and fall back to transcript defaults.",
+    "stage_6_retry_count": 1
+  }
+}

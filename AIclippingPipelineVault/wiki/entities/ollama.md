@@ -1,7 +1,7 @@
 ---
 title: "Ollama (retired)"
 type: entity
-tags: [inference-server, llm, docker, gpu, retired]
+tags: [inference-server, llm, docker, gpu, retired, infrastructure, historical]
 sources: 2
 updated: 2026-04-18
 ---

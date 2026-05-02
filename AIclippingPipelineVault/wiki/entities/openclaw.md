@@ -1,7 +1,7 @@
 ---
 title: "OpenClaw"
 type: entity
-tags: [agent-framework, orchestration, discord, nodejs]
+tags: [agent-framework, orchestration, discord, nodejs, infrastructure, interface, hub]
 sources: 2
 updated: 2026-04-17
 ---

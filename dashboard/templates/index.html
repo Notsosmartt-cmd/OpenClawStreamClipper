@@ -96,6 +96,61 @@
             </div>
         </div>
 
+        <!-- Originality (TikTok defense) -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Originality &amp; Render</span>
+                <span class="badge badge-gray" style="font-size: 0.65rem;" title="Per-clip randomization, framing modes, stitching, camera pan, music bed, and voiceover controls. See the Originality wiki page for how each setting affects detection.">defense stack</span>
+            </div>
+            <div class="panel-body">
+                <div class="controls" id="originality-controls">
+                    <div class="control-group">
+                        <label>Framing mode</label>
+                        <select id="sel-framing" onchange="onOriginalityChange()">
+                            <option value="blur_fill" selected>Blur-fill (legacy)</option>
+                            <option value="camera_pan">Camera pan (face track)</option>
+                        </select>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-originality" checked onchange="onOriginalityChange()">
+                        <label for="chk-originality" title="Per-clip random blur, color, mirror, hook and subtitle style">Per-clip randomization</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-narrative" checked onchange="onOriginalityChange()">
+                        <label for="chk-narrative" title="Merge adjacent storytime/emotional/hot_take moments into one long clip">Narrative merge (long clips)</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-stitch" onchange="onOriginalityChange()">
+                        <label for="chk-stitch" title="Bundle 3-4 short moments into one multi-segment post">Stitch short moments</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-camera-pan" onchange="onOriginalityChange()">
+                        <label for="chk-camera-pan" title="Requires framing mode 'camera_pan'. Runs OpenCV face detection to drive a virtual camera across speakers.">Face-tracked camera pan</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-tts-vo" onchange="onOriginalityChange()">
+                        <label for="chk-tts-vo" title="Mix a Piper (local) voiceover line generated during vision enrichment">Voiceover layer (Piper TTS)</label>
+                    </div>
+                    <div class="control-group" style="min-width: 240px; flex: 1;">
+                        <label>Music bed folder</label>
+                        <div style="display: flex; gap: 4px;">
+                            <input type="text" id="inp-music-bed" placeholder="/path/to/music (empty = off)" style="flex: 1; min-width: 160px;" onchange="onOriginalityChange()">
+                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="browseMusicFolder()" title="Pick a folder">…</button>
+                        </div>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="chk-music-tier-c" onchange="onOriginalityChange()">
+                        <label for="chk-music-tier-c" title="Use librosa-scored tier C matching (tempo/energy/brightness). Requires running the Scan Music button once.">Tier C music matching</label>
+                    </div>
+                    <button id="btn-scan-music" class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanMusicLibrary()" title="Run librosa on every track in the folder and write music_library.json">Scan Music</button>
+                    <span id="music-scan-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
+                </div>
+                <div class="hw-hint hw-hint-note" style="margin-top: 10px; font-size: 0.72rem;">
+                    💡 Smart crop relies on the vision model flagging chrome_regions. If the model returns no regions (clean stream), smart_crop falls back to blur-fill automatically. Narrative and stitch modes require enough moments in the right categories or they emit zero groups.
+                </div>
+            </div>
+        </div>
+
         <!-- AI Models -->
         <div class="panel">
             <div class="panel-header">
@@ -140,6 +195,50 @@
             </div>
         </div>
 
+        <!-- Folder Settings -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Folder Settings</span>
+                <button id="btn-refresh-folders" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
+            </div>
+            <div class="panel-body" id="folders-panel">
+                <div class="empty-state">Loading folder settings...</div>
+            </div>
+        </div>
+
+        <!-- Asset Cache (mounted models on host) -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Asset Cache</span>
+                <button id="btn-refresh-assets" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAssets()">Refresh</button>
+            </div>
+            <div class="panel-body" id="assets-panel">
+                <div class="empty-state">Loading asset cache…</div>
+            </div>
+            <div class="panel-body" style="padding-top: 0; border-top: 1px solid var(--border);">
+                <div class="controls">
+                    <div class="control-group" style="min-width: 200px; flex: 1;">
+                        <label>Fetch Whisper model</label>
+                        <div style="display: flex; gap: 4px;">
+                            <input type="text" id="inp-asset-whisper" value="large-v3" placeholder="large-v3" style="flex: 1;">
+                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAsset('whisper')">Fetch</button>
+                        </div>
+                    </div>
+                    <div class="control-group" style="min-width: 200px; flex: 1;">
+                        <label>Fetch Piper voice</label>
+                        <div style="display: flex; gap: 4px;">
+                            <input type="text" id="inp-asset-piper" value="en_US-amy-low" placeholder="en_US-amy-low" style="flex: 1;">
+                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAsset('piper')">Fetch</button>
+                        </div>
+                    </div>
+                    <span id="assets-fetch-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
+                </div>
+                <div class="hw-hint hw-hint-note" style="margin-top: 8px; font-size: 0.72rem;">
+                    💡 Model weights live in <code>./models/</code> on the host — not in the Docker image. First pipeline run auto-fetches the Whisper model if missing. Use this panel to pre-download or to add extra Piper voices.
+                </div>
+            </div>
+        </div>
+
         <!-- Pipeline Monitor -->
         <div class="panel">
             <div class="panel-header">Pipeline Monitor</div>
@@ -174,6 +273,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script type="module" src="/static/app.js"></script>
 </body>
 </html>

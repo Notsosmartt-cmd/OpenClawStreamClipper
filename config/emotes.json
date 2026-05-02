@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "description": "Emote name → emotional-category mapping for chat_features.py. Per ClippingResearch.md §Additional topic 4 + Song et al. 2021 (EPJ Data Science 10:43) — chat emote signatures are ~0.75 F1 on epic-moment detection, vision alone is ~0.70. Case-sensitive; matches exact chat tokens. Global Twitch + common BTTV/FFZ/7TV emotes. Per-channel subscriber emotes (e.g. {channel}Pog) can be added by editing this file directly — changes are picked up on next pipeline run.",
+  "categories": {
+    "laugh": {
+      "description": "Chat is laughing. Strongest single signal for comedy / awkward-moment clips.",
+      "emotes": [
+        "KEKW", "LULW", "OMEGALUL", "LUL", "LMAO", "KEKGE", "OMEGAROFL",
+        "4HEad", "ICANT", "COPIUM", "KEKWait", "KEKGuns", "LUL", "LMAOOO",
+        "PepeLaugh", "HAHAA"
+      ]
+    },
+    "hype": {
+      "description": "Celebration / excitement. Clutch plays, wins, hype moments.",
+      "emotes": [
+        "PogChamp", "POGGERS", "PogU", "Pog", "WOW", "HYPERS", "POGGIES",
+        "POGCRAZY", "PogYou", "EZY", "PauseChamp", "letsgo", "LETSGOO",
+        "LETSGOOO", "LETSGOOOO", "HUHH", "WIDEPEEPOHAPPY", "catJAM"
+      ]
+    },
+    "tense": {
+      "description": "Tension / suspense. Close calls, about-to-die, near-wipe.",
+      "emotes": [
+        "monkaS", "monkaW", "monkaGIGA", "monkaSTEER", "monkaOMEGA", "monkaX",
+        "Pepega", "peepoNervous", "Susge", "susge"
+      ]
+    },
+    "sad": {
+      "description": "Sad / emotional / vulnerable. Emotional-category clips.",
+      "emotes": [
+        "SADGE", "Sadge", "PepeHands", "FeelsBadMan", "FeelsSadMan",
+        "peepoSad", "D:", "BibleThump", "widepeepoSad", "sadCat"
+      ]
+    },
+    "big_play": {
+      "description": "Big play / outplay / dominance. Gaming skill moments.",
+      "emotes": [
+        "GIGACHAD", "Chadge", "EZ", "EZY", "EZ Clap", "EZClap", "NICE",
+        "HandsUp", "POGSLIDE"
+      ]
+    },
+    "loss": {
+      "description": "Loss / L / fail / rip.",
+      "emotes": [
+        "L", "LLL", "COPE", "Copege", "OMEGADOWN", "FeelsWeirdMan",
+        "RIP", "RIPBOZO", "ICANT", "ISHOWSPEEDSAD"
+      ]
+    },
+    "win": {
+      "description": "Win / W / gg / victory.",
+      "emotes": [
+        "W", "WWW", "GG", "PepoG", "OMEGALULW", "WINNING", "THUMBSUP"
+      ]
+    },
+    "confusion": {
+      "description": "Confusion / disbelief / wat. Common on reveals + plot-twist payoffs.",
+      "emotes": [
+        "WICKED", "HUH", "HUHH", "Wut", "WutFace", "MODS", "POGO",
+        "peepoHuh", "bruh", "BRUH"
+      ]
+    },
+    "cringe": {
+      "description": "Cringe / yikes / awkward. Situational-irony clips.",
+      "emotes": [
+        "YIKES", "Yikes", "cringe", "CRINGE", "YIKERS", "peepoCringe"
+      ]
+    }
+  },
+  "phrase_patterns": {
+    "description": "Recurring chat phrases that are strong clip signals when bursting. Matched case-insensitively on full messages, not token-level.",
+    "patterns": {
+      "hype": ["let'?s go+", "no way", "insane", "what a play", "holy shit", "holy (fuck|cow|moly)"],
+      "laugh": ["i'?m dead", "i'?m dying", "bro what", "he cooked", "i can'?t", "lmao", "lmfao"],
+      "sad": ["that'?s rough", "damn bro", "i'?m sorry"],
+      "loss": ["\\bL\\b", "Ls in chat", "tough loss", "got clapped", "big L"],
+      "win": ["\\bW\\b", "Ws in chat", "big W", "dub", "goated"]
+    }
+  }
+}

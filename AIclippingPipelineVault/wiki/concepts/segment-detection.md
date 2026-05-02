@@ -1,7 +1,7 @@
 ---
 title: "Segment Detection (Stage 3)"
 type: concept
-tags: [segment-detection, stream-profiling, classification, qwen35]
+tags: [segment-detection, stream-profiling, classification, qwen35, stage-3, text]
 sources: 2
 updated: 2026-04-07
 ---

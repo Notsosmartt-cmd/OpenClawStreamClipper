@@ -1,7 +1,7 @@
 ---
 title: "Open Questions and Feature Requests"
 type: concept
-tags: [open-questions, feature-requests, research, todo]
+tags: [open-questions, feature-requests, research, todo, hub]
 sources: 2
 updated: 2026-04-07
 ---

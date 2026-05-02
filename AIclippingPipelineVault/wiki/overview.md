@@ -1,9 +1,9 @@
 ---
 title: "OpenClaw Stream Clipper — Overview"
 type: overview
-tags: [overview, architecture, pipeline]
-sources: 2
-updated: 2026-04-19
+tags: [overview, architecture, pipeline, originality, hub]
+sources: 3
+updated: 2026-05-01
 ---
 
 # OpenClaw Stream Clipper
@@ -39,8 +39,8 @@ The pipeline calls LM Studio at `http://host.docker.internal:1234` — Docker's 
 
 | Model | LM Studio ID | Role | Hardware |
 |---|---|---|---|
-| [[entities/qwen35]] | `qwen/qwen3.5-35b-a3b` (best) or `qwen/qwen3.5-9b` | Pipeline text — segment classification + moment detection; also Discord agent | GPU (LM Studio manages) |
-| [[entities/qwen3-vl]] | `qwen/qwen3-vl-8b` or `qwen/qwen2.5-vl-7b` | Vision enrichment — frame scoring, titles, descriptions | GPU (LM Studio manages) |
+| [[entities/qwen35]] | `qwen/qwen3.5-35b-a3b` or `qwen/qwen3.5-9b` (or Gemma 4 `google/gemma-4-26b-a4b`) | **Unified multimodal model** — text detection (Stages 3–4) + vision enrichment (Stage 6). Setting text and vision to the same ID skips the Stage 5→6 VRAM swap. | GPU (LM Studio manages) |
+| ~~[[entities/qwen3-vl]]~~ | *retired — pipeline now uses the multimodal model above* | — | — |
 | [[entities/faster-whisper]] | `large-v3` | Speech-to-text transcription (Stages 2 and 7) | GPU via CUDA → CPU (int8) fallback |
 
 Model IDs are set via `config/models.json` (managed through the dashboard Models panel). LM Studio handles GPU assignment. The pipeline unloads models between stages via `POST /api/v1/models/unload`. See [[concepts/vram-budget]] and [[entities/lm-studio]] for 9B vs 35B behavior differences.
@@ -50,20 +50,22 @@ Model IDs are set via `config/models.json` (managed through the dashboard Models
 
 ---
 
-## The 8-stage pipeline
+## The pipeline
 
 ```
-Stage 1: Discovery         — find new/named VOD files
-Stage 2: Transcription     — chunked GPU Whisper, cached
-Stage 3: Segment Detection — classify stream type, build profile
-Stage 4: Moment Detection  — Pass A keywords + Pass B LLM + Pass C merge/select
-Stage 5: Frame Extraction  — 6 JPEGs per candidate moment
-Stage 6: Vision Enrichment — score boosts, titles, descriptions (non-gatekeeping)
-Stage 7: Editing & Export  — blur-fill 9:16, batch captions, FFmpeg render
-Stage 8: Logging           — processed.log, diagnostics JSON, Discord report
+Stage 1: Discovery            — find new/named VOD files
+Stage 2: Transcription        — chunked GPU Whisper, cached
+Stage 3: Segment Detection    — classify stream type, build profile
+Stage 4: Moment Detection     — Pass A keywords + Pass B LLM + Pass C merge/select
+Stage 4.5 Moment Groups       — (optional) narrative arcs + stitch bundles
+Stage 5: Frame Extraction     — 6 JPEGs per candidate moment
+Stage 6: Vision Enrichment    — score boosts, titles, hook, originality hints
+Stage 6.5 Camera Pan Prep     — (optional) OpenCV face tracking → crop path
+Stage 7: Editing & Export     — framing + originality + stitch render, batch captions
+Stage 8: Logging              — processed.log, diagnostics JSON, Discord report
 ```
 
-Full detail: [[concepts/clipping-pipeline]]
+Full detail: [[concepts/clipping-pipeline]]. For the originality-stack sub-stages and render additions, see [[concepts/originality-stack]].
 
 ---
 
@@ -122,7 +124,7 @@ Full detail: [[concepts/clipping-pipeline]]
 |---|---|
 | `docker-compose.yml` | Single `stream-clipper` service; NVIDIA GPU for Whisper; `extra_hosts` for `host.docker.internal` |
 | `Dockerfile` | CUDA 12.3 + Node.js 22 + Python + OpenClaw + Whisper large-v3 (stream-clipper image) |
-| `scripts/clip-pipeline.sh` | The full 8-stage pipeline (~1,700 lines) |
+| `scripts/clip-pipeline.sh` | Thin 147-line orchestrator. Sources `scripts/lib/pipeline_common.sh` and `scripts/stages/stage{1..8}.sh`. Embedded Python lives in `scripts/lib/stages/`. Modularized 2026-05-01 — see [[concepts/modularization-plan]]. |
 | `scripts/entrypoint.sh` | Container startup: LM Studio wait, gateway + dashboard start |
 | `config/openclaw.json` | Model providers, agent config, compaction settings, Discord channels |
 | `config/exec-approvals.json` | Command execution allowlist for the agent |

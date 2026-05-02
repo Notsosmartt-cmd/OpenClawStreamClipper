@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "description": "Per-channel Whisper initial_prompt values. Biases decoding toward game/character names, streamer-specific slang, emotes. Whisper constraint: prompt must be <= 224 tokens (approximately 170 words). Per ClippingResearch.md §8.3 'Streamer-slang biasing'.",
+  "default_prompt": "Twitch livestream. Common terms: pog, poggers, W, L, clip it, sub, gifted sub, bit, cheer, raid, gg, copium, sadge, monkaS, KEKW, LULW, POGGERS, GIGACHAD, Sadge, PogChamp.",
+  "match_policy": "first_match",
+  "match_policy_description": "filename_substrings are checked case-insensitively against VOD basename. First matching channel wins. When no channel matches, default_prompt is used.",
+  "channels": {
+    "example_gaming_channel": {
+      "description": "Template — copy this block and edit for your own channels. Add entries per streamer as needed; changes picked up on next pipeline run.",
+      "filename_substrings": ["example", "demo"],
+      "initial_prompt": "Channel-specific livestream. Game titles, character names, recurring guests, common in-jokes and catchphrases go here. Keep under 224 tokens.",
+      "_notes": "The initial_prompt biases Whisper's decoder — rare or channel-specific tokens you list here are more likely to be transcribed correctly. Don't include speech transcripts here, just a vocabulary hint."
+    },
+    "valorant": {
+      "description": "Generic Valorant gameplay prompt — activates on any VOD with 'valorant' in the filename.",
+      "filename_substrings": ["valorant", "val_", "vct"],
+      "initial_prompt": "Valorant ranked gameplay. Agents: Jett Reyna Phoenix Sage Omen Brimstone Cypher Sova Viper Killjoy Skye Yoru Astra KAY/O Chamber Neon Fade Harbor Gekko Deadlock Iso Clove Vyse. Maps: Bind Haven Split Ascent Icebox Breeze Fracture Pearl Lotus Sunset Abyss. Terms: ace, clutch, flick, peek, OP, Operator, Phantom, Vandal, Radiant, Immortal, Diamond."
+    },
+    "league": {
+      "description": "Generic League of Legends prompt.",
+      "filename_substrings": ["league", "lol_", "lolstream"],
+      "initial_prompt": "League of Legends gameplay. Lanes: top mid jungle bot ADC support. Terms: gank, roam, ward, pink, baron, dragon, herald, elder, pentakill, quadra, triple kill, ace. Common champs: Yasuo Zed Ahri Lee Sin Thresh Lulu Jinx Caitlyn Ezreal Lux Katarina."
+    }
+  }
+}

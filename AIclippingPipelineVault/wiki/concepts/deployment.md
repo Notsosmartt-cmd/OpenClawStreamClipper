@@ -1,14 +1,17 @@
 ---
 title: "Deployment"
 type: concept
-tags: [deployment, docker, setup, hardware, cuda, lm-studio, windows]
-sources: 2
-updated: 2026-04-19
+tags: [deployment, docker, setup, hardware, cuda, lm-studio, windows, image-slimming, infrastructure, hub]
+sources: 3
+updated: 2026-04-22
 ---
 
 # Deployment
 
 How to set up, run, and maintain the OpenClaw Stream Clipper.
+
+> [!note] Image is now slim — model weights live on the host
+> As of April 2026 the Docker image no longer bakes in Whisper or Piper weights. The host-mounted `./models/` folder holds them, so the image is ~5 GB instead of ~8 GB and you can inspect / swap weights without a rebuild. See [[concepts/image-slimming]] for the full rationale, the `ORIGINALITY_STACK` build arg (`full` default / `slim`), and the `requirements*.txt` files that are now the source of truth for Python deps.
 
 ---
 

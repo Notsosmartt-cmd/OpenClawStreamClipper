@@ -1,7 +1,7 @@
 ---
 title: "faster-whisper large-v3"
 type: entity
-tags: [model, transcription, whisper, speech-to-text, gpu]
+tags: [model, transcription, whisper, speech-to-text, gpu, infrastructure, stage-2, stage-7, audio, text]
 sources: 2
 updated: 2026-04-07
 ---

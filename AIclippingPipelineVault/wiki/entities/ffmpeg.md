@@ -1,7 +1,7 @@
 ---
 title: "FFmpeg"
 type: entity
-tags: [video, audio, processing, ffmpeg, blur-fill, rendering]
+tags: [video, audio, processing, ffmpeg, blur-fill, rendering, infrastructure, stage-7]
 sources: 2
 updated: 2026-04-07
 ---

@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Force LF on shell scripts and Python — they run inside Docker where
+# CRLF makes bash fail with `$'\r': command not found` and breaks Python
+# heredocs even after sed scrubbing in the Dockerfile (host mounts override
+# the build-time fix). Lock these to LF regardless of host core.autocrlf.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.json text eol=lf

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "description": "Phase 2 chat-signal ingestion config (see IMPLEMENTATION_PLAN.md). Only the VOD path is implemented in Phase 2; live EventSub is deferred.",
+  "enabled": true,
+  "chat_dir": "/root/VODs/.chat",
+  "auto_fetch": {
+    "enabled": false,
+    "description": "When true, Stage 1 tries to fetch chat from Twitch GraphQL for any VOD whose filename matches `vod_id_pattern`. When false (default), users drop pre-downloaded chat JSON into `chat_dir` manually.",
+    "vod_id_pattern": "(?:twitch[-_]|_v|_video_|id[-_])(\\d{9,})",
+    "twitch_client_id": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+    "request_delay_ms": 200,
+    "max_retries": 3,
+    "note": "client_id default is Twitch's public web client ID — same one used by lay295/TwitchDownloader and other community tools. Using this endpoint relies on an unofficial Twitch GraphQL API that can change without notice."
+  },
+  "feature_windows": {
+    "baseline_window_sec": 300,
+    "burst_z_threshold": 2.0,
+    "description": "Baseline msgs/sec is computed over a rolling 5-minute window. Bursts ≥ 2σ above baseline are what Pass A scores against."
+  },
+  "scoring": {
+    "max_burst_bonus": 2.0,
+    "max_emote_bonus": 1.5,
+    "description": "Caps on the chat signal's contribution to Pass A scores. Chat is additive to the existing keyword score — never replaces it."
+  },
+  "ground_truth": {
+    "description": "Maps denylist category → which per-window event count must be non-zero for a claim mentioning that category to be allowed. Used by cascade_check when `hard_events` is provided (Phase 2.4d).",
+    "twitch_jargon_overclaims": {
+      "sub": "sub_count",
+      "bit": "bit_count",
+      "cheer": "bit_count",
+      "raid": "raid_count",
+      "donat": "donation_count",
+      "gifted": "sub_count",
+      "hype train": "sub_count"
+    }
+  }
+}

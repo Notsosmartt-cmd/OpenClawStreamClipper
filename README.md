@@ -220,11 +220,15 @@ vods/.transcriptions/YOUR_VOD.json   ← cached transcript (reused on re-clip)
     ▼ Stage 4 Pass C (merge + time-bucket select)
 /tmp/clipper/hype_moments.json       ← final selected moments with clip boundaries
     │
-    ▼ Stage 5 (FFmpeg frame extraction)
-/tmp/clipper/frames_T{N}_03.jpg      ← JPEG frames per moment
-/tmp/clipper/frames_T{N}_04.jpg
+    ▼ Stage 5 (FFmpeg frame extraction — 6 payoff-window frames per moment)
+/tmp/clipper/frames_T{N}_tminus2.jpg ← T-2s (pre-peak setup)
+/tmp/clipper/frames_T{N}_t0.jpg      ← T+0s (peak)
+/tmp/clipper/frames_T{N}_tplus1.jpg  ← T+1s
+/tmp/clipper/frames_T{N}_tplus2.jpg  ← T+2s
+/tmp/clipper/frames_T{N}_tplus3.jpg  ← T+3s (typical payoff)
+/tmp/clipper/frames_T{N}_tplus5.jpg  ← T+5s (aftermath)
     │
-    ▼ Stage 6 (LLM: config/models.json → vision_model)
+    ▼ Stage 6 (LLM: config/models.json → vision_model; all 6 frames per moment in one call)
 /tmp/clipper/scored_moments.json     ← moments enriched with vision score + title + description
     │
     ▼ Stage 7 (FFmpeg render)

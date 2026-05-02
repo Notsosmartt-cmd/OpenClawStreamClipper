@@ -1,0 +1,16 @@
+# Phase 3 speech-pipeline extras. Added to the image when the Docker build
+# arg SPEECH_STACK=full (the default). To skip — smaller image, faster-whisper
+# fallback path only, no VAD-based chunking or forced alignment:
+#
+#     docker compose build --build-arg SPEECH_STACK=slim
+#
+# whisperx pulls in faster-whisper (already an image dep), pyannote-audio,
+# torchaudio, and the wav2vec2 alignment weights. ~500 MB added.
+#
+# demucs is optional vocal-stem separation (scripts/lib/vocal_sep.py). Only
+# loaded at runtime when config/speech.json::vocal_separation.enabled = true.
+# ~80 MB for the package; model weights (~1 GB htdemucs_ft) download on
+# first use.
+
+whisperx>=3.1
+demucs>=4.0

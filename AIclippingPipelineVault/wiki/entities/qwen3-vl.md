@@ -1,16 +1,21 @@
 ---
-title: "qwen3-vl:8b"
+title: "qwen3-vl:8b (retired)"
 type: entity
-tags: [model, vision, llm, alibaba, qwen, thinking]
+tags: [model, vision, retired, qwen, historical, infrastructure, stage-6]
 sources: 2
-updated: 2026-04-07
+updated: 2026-04-22
 ---
 
-# qwen3-vl:8b
+# qwen3-vl:8b — retired
 
-Alibaba's third-generation vision-language model. Used in Stage 6 (Vision Enrichment) to analyze video frames, generate clip titles/descriptions, and boost scores for visually interesting moments.
+> [!warning] Retired April 2026
+> This dedicated vision model is no longer used by the pipeline. Stage 6 now calls the same multimodal model used for Stages 3–4 (Gemma 4 `gemma-4-26b-a4b` or Qwen 3.5 `qwen3.5-9b` / `qwen3.5-35b-a3b`, both of which ship with built-in vision and proper thinking-token budgeting). The unified-model design skips the Stage 5→6 VRAM swap entirely.
+>
+> This page is kept as historical context for debugging older diagnostics and for anyone running a custom config where the vision model is still dedicated. The dashboard still allows selecting `qwen/qwen3-vl-8b` or `qwen/qwen2.5-vl-7b` as the vision model if you prefer a dedicated one.
 
-Quantization: default Ollama GGUF. VRAM: ~11.1GB. Served by [[entities/ollama]].
+Alibaba's third-generation vision-language model. Previously used in Stage 6 (Vision Enrichment) to analyze video frames, generate clip titles/descriptions, and boost scores for visually interesting moments.
+
+Quantization: default Ollama GGUF. VRAM: ~11.1GB. Previously served by [[entities/ollama]] (itself retired — see [[entities/lm-studio]]).
 
 ---
 

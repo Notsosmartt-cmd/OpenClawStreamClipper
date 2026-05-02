@@ -1,7 +1,7 @@
 ---
 title: "Context and Token Management"
 type: concept
-tags: [context, tokens, compaction, session, openclaw, qwen25]
+tags: [context, tokens, compaction, session, openclaw, qwen25, infrastructure]
 sources: 2
 updated: 2026-04-17
 ---

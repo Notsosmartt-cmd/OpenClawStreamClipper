@@ -64,15 +64,33 @@ Any of the following require a wiki update:
 - Don't update for changes to `vods/`, `clips/`, or runtime data
 - Don't document implementation details that are obvious from reading the code
 
+### Enforcement: Stop hook
+
+A `Stop` hook in `.claude/settings.json` runs `.claude/hooks/check-wiki-updated.sh` at the end of every turn. If `git status` shows modified files under `scripts/`, `dashboard/`, `config/`, `workspace/`, or in `Dockerfile`/`docker-compose.yml` **without** any matching change under `AIclippingPipelineVault/wiki/`, the hook exits 2 and you will be forced to continue. Update the relevant wiki page(s) and prepend an entry to `wiki/log.md`, then end your turn.
+
+A second `PostToolUse` hook on `Edit|Write|MultiEdit` (`remind-wiki-on-code-edit.sh`) prints a one-line just-in-time advisory to stderr whenever you edit a watched code path — non-blocking, just a nudge so you don't reach the end of the turn and discover the wiki is missing 12 changes' worth of context.
+
+**Bypass for truly trivial changes**: append a one-line entry to `AIclippingPipelineVault/wiki/log.md` explaining why no other wiki update was needed (e.g., "trivial whitespace cleanup, no behavior change"). The hook only checks for *any* wiki touch — it doesn't audit the content, so this gives you an escape hatch without disabling the safety net.
+
+### Modularization complete (2026-05-01)
+
+The codebase was modularized in a single session on 2026-05-01. The three former monoliths are now thin orchestrators:
+
+- `scripts/clip-pipeline.sh` — **147-line orchestrator**. Sources `scripts/lib/pipeline_common.sh` for helpers and `scripts/stages/stage{1..8}.sh` for stage bodies. All embedded Python is in `scripts/lib/stages/*.py` (10 modules including `stage4_moments.py` at 1,913 lines).
+- `dashboard/app.py` — **78-line entrypoint**. Bootstraps Flask, registers 8 blueprints from `dashboard/routes/`. Shared state in `dashboard/_state.py`, config IO in `dashboard/config_io.py`, pipeline lifecycle in `dashboard/pipeline_runner.py`.
+- `dashboard/static/app.js` — **67-line entry module**. Imports 8 ES modules from `dashboard/static/modules/` (`util`, `state`, `pipeline-ui`, `vods-panel`, `models-panel`, `hardware-panel`, `folders-panel`, `assets-panel`). `index.html` uses `<script type="module">`.
+
+When modifying any of these, edit the relevant focused module — don't reintroduce monolith-level changes to the orchestrator/entrypoint files. See [[concepts/modularization-plan]] for the full layout.
+
 ---
 
 ## Project overview
 
-Two Docker containers:
-- `ollama` — LLM inference server (qwen3.5:9b, qwen2.5:7b, qwen3-vl:8b)
-- `stream-clipper` — OpenClaw agent + FFmpeg + faster-whisper + Flask dashboard
+One Docker container plus native Windows LM Studio:
+- LM Studio (native Windows) — LLM inference server on port 1234; serves the unified Qwen 3.5 / Gemma 4 model used for both text detection and vision enrichment
+- `stream-clipper` (Docker) — OpenClaw agent + FFmpeg + faster-whisper + Flask dashboard
 
-Pipeline: `scripts/clip-pipeline.sh` (~1,700 lines), 8 stages:
+Pipeline: `scripts/clip-pipeline.sh` (~4,090 lines as of 2026-05-01 — mid-modularization, see [[concepts/modularization-plan]]), 8 stages:
 Discovery → Transcription → Segment Detection → Moment Detection → Frame Extraction → Vision Enrichment → Editing → Logging
 
 User interfaces:

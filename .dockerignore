@@ -2,6 +2,13 @@
 vods/
 clips/
 
+# Model caches — mounted at runtime via ./models → /root/.cache/... so the
+# image doesn't carry ~3 GB of weights.
+models/
+
+# Music-bed folder — user-supplied, mounted at runtime
+music/
+
 # Git and IDE
 .git
 .gitignore
@@ -15,6 +22,9 @@ config/
 
 # Workspace docs (mounted at runtime)
 workspace/
+
+# Wiki vault (large, not needed in image)
+AIclippingPipelineVault/
 
 # OS junk
 Thumbs.db
@@ -31,3 +41,14 @@ LICENSE
 # Docker files (don't need to copy themselves into the image)
 docker-compose.yml
 .dockerignore
+Dockerfile.ollama
+Dockerfile.ollama-vulkan
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Node artifacts (OpenClaw installs globally — no local node_modules is needed)
+node_modules/
