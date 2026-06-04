@@ -41,13 +41,23 @@ def run(ctx) -> None:
     cached_json = p.transcriptions_dir / f"{stem}.transcript.json"
     cached_srt = p.transcriptions_dir / f"{stem}.transcript.srt"
 
-    if cached_json.exists() and cached_srt.exists():
+    # --force (the dashboard "Force reprocess" checkbox / ctx.force) must
+    # re-transcribe from scratch and REPLACE any stale cache — otherwise a bad
+    # or outdated transcript would be reused forever. Without force we reuse the
+    # cache (transcription is the slowest GPU stage).
+    if cached_json.exists() and cached_srt.exists() and not ctx.force:
         log.log(f"Found cached transcription for '{ctx.vod_basename}'. Skipping transcription.")
         shutil.copyfile(cached_json, p.transcript_json)
         shutil.copyfile(cached_srt, p.transcript_srt)
         _print_cached_stats(ctx)
     else:
-        log.log("No cached transcription found. Transcribing via speech module...")
+        if ctx.force and (cached_json.exists() or cached_srt.exists()):
+            log.log(f"Force reprocess: discarding cached transcription for '{ctx.vod_basename}' and re-transcribing.")
+            cached_json.unlink(missing_ok=True)
+            cached_srt.unlink(missing_ok=True)
+        else:
+            log.log("No cached transcription found.")
+        log.log("Transcribing via speech module...")
         env = ctx.child_env()
         env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
         log.log("Extracting audio track...")
