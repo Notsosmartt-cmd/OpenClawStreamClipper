@@ -156,6 +156,20 @@ except Exception as _rxe:
     _REACTION_CFG = {}
     print(f"[REACTION] reaction_signals unavailable ({_rxe}); Pass C runs without reaction factor", file=sys.stderr)
 
+# Selection Sub-Plan C — baseline-contrast. The streamer's per-VOD 'normal' is
+# computed once (speaking-rate mean/std, modal segment-type, topic boundaries);
+# moments that break it (rate/topic/genre deviation) get a small, boost-only
+# multiplier. The corrective for energy bias and the most novel axis, so it is
+# given the most authority (ceil 1.18). Failure-soft -> 1.0.
+try:
+    import baseline_contrast as _baseline
+    _BASELINE_CFG = _baseline.load_config()
+    print(f"[BASELINE] baseline-contrast loaded (enabled={_BASELINE_CFG.get('enabled', True)}, ceil={_BASELINE_CFG.get('multiplier_ceil')})", file=sys.stderr)
+except Exception as _bce:
+    _baseline = None
+    _BASELINE_CFG = {}
+    print(f"[BASELINE] baseline_contrast unavailable ({_bce}); Pass C runs without baseline factor", file=sys.stderr)
+
 # Cross-axis compounding guardrail (clipping-quality-overhaul eval finding #1):
 # the selection axes (A/B/C/E) each return a bounded multiplier, but their
 # PRODUCT is unbounded — a moment tripping several correlated axes could run
@@ -1826,6 +1840,25 @@ for m in deduped:
         m["clip_start"] = max(0, m["timestamp"] - half)
         m["clip_end"] = m["clip_start"] + dur
 
+# Plan C: baseline-contrast — compute the streamer's per-VOD 'normal' ONCE
+# (before the scoring loop) so Pass C can boost moments that break it. Topic
+# boundaries are flattened from the conversation_shape index; the segment-type
+# router supplies the modal genre. Failure-soft: any error -> baseline skipped.
+_BASELINE = None
+if _baseline is not None:
+    try:
+        _tbs = [float(_b.get("t")) for _rec in (CONVO_SHAPE_INDEX or {}).values()
+                for _b in (_rec.get("topic_boundaries") or []) if _b.get("t") is not None]
+        _BASELINE = _baseline.compute_baseline(
+            segments, segment_at=get_segment_type, topic_boundaries=_tbs, cfg=_BASELINE_CFG)
+        print(f"[BASELINE] per-VOD baseline: rate_mean={_BASELINE.get('rate_mean')} "
+              f"std={_BASELINE.get('rate_std')} n={_BASELINE.get('n_windows')} "
+              f"ok={_BASELINE.get('ok')} modal={_BASELINE.get('modal_segment')} "
+              f"topic_bounds={len(_BASELINE.get('topic_boundaries') or [])}", file=sys.stderr)
+    except Exception as _be:
+        _BASELINE = None
+        print(f"[BASELINE] baseline computation failed ({_be}); Pass C runs without baseline-contrast", file=sys.stderr)
+
 # Apply style weighting and length penalty
 for m in deduped:
     base = m["normalized_score"]
@@ -1916,6 +1949,24 @@ for m in deduped:
     else:
         m["reaction_score"] = None
         m["reaction_multiplier"] = 1.0
+
+    # Plan C: baseline-contrast — boost moments that break the streamer's own
+    # norm (two-sided rate deviation + start-aligned topic pivot + genre shift).
+    # Boost-only; the corrective for energy bias (a quiet beat on a hype streamer
+    # can win). Orthogonal to the M1 speaker boost — no double-count.
+    if _baseline is not None and _BASELINE is not None:
+        try:
+            _bc = _baseline.evaluate(m, segments, baseline=_BASELINE, segment_at=get_segment_type, cfg=_BASELINE_CFG)
+        except Exception:
+            _bc = {"contrast_score": None, "multiplier": 1.0, "signals": {}}
+        axis_mult *= _bc.get("multiplier", 1.0)
+        m["baseline_contrast"] = _bc.get("contrast_score")
+        m["baseline_multiplier"] = round(_bc.get("multiplier", 1.0), 3)
+        if _bc.get("signals"):
+            m["baseline_signals"] = _bc["signals"]
+    else:
+        m["baseline_contrast"] = None
+        m["baseline_multiplier"] = 1.0
 
     # Compounding guardrail: clamp the accumulated A-E product, then apply once.
     axis_mult = max(_AXIS_FLOOR, min(_AXIS_CEIL, axis_mult))
@@ -2162,6 +2213,9 @@ for m in final:
         # Vision Judge / diagnostics can see the net axis contribution).
         "reaction_score": m.get("reaction_score"),
         "reaction_multiplier": m.get("reaction_multiplier", 1.0),
+        # Plan C — baseline-contrast (how much this moment breaks the streamer's norm)
+        "baseline_contrast": m.get("baseline_contrast"),
+        "baseline_multiplier": m.get("baseline_multiplier", 1.0),
         "axis_multiplier": m.get("axis_multiplier", 1.0),
         # Tier-2 M1 — speaker context (used by Stage 6 prompt + A2)
         "dominant_speaker": m.get("dominant_speaker"),
@@ -2198,7 +2252,7 @@ for m in output:
     # Show raw score next to the clamped display value so the operator can
     # see actual ranking distinction even when several moments display 1.000
     # (BUG 37: ranking happens on raw values that routinely exceed 1.0).
-    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} rx={m.get('reaction_score')} ax={m.get('axis_multiplier',1.0)} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
+    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} rx={m.get('reaction_score')} bc={m.get('baseline_contrast')} ax={m.get('axis_multiplier',1.0)} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
 print(f"  Category breakdown: {json.dumps(cats_found)}", file=sys.stderr)
 print(f"  Segment breakdown: {json.dumps(segs_found)}", file=sys.stderr)
 print(f"Detected {len(output)} clip-worthy moments")

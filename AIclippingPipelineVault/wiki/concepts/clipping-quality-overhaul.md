@@ -26,8 +26,11 @@ The approved roadmap for fixing "clips are not good." Companion to the evaluatio
 > their reused APIs verified, but combining them surfaced cross-cutting risks → see [[#Cross-axis design
 > guardrails (pre-build eval)]]. **Plan B — reaction-worthy: built 2026-06-04** as a boost-only Pass-C
 > pre-signal with a **deliberately small ceiling (1.10)** + the new **global axis-multiplier clamp**
-> ([[concepts/plan-reaction-worthy]]). Still to do: Plan C, Plan E (D deferred), Plan 1 phases 1.b and
-> 2.a-4, and the deferred per-axis **judge criteria** (held until the first live judge run).
+> ([[concepts/plan-reaction-worthy]]). **Plan C — baseline-contrast: built 2026-06-04** — per-VOD
+> relative-to-self anomaly detection (rate/topic/genre deviation), boost-only, given the **most authority
+> (ceil 1.18)** as the energy-bias corrective ([[concepts/plan-baseline-contrast]]). Still to do: Plan E (D
+> deferred), Plan 1 phases 1.b and 2.a-4, and the deferred per-axis **judge criteria** (held until the
+> first live judge run).
 
 ---
 

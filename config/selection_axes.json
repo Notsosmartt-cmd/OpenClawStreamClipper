@@ -19,6 +19,19 @@
     "category_gain": {"reactive": 1.0, "funny": 1.0, "hype": 1.0, "dancing": 0.9, "controversial": 0.8, "hot_take": 0.7, "storytime": 0.6, "emotional": 0.6},
     "default_category_gain": 0.85
   },
+  "baseline_contrast": {
+    "enabled": true,
+    "_note": "Plan C — baseline-contrast (the most novel axis + the corrective for energy bias). Compute the streamer's per-VOD 'normal' once, then BOOST moments that break it: two-sided speaking-rate z-deviation (fast AND slow are breaks), a start-aligned topic pivot (NOT a mid-clip crossing, so it doesn't fight Plan A), and a genre shift (an unusual segment-type for this VOD). Boost-only; given the MOST authority (ceil 1.18). Orthogonal to the M1 speaker boost (no double-count). Cold-start guarded.",
+    "gain": 0.22,
+    "multiplier_ceil": 1.18,
+    "z_norm": 2.5,
+    "min_windows": 6,
+    "min_rate_std": 0.15,
+    "window_s": 30.0,
+    "step_s": 10.0,
+    "topic_near_s": 8.0,
+    "weights": {"rate": 0.45, "topic": 0.35, "genre": 0.20}
+  },
   "arc_completeness": {
     "enabled": true,
     "_note": "Structural 'is this a complete, self-contained setup->payoff arc?' score in [0,1] -> a gentle, category-aware multiplier on Pass C raw_score. Boost-leaning, never gates. neutral_point is the completeness at which the multiplier is exactly 1.0; below it = mild penalty, above = mild boost.",
