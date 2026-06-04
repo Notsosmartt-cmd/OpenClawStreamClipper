@@ -37,9 +37,17 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index():
-        return send_from_directory(
+        # No-cache on the HTML shell — Flask's default send_from_directory
+        # ships a 12-hour Cache-Control which made the dashboard ship stale
+        # markup after every UI change (users had to hard-refresh to see new
+        # controls). Static JS/CSS still cache normally.
+        resp = send_from_directory(
             os.path.join(app.root_path, "templates"), "index.html",
         )
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.route("/static/<path:filename>")
     def static_files(filename):

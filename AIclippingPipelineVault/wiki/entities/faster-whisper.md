@@ -1,9 +1,9 @@
 ---
 title: "faster-whisper large-v3"
 type: entity
-tags: [model, transcription, whisper, speech-to-text, gpu, infrastructure, stage-2, stage-7, audio, text]
+tags: [model, transcription, whisper, whisperx, speech-to-text, gpu, cuda, infrastructure, stage-2, stage-7, audio, text]
 sources: 2
-updated: 2026-04-07
+updated: 2026-06-04
 ---
 
 # faster-whisper large-v3
@@ -14,6 +14,90 @@ Model: `large-v3` (not turbo). Runs inside the `stream-clipper` container. Runs 
 
 > [!note] Corrected: not CPU-only
 > Earlier documentation incorrectly stated Whisper always runs on CPU. In practice, the pipeline explicitly unloads all Ollama models from VRAM before Stage 2 so Whisper can claim the full GPU. Whisper uses ~6–7GB VRAM at float16.
+
+---
+
+## How transcription works on bare-metal Windows (current)
+
+> [!note] Authoritative, current spec
+> As of the [[concepts/bare-metal-windows]] migration (2026-06-04) transcription
+> runs natively in the project venv (no Docker). The sections further down
+> (20-minute chunks, Docker image pre-bake, Ollama) describe the **legacy
+> faster-whisper-only** path and are kept for history.
+
+### Two backends, one module ([[entities/speech-module]] / `scripts/lib/speech.py`)
+
+Stage 2 calls `speech.py`, which picks a backend from `config/speech.json::backend`
+(default `whisperx`) and **auto-falls back** on import/runtime failure:
+
+1. **WhisperX (primary)** — VAD-based chunking (silero/pyannote VAD finds real
+   speech boundaries, replacing the old arbitrary 20-minute splits) → **batched
+   faster-whisper** ASR → **wav2vec2 forced alignment** → frame-accurate
+   word-level timestamps. Optional **pyannote diarization** (Tier-2 M1) when
+   `HF_TOKEN` is set + `pyannote-audio` installed + enabled in config.
+2. **faster-whisper (fallback)** — the pre-Phase-3 CTranslate2 path, preserved
+   verbatim. Fires when WhisperX isn't importable or raises mid-run. No diarization.
+
+Fallback ladder: WhisperX → faster-whisper(GPU) → faster-whisper(CPU int8) →
+hard fail (`transcription_failed`). See [[concepts/speech-pipeline]].
+
+### Two runtimes (this is the key bare-metal detail)
+
+| Concern | Runtime | Needs |
+|---|---|---|
+| ASR transcription (both backends) | **CTranslate2** (faster-whisper) | cuDNN 9 + cuBLAS for CUDA 12 |
+| WhisperX VAD + wav2vec2 alignment + pyannote | **PyTorch** | torch CUDA build |
+
+CTranslate2 is **independent of torch** — that's why `scripts/validate_gpu.py`
+confirmed GPU transcription *before* torch was even installed. Practical
+consequences on Windows:
+
+- **cuDNN/cuBLAS DLLs** must be on the Windows DLL search path for CTranslate2.
+  Handled by `scripts/lib/cuda_bootstrap.py` (`os.add_dll_directory` over the
+  venv's `nvidia/*/bin`) imported by `speech.py` + `stage7_transcribe.py`, and by
+  `paths.child_env()` putting those dirs on `PATH`. Without this you get
+  `Could not locate cudnn_ops64_9.dll`-style errors.
+- **torch must be the CUDA build**. The venv uses **torch 2.8.0+cu128** (the
+  version whisperx/pyannote pin, CUDA 12.8 supports the RTX 5060 Ti / Blackwell
+  sm_120). ⚠️ Installing `whisperx` pulls **CPU** torch from PyPI and clobbers
+  CUDA — reinstall `torch==2.8.0+cu128` from the cu128 index afterward. If torch
+  ends up CPU-only, ASR still runs on GPU (CTranslate2) but WhisperX alignment
+  falls back to CPU (slower), or speech.py degrades to the faster-whisper backend.
+
+### Device / model / cache resolution
+
+- **Device & compute**: `config/speech.json::device`/`compute_type` default
+  `auto` → `cuda`+`float16` when `torch.cuda.is_available()`, else `cpu`+`int8`.
+  Env `CLIP_WHISPER_DEVICE` / `CLIP_WHISPER_COMPUTE` override.
+- **Model**: `large-v3` (from `config/models.json::whisper_model` →
+  `CLIP_WHISPER_MODEL`; this overrides speech.py's own `large-v3-turbo` default).
+- **Model weights cache**: `WHISPER_MODEL_DIR` → **`<repo>\models\whisper`**
+  (HuggingFace layout `models--Systran--faster-whisper-large-v3`). Downloads
+  ~3 GB on first use; this repo already has it cached, so first run skips the
+  download. (Replaces the Docker image pre-bake.)
+
+### Output
+
+`transcript.json` — list of `{start, end, text}` (seconds); with alignment each
+segment also carries `words: [{word, start, end}]` (and `speaker` when diarized).
+`transcript.srt` — SubRip for FFmpeg subtitle burn-in. **Streamer-prompt biasing**:
+`config/streamer_prompts.json` matches the VOD filename to an `initial_prompt`
+that nudges decoding toward channel-specific game/emote/jargon vocabulary.
+
+### Transcription cache (skips Stage 2 on re-clips)
+
+Full-VOD results are cached to **`<repo>\vods\.transcriptions\<stem>.transcript.{json,srt}`**.
+If both exist, Stage 2 copies them into the work dir and skips transcription
+entirely (the dashboard's VOD list shows `transcription_cached`). `--force` or an
+explicit `--vod` re-runs it. All 5 sample VODs in this repo are already cached.
+
+### Stage 7 captions (separate, faster-whisper directly)
+
+Clip-level subtitles are produced by `scripts/lib/stages/stage7_transcribe.py`,
+which loads **faster-whisper** (not WhisperX) **once** for all clips and writes a
+`clip_<T>.srt` per clip. It reads `CLIP_WHISPER_MODEL` / `CLIP_WHISPER_DEVICE`
+/ `CLIP_WHISPER_COMPUTE` and uses the same `WHISPER_MODEL_DIR` cache + cuDNN DLL
+bootstrap.
 
 ---
 

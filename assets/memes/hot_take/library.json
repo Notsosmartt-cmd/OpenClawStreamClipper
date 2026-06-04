@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "../generic/thinking.png",
+      "tags": [
+        "thinking",
+        "skeptical",
+        "hmm"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f914.png"
+    },
+    {
+      "file": "../generic/monocle.png",
+      "tags": [
+        "scrutiny",
+        "skeptical"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f9d0.png"
+    },
+    {
+      "file": "../generic/raised_brow.png",
+      "tags": [
+        "doubt",
+        "really",
+        "skeptical"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f928.png"
+    },
+    {
+      "file": "../generic/eyeroll.png",
+      "tags": [
+        "eyeroll",
+        "annoyed",
+        "really"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f644.png"
+    },
+    {
+      "file": "../generic/angry.png",
+      "tags": [
+        "angry",
+        "rage",
+        "mad"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f624.png"
+    }
+  ]
+}

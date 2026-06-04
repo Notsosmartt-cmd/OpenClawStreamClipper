@@ -5,7 +5,7 @@
 // Modularized in Phase D — see AIclippingPipelineVault/wiki/concepts/modularization-plan.md
 
 import {
-    fetchOriginality, browseMusicFolder, scanMusicLibrary,
+    fetchOriginality, browseMusicFolder, scanMusicLibrary, scanLibraries,
     onOriginalityChange,
     startClip, startClipAll, stopPipeline,
     pollStatus,
@@ -37,7 +37,7 @@ Object.assign(window, {
     onModelChange, resetModel,
     onHardwareDropdown,
     onFoldersChange, browseFolderFor, saveFolders,
-    onOriginalityChange, browseMusicFolder, scanMusicLibrary,
+    onOriginalityChange, browseMusicFolder, scanMusicLibrary, scanLibraries,
     fetchAsset,
 });
 

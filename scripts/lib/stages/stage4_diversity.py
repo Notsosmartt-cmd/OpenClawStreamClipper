@@ -26,12 +26,14 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 DEFAULT_LAMBDA = 0.7
 
 
 def _load_lambda() -> float:
-    for path in ("/root/.openclaw/rubric.json", "/root/scripts/lib/../../config/rubric.json"):
+    for path in (os.environ.get("CLIP_RUBRIC_CONFIG"), "/root/.openclaw/rubric.json", "/root/scripts/lib/../../config/rubric.json"):
+        if not path:
+            continue
         try:
             with open(path) as f:
                 cfg = json.load(f)
@@ -145,7 +147,9 @@ def mmr_rank(
 
 
 def _load_style_pattern_weights() -> Dict[str, Any]:
-    for path in ("/root/.openclaw/style_pattern_weights.json", "/root/scripts/lib/../../config/style_pattern_weights.json"):
+    for path in (os.environ.get("CLIP_STYLE_PATTERN_WEIGHTS"), "/root/.openclaw/style_pattern_weights.json", "/root/scripts/lib/../../config/style_pattern_weights.json"):
+        if not path:
+            continue
         try:
             with open(path) as f:
                 return json.load(f)

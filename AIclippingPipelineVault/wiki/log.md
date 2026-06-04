@@ -7,6 +7,162 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-04] update | Whisper model-download helper (get-models.cmd) + future-agent commit mandate
+Made `scripts/lib/fetch_assets.py` native (repo-relative `models\whisper` default) and added an `available` command listing downloadable Whisper models (tiny → large-v3, plus large-v3-turbo / distil-large-v3) with sizes + tradeoffs; added the `get-models.cmd` wrapper. Added a **"Commit after significant changes"** mandate to `CLAUDE.md` (top prompt-injection note + full section; single-branch `main`). Gitignored the `VideoToText-main/` reference repo + local backups. Pages: [[concepts/bare-metal-windows]], [[entities/faster-whisper]].
+
+## [2026-06-04] update | Added logtool.py diagnostics CLI; fixed torchcodec breaking sentence-transformers
+Added `scripts/logtool.py` (`doctor` / `list` / `errors` / `show` / `tail`) for triaging run logs in `clips/.pipeline_logs/`. `doctor` is an environment preflight (venv deps incl. torch/CUDA + CTranslate2 cuda devices, ffmpeg, cuDNN DLL dirs, LM Studio reachability + `lms ps` + configured-model availability, paths, disk; non-zero exit on failure). `errors` classifies findings (CRIT/ERR/WARN), attributes each to the stage it occurred in, and filters benign noise. The tool immediately caught a real issue: `torchcodec` 0.7 (needs torch 2.9) fails its DLL load against the pinned torch 2.8.0+cu128 and broke `import sentence_transformers` (Pass B+ callbacks + MMR diversity) — fixed by `pip uninstall -y torchcodec` (noted in `requirements-windows.txt`). Pages: [[concepts/bare-metal-windows]].
+
+## [2026-06-04] update | Documented LM Studio interaction + Whisper/WhisperX transcription in detail
+Expanded [[entities/lm-studio]] with the authoritative "Pipeline ↔ LM Studio interaction" spec: HTTP `/v1/chat/completions` inference (payload, reasoning_content fallback, network fail-fast), `GET /v1/models` + the `verify_models` startup gate, the **`lms` CLI** model-lifecycle strategy (per-stage load/unload, the 0.4.14 `/api/v1/models/unload` 404, JIT, `CLIP_MODEL_TTL` idle-evict, skip-if-loaded), and the thinking-model speed lever (27B/35B slow vs 9B fast). Expanded [[entities/faster-whisper]] with how WhisperX (primary: VAD + wav2vec2 alignment) and faster-whisper (fallback) work on bare metal: the two runtimes (CTranslate2 vs PyTorch), the Windows cuDNN/cuBLAS DLL bootstrap, torch 2.8.0+cu128, device/model/cache resolution, output shape, transcription cache, and Stage 7 clip captions. Pages: [[entities/lm-studio]], [[entities/faster-whisper]].
+
+## [2026-06-04] update | Bare-metal Windows migration — Docker removed, bash pipeline ported to Python
+Ported the entire system off Docker to native Windows. The bash pipeline (`clip-pipeline.sh` + `pipeline_common.sh` + `stages/*.sh`) is replaced by a pure-Python orchestrator: `scripts/run_pipeline.py` + `scripts/pipeline/common.py` + `scripts/pipeline/stages/stage{1..8}.py`. The reused `scripts/lib/**.py` modules are invoked unchanged via `subprocess.run([sys.executable, ...])`. New `scripts/lib/paths.py` is the single source of truth mapping `/tmp/clipper` and `/root/.openclaw` to Windows dirs; ~14 lib modules parameterized to read those via env vars. Phase 0 validated faster-whisper on the RTX 5060 Ti (Blackwell) via `scripts/validate_gpu.py`; venv uses torch 2.8.0+cu128 + whisperx (gotcha: whisperx pulls CPU torch — reinstall cu128 after). Dashboard runs native (`use_docker_exec()` defaults False; `_state` imports `paths.py` so it reads the live work dir); OpenClaw/Discord run native via `clip.cmd` + `start.ps1`. Docker files moved to `legacy/`. Verified end-to-end through Stage 4 on a cached VOD. Follow-up: model load/unload in `scripts/pipeline/common.py` now uses the bundled `lms` CLI (LM Studio 0.4.14's REST `/api/v1/models/unload` returns 404, stranding models in VRAM — two piled onto the 16 GB GPU) with a `CLIP_MODEL_TTL` idle-evict safety net and skip-if-already-loaded. Pages: [[concepts/bare-metal-windows]], [[overview]], [[concepts/deployment]], [[index]].
+
+## [2026-05-02] update | BUG 56 — Pass C merge keeps wrong peak T, vision titles don't match rendered video
+
+User flagged a clip from the 19:10 run titled "Prom Compliment on the Bus" where the actual rendered footage was "someone missing the bus and everyone reacting." Diagnostic dive on `moment_1179` revealed two distinct moments:
+
+- **Keyword T=1179**: trigger fired on `"Yo... prom coming up... You look very beautiful."`
+- **LLM T=1187**: pattern `storytelling_arc` — `"a mini-narrative about Ray missing the bus..."` with `clip_start=1187, clip_end=1212`
+
+8 seconds apart, well within the 25 s Pass C dedup window, so they merged. The merged record kept the keyword's `timestamp=1179` but inherited the LLM's `clip_start=1186.66, clip_end=1212.27` — peak T sat 7.66 s **before** the rendered clip started. Stage 5 frame extraction at `[T-2..T+5]` = `[1177..1184]` ran entirely before the clip, and Stage 6's `T±8s` transcript window pulled the prom dialog from outside the rendered range. Vision dutifully titled the bus footage about prom because that's what it was grounded in.
+
+Three compounding decisions in `scripts/lib/stages/stage4_moments.py`'s merge:
+1. No invariant that peak T must stay inside the inherited clip window.
+2. The "use LLM's why if score > 0.8 × d" check ran *after* the ×1.25 cross-val boost, so it was effectively dead code — keyword's transcript snippet always won the preview field over LLM's semantic narrative.
+3. LLM's `primary_pattern` was never carried into the merged record.
+
+**Fix** (`scripts/lib/stages/stage4_moments.py`):
+- Identify the LLM side explicitly in the merge.
+- Adopt LLM's `clip_start` / `clip_end` AND, when the existing peak T is outside that window, snap T to the LLM's timestamp.
+- Drop the broken 0.8× threshold; always prefer the LLM's `why` for preview/why fields.
+- Carry `primary_pattern` and `primary_category` forward from the LLM side.
+
+**Defense in depth** (`scripts/lib/stages/stage6_vision.py`): replaced `local_transcript`'s T±8 window with `[clip_start, clip_end]` (legacy fallback to T±8 if window collapses to <4 s). Vision now grounds against the words actually inside the rendered clip regardless of where peak T sits.
+
+**Verification**: replay of the real T=1179 case through the new merge body asserts (a) peak T snaps 1179 → 1187, (b) `clip_start ≤ T ≤ clip_end` invariant holds, (c) preview/why become the LLM bus narrative, (d) `primary_pattern = storytelling_arc` propagates, (e) cross_validated=True, normalized_score boosts 0.7 → 0.959, (f) Stage 5 frame timestamps `[1185, 1187, 1188, 1189, 1190, 1192]` all fall inside `[1187, 1212]`. AST parse clean on both files.
+
+Pages touched: created [[#BUG 56]] in [[concepts/bugs-and-fixes]] (full symptom/cause/fix + quick-nav row).
+
+## [2026-05-02] update | Three pipeline-log fixes — score saturation, HOOK unbound, Pass D unparseable
+
+User asked to trace errors in the most recent run (`C:\Users\user\AppData\Local\Temp\clipper\pipeline.log`, 2026-05-02 19:10) and asked specifically why every clip displayed `score=1.000` and why the Stage 6 vision boost printed `1.000 -> 1.000`. Three real bugs surfaced.
+
+**BUG 53 — Stage 6 vision boost saturated** (`scripts/lib/stages/stage6_vision.py`). Pass C correctly preserves an uncapped `raw_score` (BUG 37 fix), but Stage 6 was reading the clamped `score` field for its boost math: `1.000 × 1.15 → 1.000`. Fix: read both `score` (display, kept for log compatibility) and `raw_score` (uncapped, used for math). Initialize `entry["raw_score"]` from the moment so vision-skipped/failed entries propagate ranking signal. All three boost paths (`cross_validated_full +0.1`, vision ≥0.67 ×1.15, vision ≥0.44 ×1.08) now operate on raw and clamp only at the display field. FINAL log line now surfaces `raw=` next to `score=` so operators can differentiate clipped-to-1.000 cohort members.
+
+**BUG 54 — `HOOK: unbound variable`** (`scripts/stages/stage7_render.sh:19`). The clip-manifest builder used `python3 -c "..."` (bash double-quoted), and line 44 of the file was a python comment containing `"$HOOK"`. Bash sees `$HOOK` regardless of whether it's inside a python comment, expands it under `set -u`, errors out before python ever runs (HOOK is only bound by the `read -r` loop at line 57). Fix: convert to single-quoted heredoc `python3 - <<'PYEOF'`, which is bash-opaque. Side benefit: removed all the manual `\"` and `\\\\` escaping the previous form needed.
+
+**BUG 55 — Pass D rubric judge 10/10 unparseable** (`scripts/lib/stages/stage4_rubric.py`). The naive `s.find("{") ... s.rfind("}")` JSON extractor swallows the entire reasoning prefix when a thinking model emits `reasoning_content` containing stray `{...}` fragments (pseudo-code, unicode escapes, prose). Fix: replaced with `_extract_last_json_object()`, which makes one forward pass tracking string-literal state and brace depth, records all balanced top-level objects, then walks the candidates **last-first** and accepts the first one that round-trips through `json.loads` AND contains a `"scores"` key. Verified with six synthetic cases: clean, thinking-prefix-with-stray-braces, no-json, fenced, trailing-prose, decoy `{"foo":"bar"}` before the real answer — all six pass.
+
+The current run's Pass D was a silent no-op (every moment fell through to "keeping Pass C score") so the Tier-4 Phase 4.4 blend (`0.6 × pass_c + 0.4 × rubric`) collapsed to unblended Pass C. Pass C's selection itself was sound — the user's worry about "all 1.000" scores was visual noise, not a ranking failure (raw_score has been correctly differentiating since BUG 37).
+
+Verification: `bash -n` clean on stage7_render.sh; `python -c "import ast; ast.parse(...)"` clean on stage4_rubric.py and stage6_vision.py; six-case Pass D parser test passes.
+
+Pages touched: created [[#BUG 53]] / [[#BUG 54]] / [[#BUG 55]] in [[concepts/bugs-and-fixes]] with full symptom/cause/fix and quick-nav rows; updated [[concepts/vision-enrichment]] §Score blending to reflect multiplicative-on-raw semantics with a callout explaining the no-op symptom.
+
+## [2026-05-02] update | Dashboard UX — consolidate camera-pan controls + fix HTML cache
+
+User reported (a) the new "AI editing profiles (per-category)" checkbox shipped earlier today wasn't appearing in the dashboard and (b) there were two redundant camera-pan controls (a dropdown option and a separate checkbox).
+
+**Cause of (a)**: `dashboard/app.py`'s `index()` route used `flask.send_from_directory()` to serve `index.html`, which sets `Cache-Control: max-age=43200` (12 hours) by default. Browsers held the pre-style-profiles HTML for half a day after every UI change, making new controls appear "missing" until a hard refresh.
+
+**Cause of (b)**: legacy redundancy. The framing dropdown set `CLIP_FRAMING=camera_pan` and a separate "Face-tracked camera pan" checkbox set `CLIP_CAMERA_PAN=true`. Stage 6.5 / Stage 7 require *both* (`stage6_vision.sh:48` and `stage7_render.sh:228`) — toggling either alone silently fell back to blur-fill. Two controls, one feature.
+
+**Fix**:
+- `dashboard/app.py` — index route now sets `Cache-Control: no-cache, no-store, must-revalidate` + `Pragma: no-cache` + `Expires: 0` so HTML always reloads. Static JS/CSS still cache normally.
+- `dashboard/templates/index.html` — removed the standalone `chk-camera-pan` checkbox; framing dropdown is now the single source of truth, with a tooltip describing both modes.
+- `dashboard/static/modules/pipeline-ui.js` — `collectOriginality()` derives `camera_pan` from `framing === "camera_pan"`. `fetchOriginality()` migrates legacy `framing=blur_fill + camera_pan=true` configs to `framing=camera_pan` so users with that combination land on the working mode.
+
+Backend env-var contract is unchanged — `CLIP_FRAMING` and `CLIP_CAMERA_PAN` are still emitted independently. `_state.py` still keeps `camera_pan` as a config field, `config_io.py` still maps it to env var, the pipeline still gates Stage 6.5 and Stage 7 face-track on both. Only the UI source of truth changed.
+
+Smoke tests: `python -c "import ast; ast.parse(open('dashboard/app.py').read())"` passes; grep confirms zero stale `chk-camera-pan` references.
+
+Pages touched: [[entities/dashboard]] (control table updated, cache-header note added).
+
+## [2026-05-02] update | AI editing profiles — all phases shipped
+
+User: "Implement all phases of the plan and don't forget to update the wiki." Reference plan in conversation history (per-category editing profiles to add life and bypass low-quality-content filters; no voice overlay; single dashboard toggle).
+
+**Architectural shape**: When `CLIP_STYLE_PROFILES=true`, Stage 7's per-clip loop dispatches each moment through `scripts/lib/profile_render.py` instead of the legacy blur-fill render. profile_render resolves the per-category profile, normalizes the edit-plan JSON, synthesizes any missing fields, builds a single `filter_complex` graph (zoom punches + freeze + slow-mo + meme/B-roll/chat overlays + kinetic captions + drawtext hook + amix layer for SFX/music + always-on pitch jitter + container metadata strip + GOP/CRF jitter), and runs FFmpeg. On any failure the bash dispatch falls through to the legacy render so the user still gets a clip. Stage 6 vision was deliberately NOT modified — synthesizer fills missing edit_plan fields from the profile, sidestepping the HTTP 400 cascades hit in BUG 51 when over-stuffing the vision prompt.
+
+**New `scripts/lib/` modules** (11 files, all 3.10-compatible):
+- `style_profiles.py` — 10 category templates + per-clip seeded resolution + `fingerprint_params()`
+- `edit_plan.py` — Stage-6 edit-plan JSON schema + tolerant `normalize()`
+- `profile_render.py` — orchestrator (the only one called by stage 7); embedded `_synthesize_plan()` fills zoom punches + SFX cues from profile when vision didn't emit any
+- `zoom_punch.py` — split + scale + overlay enable= filter emitter
+- `freeze_frame.py` — split/trim/loop/concat for mid-clip freeze (audio-pad helper too)
+- `slow_mo.py` — `probe_source_fps()` + `plan_slow_mo()` with ≥50-fps gate; auto-downgrades to a zoom punch on lower-fps source
+- `sfx_inject.py` — manifest reader + `amix` adelay/volume layer builder
+- `kinetic_captions.py` — Whisper-SRT → karaoke-tagged ASS, 5 presets, on-disk template loader
+- `meme_pick.py` — manifest reader; tag-based picker with generic/ fallback chain
+- `broll_pick.py` — same pattern, preferred-subfolder hint
+- `chat_overlay.py` — Pillow chat-strip PNG renderer; Phase 5 stub that no-ops gracefully when Pillow or chat data missing
+
+**Caption presets** (`assets/caption_styles/*.ass.tpl`): neon, bouncy, clean, news, soft. Each carries `# active_color` + `# scale_pop` metadata that `kinetic_captions.py` parses; on-disk templates override the in-module fallbacks.
+
+**Asset infrastructure rename**: `scripts/fetch_assets.py` → `scripts/seed_libraries.py` (collided with the pre-existing `scripts/lib/fetch_assets.py` Whisper/Piper model-cache helper). Updated `assets/README.md`, `.gitignore`, and the asset-libraries wiki page to match.
+
+**Pipeline wiring**:
+- `scripts/clip-pipeline.sh` — added `CLIP_STYLE_PROFILES` env var (default false), logs state, exports.
+- `scripts/stages/stage7_render.sh` — added per-clip dispatch inside the render loop, after SRT setup and before the legacy filter chain. Writes `moment_<T>.json` from `scored_moments.json`, calls profile_render, on success records the clip and `continue`s to the next iteration.
+
+**Dashboard wiring**:
+- `dashboard/_state.py::DEFAULT_ORIGINALITY` adds `style_profiles: False`.
+- `dashboard/config_io.py` adds `CLIP_STYLE_PROFILES` to env mapping + `style_profiles` to extracted POST keys.
+- `dashboard/routes/library_routes.py` (new blueprint) `/api/libraries/scan` runs `seed_libraries.py --scan`.
+- `dashboard/routes/__init__.py` registers the new blueprint.
+- `dashboard/templates/index.html` adds `chk-style-profiles` checkbox + "Scan Libraries" button in the Originality panel.
+- `dashboard/static/modules/pipeline-ui.js` collectOriginality + fetchOriginality include `style_profiles`; new `scanLibraries()` function.
+- `dashboard/static/app.js` imports `scanLibraries` + exposes on window for inline `onclick`.
+
+**Smoke tests passed**:
+- Python AST 3.10 parse on all 11 lib modules + profile_render.py + seed_libraries.py.
+- bash -n on clip-pipeline.sh + stage7_render.sh.
+- `from dashboard import config_io; originality_to_env(...)` returns the new `CLIP_STYLE_PROFILES` key.
+- Module CLIs: `style_profiles hype --seed 1234` → resolved profile dict; `--fingerprint` → 5-field perturbation dict; `zoom_punch --punches '...'` → valid filter fragment with split/scale/crop/overlay/enable; `meme_pick --category comedy --tag laugh --seed 1` → resolved Twemoji `joy.png` from generic/ fallback; `sfx_inject --cues ...` → valid amix layer with 2 SFX paths from on-disk libraries.
+- Plan synthesizer for hype 25 s → 2 evenly-distributed zoom punches + matching impact SFX + peak SFX at midpoint + neon caption preset; for comedy 22 s → 2 zoom punches + scratch SFX + bouncy preset; vision-supplied zoom punches preserved unchanged.
+- End-to-end: synthetic 30-s lavfi testsrc → comedy profile render → 3.1 MB H.264 1076×1916 (4 px shake shrinkage matching legacy stage 7) MP4, exit 0. Hype 8 s render → 943 KB MP4, 3 zoom punches + 4 SFX, exit 0.
+- Bug found and fixed during smoke test: amix `inputs=N` was counting `len(mix_input_segments)` instead of actual stream count, causing "More input link labels specified for filter 'amix' than it has inputs: 3 > 2" when SFX layer string contained multiple labels — switched to explicit `n_mix` counter. When n_mix==1 we now skip amix entirely and rename src_audio to aout to avoid a pointless one-input mix.
+
+**Open follow-ups** (documented in [[concepts/style-profiles]] §Open follow-ups):
+1. Stage 6 prompt extension to emit an actual `edit_plan` JSON (currently the renderer synthesizes one). Skipped to avoid BUG-51-style HTTP 400 regressions.
+2. firequalizer EQ tilt — computed in `fingerprint_params` but not yet inserted in the audio chain. Pitch jitter + container fingerprint already cover the bulk.
+3. Pillow dependency for chat overlay (Phase 5 fully enabled).
+
+Pages touched: created [[concepts/style-profiles]], updated [[index]], [[concepts/asset-libraries]] (script rename + note).
+
+## [2026-05-01] update | Asset libraries seed + fetch script (editing-profiles Phase 0)
+User asked to scrape / find free CC0 assets to seed the project for the upcoming AI editing-profile system. Pre-Phase-4 work — data layer only; pickers and the `chk-style-profiles` toggle still pending.
+
+**Built**:
+- `assets/` directory tree (sfx/{whoosh,impact,scratch,ding,riser}, music/{hype,funny,emotional,storytime,tension}, broll/{travel,general}, memes/{generic,comedy,hot_take,reactive}, caption_styles/).
+- `scripts/fetch_assets.py` — stdlib-only fetcher with `--dry-run`, `--only`, `--scan` modes. Reads `PEXELS_API_KEY` / `FREESOUND_API_KEY` env vars (currently advisory). Idempotent on re-run.
+- `assets/README.md` — layout, license inventory, extension instructions.
+- `assets/<cat>/<sub>/library.json` manifests — written by fetcher, schema documented in [[concepts/asset-libraries]].
+- `.gitignore` updated: binary asset extensions ignored under `assets/`, manifests + README + caption_styles + script kept in git.
+
+**Fetched** (~195 MB total):
+- 11 SFX singles (Internet Archive + OpenGameArt + Wikimedia) + 8 ZIP packs (Kenney + rubberduck) → ~755 SFX files.
+- 28 music tracks across 5 categories (FreePD mirror on Internet Archive, all CC0).
+- 3 air-travel videos (Internet Archive CC0) sliced via ffmpeg into 9 × 5 s 720p snippets at distributed timestamps; originals deleted.
+- 15 Twemoji reaction PNGs (CC-BY 4.0, attribution preserved in manifest entries).
+
+**Fetch gaps** (recoverable, non-blocking): `inn-room-scratch.mp3` returned HTTP 500 from Internet Archive; Kenney `digital_audio.zip` URL hash rotated (404). Documented in [[concepts/asset-libraries]] §Known fetch gaps with fallback paths.
+
+**Sources avoided** (license-incompatible): Pixabay, Pexels (without API key), Mixkit, Coverr, BBC SFX. Documented in the new concept page so future agents don't reach for them.
+
+**User decisions baked in**:
+- No music library existed → fetched FreePD seed pack into `assets/music/`.
+- Meme-IP risk accepted → Twemoji seeded automatically; copyrighted reaction memes (Pepe, Spider-Man pointing, Hide-the-Pain Harold) NOT auto-fetched. User drops those into `assets/memes/<cat>/` manually and runs `--scan`.
+- Slow-mo FPS-gate decision noted (≥50 fps slow-mo, <50 zoom-punch) — implementation pending in editing-profiles Phase 2.
+- Extra Stage 6 token budget accepted — relevant when Phase 1 of the editing profiles ships the edit-plan JSON schema.
+
+Pages touched: created [[concepts/asset-libraries]], updated [[index]].
+
+## [2026-05-01] query | Current editing style of the pipeline
+Answered a Q-only question summarizing the active Stage 7 defaults (blur_fill framing, originality on, hook + captions on, stitch/TTS/music off, 1.0× speed, 1080×1920 H.264 CRF 20). No code or behavior changes; cited [[concepts/clip-rendering]] and [[concepts/originality-stack]]. Bypass note: untracked `config/openclaw.json.last-good` is a dashboard-side backup file unrelated to this turn.
+
 ## [2026-05-01] update | "ClipT{T}" filename + hook caption fallback + pipeline elapsed-time report
 
 User: "Some of the clips in the last run didn't get a title — they received a 'ClipT1805'. Make sure each clip gets a title since it also gets printed or embedded inside the video for the caption hook. Also at the end of the pipeline print how long it took to finish."

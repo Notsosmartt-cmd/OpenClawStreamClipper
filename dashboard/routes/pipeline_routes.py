@@ -7,6 +7,7 @@ Extracted from dashboard/app.py as part of Phase C.
 from __future__ import annotations
 
 import json
+import sys
 import time
 
 from flask import Blueprint, Response, jsonify, request
@@ -79,7 +80,10 @@ def api_clip():
             if f.exists():
                 f.unlink()
 
-        cmd = ["bash", _state.PIPELINE_SCRIPT, "--style", style, "--vod", vod]
+        if use_docker_exec():
+            cmd = ["bash", _state.DOCKER_PIPELINE_SCRIPT, "--style", style, "--vod", vod]
+        else:
+            cmd = [sys.executable, _state.PIPELINE_SCRIPT, "--style", style, "--vod", vod]
         if force:
             cmd.append("--force")
         if type_hint:
@@ -117,27 +121,25 @@ def api_clip_all():
             if f.exists():
                 f.unlink()
 
-        force_flag = " --force" if force else ""
-
         if use_docker_exec():
-            vods_path = "/root/VODs"
-            script_path = _state.DOCKER_PIPELINE_SCRIPT
+            force_flag = " --force" if force else ""
+            cmd_str = (
+                f'for vod in "/root/VODs"/*.mp4 "/root/VODs"/*.mkv; do '
+                f'[ -f "$vod" ] || continue; '
+                f'name=$(basename "$vod" | sed "s/\\.[^.]*$//"); '
+                f'echo "=== Clipping $name ==="; '
+                f'bash {_state.DOCKER_PIPELINE_SCRIPT} --style {style}{force_flag} --vod "$name"; '
+                f'done'
+            )
+            cmd = ["bash", "-c", cmd_str]
         else:
-            vods_path = str(_state.VODS_DIR)
-            script_path = _state.PIPELINE_SCRIPT
-
-        cmd_str = (
-            f'for vod in "{vods_path}"/*.mp4 "{vods_path}"/*.mkv; do '
-            f'[ -f "$vod" ] || continue; '
-            f'name=$(basename "$vod" | sed "s/\\.[^.]*$//"); '
-            f'echo "=== Clipping $name ==="; '
-            f'bash {script_path} --style {style}{force_flag} --vod "$name"; '
-            f'done'
-        )
+            cmd = [sys.executable, _state.PIPELINE_SCRIPT, "--all", "--style", style]
+            if force:
+                cmd.append("--force")
 
         try:
             _state.pipeline_process = spawn_pipeline(
-                ["bash", "-c", cmd_str], captions=captions,
+                cmd, captions=captions,
                 speed=speed, hook_caption=hook_caption,
                 originality=orig_override,
             )

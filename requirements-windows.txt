@@ -1,0 +1,48 @@
+# Bare-metal Windows dependencies — single consolidated requirements file
+# for the native (no-Docker) pipeline. Install into a venv:
+#
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\python.exe -m pip install torch==2.9.1+cu130 torchaudio==2.9.1+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
+#   .venv\Scripts\python.exe -m pip install -r requirements-windows.txt
+#
+# torch/torchaudio are installed SEPARATELY from the cu130 index above
+# (proven working on the RTX 5060 Ti / Blackwell — see scripts/validate_gpu.py).
+# Listing them here would pull the CPU build from PyPI and clobber CUDA.
+
+# --- Core ---------------------------------------------------------------
+flask
+requests
+numpy
+Pillow
+
+# --- Transcription ------------------------------------------------------
+# faster-whisper is the always-on backend (GPU-validated). whisperx is the
+# preferred backend (VAD chunking + forced alignment); speech.py falls back
+# to faster-whisper automatically when whisperx import/runtime fails.
+faster-whisper
+whisperx>=3.1
+
+# CUDA runtime libs CTranslate2 needs on Windows (cuDNN 9 + cuBLAS for CUDA 12).
+# The pipeline adds their nvidia/*/bin dirs to the DLL search path at startup.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+
+# --- Moment-detection extras (graceful no-op if absent) -----------------
+# Pass B+ callback detection + Tier-4 MMR diversity ranking.
+# NOTE: if `torchcodec` gets pulled in transitively, REMOVE it — 0.7+ requires
+# torch 2.9 and its DLLs fail to load against the pinned torch 2.8, which breaks
+# `import sentence_transformers`:  .venv\Scripts\python.exe -m pip uninstall -y torchcodec
+sentence-transformers
+faiss-cpu
+
+# --- Originality stack (graceful no-op if absent) -----------------------
+# Wave D voiceover / tier-C music matching, Wave E face-tracked camera pan.
+piper-tts
+librosa
+soundfile
+opencv-python-headless
+
+# --- Optional (off by default; install if you enable the feature) -------
+# Demucs vocal-stem separation (config/speech.json::vocal_separation.enabled).
+# demucs>=4.0

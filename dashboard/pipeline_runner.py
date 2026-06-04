@@ -39,8 +39,11 @@ def get_docker_container() -> str | None:
 
 
 def use_docker_exec() -> bool:
-    """Whether pipeline should run via docker exec (Windows host mode)."""
-    return not _state.INSIDE_DOCKER
+    """Whether the pipeline runs via docker exec. Bare-metal native is the
+    default now; set CLIP_USE_DOCKER=1 to drive a container instead."""
+    if os.environ.get("CLIP_USE_DOCKER", "").lower() in ("1", "true", "yes"):
+        return not _state.INSIDE_DOCKER
+    return False
 
 
 # --- LM Studio reachability ---------------------------------------------------
@@ -122,6 +125,7 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     env = os.environ.copy()
     env["CLIP_VODS_DIR"] = str(_state.VODS_DIR)
     env["CLIP_CLIPS_DIR"] = str(_state.CLIPS_DIR)
+    env["CLIP_WORK_DIR"] = str(_state.TEMP_DIR)
     config = load_models_config()
     env["CLIP_TEXT_MODEL"] = config.get("text_model", _state.DEFAULT_MODELS["text_model"])
     env["CLIP_VISION_MODEL"] = config.get("vision_model", _state.DEFAULT_MODELS["vision_model"])
@@ -451,7 +455,7 @@ def read_persistent_log_path() -> str | None:
     """Return the persistent log path written by the pipeline at startup."""
     from pathlib import Path
     candidates = (_state.PIPELINE_DONE_PATH, _state.PIPELINE_PID_PATH)
-    if _state.INSIDE_DOCKER:
+    if not use_docker_exec():
         for p in candidates:
             try:
                 if Path(p).exists():

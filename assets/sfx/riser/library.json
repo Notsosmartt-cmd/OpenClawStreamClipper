@@ -1,0 +1,1358 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "kenney_scifi/computerNoise_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "computernoise-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/computerNoise_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "computernoise-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/computerNoise_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "computernoise-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/computerNoise_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "computernoise-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorClose_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "doorclose-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorClose_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "doorclose-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorClose_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "doorclose-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorOpen_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "dooropen-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorOpen_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "dooropen-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/doorOpen_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "dooropen-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/engineCircular_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "enginecircular-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/engineCircular_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "enginecircular-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/engineCircular_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "enginecircular-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/engineCircular_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "enginecircular-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/engineCircular_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "enginecircular-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/explosionCrunch_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "explosioncrunch-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/explosionCrunch_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "explosioncrunch-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/explosionCrunch_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "explosioncrunch-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/explosionCrunch_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "explosioncrunch-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/explosionCrunch_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "explosioncrunch-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/forceField_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "forcefield-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/forceField_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "forcefield-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/forceField_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "forcefield-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/forceField_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "forcefield-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/forceField_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "forcefield-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/impactMetal_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "impactmetal-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/impactMetal_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "impactmetal-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/impactMetal_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "impactmetal-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/impactMetal_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "impactmetal-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/impactMetal_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "impactmetal-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserLarge_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserlarge-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserLarge_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserlarge-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserLarge_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserlarge-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserLarge_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserlarge-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserLarge_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserlarge-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserRetro_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserretro-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserRetro_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserretro-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserRetro_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserretro-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserRetro_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserretro-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserRetro_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "laserretro-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserSmall_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lasersmall-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserSmall_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lasersmall-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserSmall_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lasersmall-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserSmall_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lasersmall-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/laserSmall_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lasersmall-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/lowFrequency_explosion_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lowfrequency-explosion-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/lowFrequency_explosion_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "lowfrequency-explosion-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/slime_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "slime-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/slime_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "slime-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngine_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceengine-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngine_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceengine-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngine_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceengine-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngine_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceengine-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLarge_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelarge-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLarge_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelarge-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLarge_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelarge-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLarge_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelarge-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLarge_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelarge-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLow_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelow-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLow_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelow-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLow_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelow-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLow_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelow-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineLow_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginelow-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineSmall_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginesmall-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineSmall_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginesmall-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineSmall_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginesmall-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineSmall_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginesmall-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/spaceEngineSmall_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "spaceenginesmall-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/thrusterFire_000.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "thrusterfire-000"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/thrusterFire_001.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "thrusterfire-001"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/thrusterFire_002.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "thrusterfire-002"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/thrusterFire_003.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "thrusterfire-003"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "kenney_scifi/thrusterFire_004.ogg",
+      "tags": [
+        "riser",
+        "sweep",
+        "sci-fi",
+        "thrusterfire-004"
+      ],
+      "license": "CC0",
+      "source": "https://kenney.nl/media/pages/assets/sci-fi-sounds/e3af5f7ed7-1677589334/kenney_sci-fi-sounds.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_04.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-04"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_05.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-05"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/power_up_06.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "power-up-06"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_coin_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-coin-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_coin_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-coin-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_die_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-die-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_die_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-die-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_die_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-die-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_explosion_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-explosion-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_explosion_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-explosion-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_explosion_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-explosion-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_explosion_04.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-explosion-04"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_explosion_05.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-explosion-05"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_misc_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-misc-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_misc_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-misc-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_misc_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-misc-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_misc_04.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-misc-04"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/retro_misc_05.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "retro-misc-05"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/shot_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "shot-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/shot_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "shot-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_beep_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-beep-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_beep_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-beep-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_beep_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-beep-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_04.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-04"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_05.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-05"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_06.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-06"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_07.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-07"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_laser_08.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-laser-08"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_01.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-01"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_02.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-02"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_03.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-03"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_04.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-04"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_05.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-05"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_06.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-06"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_07.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-07"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_08.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-08"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_09.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-09"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_10.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-10"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_11.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-11"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_12.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-12"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_13.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-13"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_14.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-14"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_15.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-15"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    },
+    {
+      "file": "rubberduck_retro_50/synth_misc_16.ogg",
+      "tags": [
+        "riser",
+        "synth",
+        "retro",
+        "synth-misc-16"
+      ],
+      "license": "CC0",
+      "source": "https://opengameart.org/sites/default/files/50-CC0-retro-synth-SFX.zip"
+    }
+  ]
+}

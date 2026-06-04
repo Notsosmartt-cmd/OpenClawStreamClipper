@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 LLM_URL = os.environ.get("LLM_URL", "http://host.docker.internal:1234")
 TEXT_MODEL_PASSB = os.environ.get("TEXT_MODEL_PASSB") or os.environ.get("TEXT_MODEL", "")
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 
 DEFAULT_WEIGHTS = {
     "setup_strength":  0.15,
@@ -65,7 +65,9 @@ NET_PATTERNS = (
 
 
 def _load_rubric_config() -> Dict[str, Any]:
-    for path in ("/root/.openclaw/rubric.json", "/root/scripts/lib/../../config/rubric.json"):
+    for path in (os.environ.get("CLIP_RUBRIC_CONFIG"), "/root/.openclaw/rubric.json", "/root/scripts/lib/../../config/rubric.json"):
+        if not path:
+            continue
         try:
             with open(path) as f:
                 return json.load(f)
@@ -75,7 +77,9 @@ def _load_rubric_config() -> Dict[str, Any]:
 
 
 def _load_patterns() -> List[Dict[str, Any]]:
-    for path in ("/root/.openclaw/patterns.json", "/root/scripts/lib/../../config/patterns.json"):
+    for path in (os.environ.get("CLIP_PATTERNS_CONFIG"), "/root/.openclaw/patterns.json", "/root/scripts/lib/../../config/patterns.json"):
+        if not path:
+            continue
         try:
             with open(path) as f:
                 data = json.load(f)
@@ -234,17 +238,82 @@ def _call_llm(prompt: str, *, timeout: int) -> Optional[str]:
     return content or None
 
 
+def _extract_last_json_object(s: str) -> Optional[str]:
+    """Return the last well-formed top-level JSON object substring in ``s``.
+
+    Thinking models routinely emit a chain-of-thought that contains stray
+    ``{...}`` fragments before the actual answer (Python dicts in pseudo-
+    code, escape sequences like ``\\u{...}``, prose like "the {payoff}").
+    A naive ``s.find("{")`` ... ``s.rfind("}")`` window therefore swallows
+    the reasoning into one giant un-parseable blob.
+
+    We instead scan **from the end**, tracking string-literal state so we
+    don't count braces inside ``"..."``, and walk backwards to the matching
+    opening ``{`` of the last balanced object. Returns ``None`` if no
+    balanced object exists.
+    """
+    if not s:
+        return None
+    # Walk forward once to record (start, end) spans of all top-level objects.
+    spans = []
+    depth = 0
+    in_str = False
+    escape = False
+    start = -1
+    for i, ch in enumerate(s):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    spans.append((start, i + 1))
+                    start = -1
+    # Try candidates last-first: most thinking models put the final answer
+    # at the tail. Accept the first one that round-trips through json.loads
+    # AND contains a "scores" key (since that's what Pass D actually needs).
+    for s_idx, e_idx in reversed(spans):
+        candidate = s[s_idx:e_idx]
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("scores"), dict):
+            return candidate
+    # Fall back: last syntactically valid object even without "scores", so
+    # the caller can still inspect/log it.
+    for s_idx, e_idx in reversed(spans):
+        candidate = s[s_idx:e_idx]
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def _parse_response(text: str, valid_ids: set) -> Optional[Dict[str, Any]]:
     if not text:
         return None
     s = text.strip()
     s = re.sub(r"^```(?:json)?\s*|\s*```$", "", s, flags=re.IGNORECASE)
-    js = s.find("{")
-    je = s.rfind("}")
-    if js < 0 or je <= js:
+    candidate = _extract_last_json_object(s)
+    if not candidate:
         return None
     try:
-        obj = json.loads(s[js:je + 1])
+        obj = json.loads(candidate)
     except json.JSONDecodeError:
         return None
     scores = obj.get("scores")

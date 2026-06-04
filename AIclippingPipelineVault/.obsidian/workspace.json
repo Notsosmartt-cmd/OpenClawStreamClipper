@@ -196,17 +196,19 @@
   },
   "active": "da7e60814b1d42be",
   "lastOpenFiles": [
+    "wiki/log.md.tmp.9912.1777701566029",
+    "wiki/concepts/style-profiles.md.tmp.9912.1777701561056",
+    "wiki/log.md.tmp.9912.1777695259066",
+    "wiki/index.md.tmp.9912.1777695213525",
+    "wiki/concepts/asset-libraries.md.tmp.9912.1777695209662",
+    "wiki/concepts/style-profiles.md",
+    "wiki/concepts/style-profiles.md.tmp.9912.1777695205665",
+    "wiki/log.md.tmp.9912.1777692974666",
+    "wiki/concepts/asset-libraries.md",
+    "wiki/log.md.tmp.9912.1777689960564",
     "wiki/log.md.tmp.9912.1777689487368",
     "wiki/log.md.tmp.9912.1777675699801",
     "wiki/log.md.tmp.9912.1777674836701",
-    "wiki/log.md.tmp.9912.1777674403379",
-    "wiki/log.md.tmp.9912.1777667500849",
-    "wiki/log.md.tmp.78576.1777657948797",
-    "wiki/entities/lmstudio.md.tmp.78576.1777657876383",
-    "wiki/entities/lmstudio.md.tmp.78576.1777657872873",
-    "wiki/entities/lmstudio.md.tmp.78576.1777657858646",
-    "wiki/entities/self-consistency-module.md.tmp.78576.1777657847013",
-    "wiki/entities/self-consistency-module.md.tmp.78576.1777657843905",
     "wiki/concepts/tier-4-conversation-shape.md",
     "wiki/concepts/modularization-plan.md",
     "wiki/log.md",
@@ -229,8 +231,6 @@
     "wiki/entities/chrome-mask-module.md",
     "wiki/concepts/boundary-snap.md",
     "wiki/concepts/chrome-masking.md",
-    "wiki/entities/vocal-sep-module.md",
-    "wiki/entities/speech-module.md",
-    "wiki/concepts/speech-pipeline.md"
+    "wiki/entities/vocal-sep-module.md"
   ]
 }

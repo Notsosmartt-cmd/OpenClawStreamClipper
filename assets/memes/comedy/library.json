@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "../generic/rofl.png",
+      "tags": [
+        "laugh",
+        "funny",
+        "lol"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f923.png"
+    },
+    {
+      "file": "../generic/joy.png",
+      "tags": [
+        "laugh",
+        "tears",
+        "funny"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f602.png"
+    },
+    {
+      "file": "../generic/skull.png",
+      "tags": [
+        "dead",
+        "lol",
+        "rip"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f480.png"
+    },
+    {
+      "file": "../generic/pleading.png",
+      "tags": [
+        "sad",
+        "please",
+        "puppy"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f97a.png"
+    }
+  ]
+}

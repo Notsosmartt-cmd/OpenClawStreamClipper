@@ -24,6 +24,13 @@ Output: 1080×1920 vertical MP4 clips (~45 seconds each) with burned-in subtitle
 
 ## Architecture: one container + native Windows LLM
 
+> [!note] Bare-metal Windows is now the default (2026-06-04)
+> The system was ported off Docker to run fully natively on Windows — the bash
+> pipeline became a Python orchestrator (`scripts/run_pipeline.py`), the
+> dashboard and OpenClaw/Discord run as native processes, and only LM Studio is
+> unchanged. The Docker description below is retained as the legacy path (files
+> live under `legacy/`). See [[concepts/bare-metal-windows]].
+
 | Component | Where | Role |
 |---|---|---|
 | [[entities/lm-studio]] | Windows host (native) | LLM inference server — serves Qwen models over OpenAI-compatible HTTP on port 1234 |

@@ -13,7 +13,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ## Entities
 
 ### Models
-- [[entities/faster-whisper]] — Speech-to-text; large-v3 on GPU (float16) or CPU (int8); Stages 2 and 7
+- [[entities/faster-whisper]] — Speech-to-text; WhisperX (VAD+align) + faster-whisper fallback; CTranslate2 + cuDNN on GPU; Stages 2 and 7
 - [[entities/qwen35]] — Default multimodal model (`qwen/qwen3.5-9b` / `qwen3.5-35b-a3b` or Gemma 4 `gemma-4-26b-a4b`); text + vision; Stages 3–4 and 6
 - [[entities/qwen3-vl]] — *retired* — previous dedicated vision model; kept for historical context
 - [[entities/qwen25]] — Discord agent model (older reference; current setup uses same LM Studio model for agent and pipeline)
@@ -23,7 +23,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Infrastructure
 - [[entities/openclaw]] — Agent framework (Node.js); Discord gateway; runs exec tool to invoke pipeline
-- [[entities/lm-studio]] — LLM inference server (native Windows); OpenAI-compatible API on port 1234; 9B vs 35B behavior; reasoning_content fallback
+- [[entities/lm-studio]] — LLM inference server (native, localhost:1234); HTTP inference + **lms-CLI** model load/unload; 9B vs 35B thinking; reasoning_content fallback
 - [[entities/ollama]] — *Retired* — former LLM inference container; replaced by LM Studio as of 2026-04-18
 - [[entities/ffmpeg]] — Video/audio processing; blur-fill 9:16 rendering; subtitle burn-in
 - [[entities/discord-bot]] — Primary user interface; natural-language commands; delivers clip attachments
@@ -57,9 +57,12 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ### System
 - [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence
 - [[concepts/context-management]] — Token compaction, session reset, history limit, compat flags
-- [[concepts/deployment]] — Hardware requirements, LM Studio setup, Docker setup, step-by-step guide
+- [[concepts/bare-metal-windows]] — **native Windows (no Docker)**: Python orchestrator, venv, dashboard + Discord native mode (2026-06-04)
+- [[concepts/deployment]] — Hardware requirements, LM Studio setup, Docker setup, step-by-step guide (legacy; superseded by bare-metal-windows)
 - [[concepts/image-slimming]] — Externalized model caches, requirements files, ORIGINALITY_STACK build arg, Asset Cache panel
 - [[concepts/modularization-plan]] — 4-phase plan to break clip-pipeline.sh, dashboard/app.py, dashboard/static/app.js into focused modules
+- [[concepts/asset-libraries]] — CC0 SFX/music/B-roll/Twemoji seed pack and `scripts/seed_libraries.py`; data layer for the editing-profile plan
+- [[concepts/style-profiles]] — Per-category AI editing profiles (zoom punches, freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues, kinetic captions, fingerprint perturbation); dispatched by Stage 7 when `chk-style-profiles` is on
 
 ### Reference
 - [[concepts/bugs-and-fixes]] — 37 bugs documented; quick-nav table by category; symptoms, root causes, solutions

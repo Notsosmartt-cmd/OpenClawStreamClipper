@@ -6,5 +6,6 @@
   "camera_pan": false,
   "tts_vo": false,
   "music_bed": "",
-  "music_tier_c": false
+  "music_tier_c": false,
+  "style_profiles": true
 }

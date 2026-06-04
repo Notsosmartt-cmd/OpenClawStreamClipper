@@ -12,15 +12,22 @@ import { fetchClips, fetchStages } from "./vods-panel.js";
 
 export function collectOriginality() {
     const q = (id) => document.getElementById(id);
+    const framing = q("sel-framing")?.value || "blur_fill";
     return {
-        framing:       q("sel-framing")?.value || "smart_crop",
-        originality:   !!q("chk-originality")?.checked,
-        stitch:        !!q("chk-stitch")?.checked,
-        narrative:     !!q("chk-narrative")?.checked,
-        camera_pan:    !!q("chk-camera-pan")?.checked,
-        tts_vo:        !!q("chk-tts-vo")?.checked,
-        music_bed:     (q("inp-music-bed")?.value || "").trim(),
-        music_tier_c:  !!q("chk-music-tier-c")?.checked,
+        framing,
+        originality:    !!q("chk-originality")?.checked,
+        stitch:         !!q("chk-stitch")?.checked,
+        narrative:      !!q("chk-narrative")?.checked,
+        // The framing dropdown is the single source of truth — picking
+        // "Camera pan (face track)" enables the face-tracking compute step
+        // (CLIP_CAMERA_PAN). Used to be a separate checkbox; consolidated
+        // 2026-05-02 because the two controls had to be set together to
+        // do anything and the split caused silent fall-through to blur_fill.
+        camera_pan:     framing === "camera_pan",
+        tts_vo:         !!q("chk-tts-vo")?.checked,
+        music_bed:      (q("inp-music-bed")?.value || "").trim(),
+        music_tier_c:   !!q("chk-music-tier-c")?.checked,
+        style_profiles: !!q("chk-style-profiles")?.checked,
     };
 }
 
@@ -30,15 +37,44 @@ export async function fetchOriginality() {
         if (!res.ok) return;
         const cfg = await res.json();
         const q = (id) => document.getElementById(id);
-        if (q("sel-framing") && cfg.framing) q("sel-framing").value = cfg.framing;
+        // If a saved config has framing=blur_fill but camera_pan=true (a
+        // legacy state that never did anything), prefer the explicit
+        // camera_pan signal so the user lands on the working mode.
+        let framing = cfg.framing || "blur_fill";
+        if (framing === "blur_fill" && cfg.camera_pan) framing = "camera_pan";
+        if (q("sel-framing")) q("sel-framing").value = framing;
         if (q("chk-originality")) q("chk-originality").checked = cfg.originality !== false;
         if (q("chk-narrative")) q("chk-narrative").checked = cfg.narrative !== false;
         if (q("chk-stitch")) q("chk-stitch").checked = !!cfg.stitch;
-        if (q("chk-camera-pan")) q("chk-camera-pan").checked = !!cfg.camera_pan;
         if (q("chk-tts-vo")) q("chk-tts-vo").checked = !!cfg.tts_vo;
         if (q("inp-music-bed")) q("inp-music-bed").value = cfg.music_bed || "";
         if (q("chk-music-tier-c")) q("chk-music-tier-c").checked = !!cfg.music_tier_c;
+        if (q("chk-style-profiles")) q("chk-style-profiles").checked = !!cfg.style_profiles;
     } catch (e) { /* ignore */ }
+}
+
+// Rebuild every library.json under assets/ from on-disk contents — exposed
+// in the Originality panel via the "Scan Libraries" button. Useful after
+// the user drops in their own SFX / memes / B-roll / music files.
+export async function scanLibraries() {
+    const status = document.getElementById("libraries-scan-status");
+    const btn    = document.getElementById("btn-scan-libraries");
+    if (btn) { btn.disabled = true; btn.textContent = "Scanning…"; }
+    if (status) status.textContent = "";
+    try {
+        const { ok, data } = await apiPost("/api/libraries/scan", {});
+        if (ok) {
+            const summary = data.summary || "scanned";
+            const rebuilt = (data.rebuilt || []).length;
+            status.textContent = `${summary} (${rebuilt} folder(s) rebuilt)`;
+        } else {
+            status.textContent = "✗ " + (data.error || "scan failed");
+        }
+    } catch (e) {
+        status.textContent = "✗ " + e.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Scan Libraries"; }
+    }
 }
 
 export async function onOriginalityChange() {

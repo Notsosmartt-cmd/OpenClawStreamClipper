@@ -14,7 +14,7 @@ except:
 
 LLM_URL = os.environ["LLM_URL"]
 TEXT_MODEL = os.environ["TEXT_MODEL"]
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 STREAM_TYPE_HINT = os.environ["STREAM_TYPE_HINT"]
 
 with open(f"{TEMP_DIR}/transcript.json") as f:

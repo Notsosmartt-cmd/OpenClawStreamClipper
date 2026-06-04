@@ -5,7 +5,8 @@ Extracted from scripts/clip-pipeline.sh as part of the modularization plan
 """
 import json, os
 
-clips_file = "/tmp/clipper/clips_made.txt"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
+clips_file = os.path.join(TEMP_DIR, "clips_made.txt")
 clips = []
 if os.path.exists(clips_file):
     with open(clips_file) as f:
@@ -37,7 +38,7 @@ for c in clips:
 # Load segment map for timeline info
 seg_map = []
 try:
-    with open("/tmp/clipper/segments.json") as f:
+    with open(os.path.join(TEMP_DIR, "segments.json")) as f:
         seg_map = json.load(f)
 except:
     pass
@@ -51,7 +52,7 @@ summary = {
     "details": clips
 }
 
-with open("/tmp/clipper/summary.json", "w") as f:
+with open(os.path.join(TEMP_DIR, "summary.json"), "w") as f:
     json.dump(summary, f, indent=2)
 
 print(json.dumps(summary, indent=2))

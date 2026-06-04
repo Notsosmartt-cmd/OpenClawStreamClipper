@@ -25,8 +25,24 @@ import subprocess
 import sys
 from pathlib import Path
 
-WHISPER_DIR = Path(os.environ.get("WHISPER_MODEL_DIR", "/root/.cache/whisper-models"))
-PIPER_DIR = Path(os.environ.get("PIPER_VOICE_DIR", "/root/.cache/piper"))
+# Repo-relative defaults so this works natively (no Docker). The env vars
+# (WHISPER_MODEL_DIR / PIPER_VOICE_DIR) still win when set.
+_REPO = Path(__file__).resolve().parents[2]
+WHISPER_DIR = Path(os.environ.get("WHISPER_MODEL_DIR") or (_REPO / "models" / "whisper"))
+PIPER_DIR = Path(os.environ.get("PIPER_VOICE_DIR") or (_REPO / "models" / "piper"))
+
+# Whisper models you can download (faster-whisper / Systran CTranslate2 builds).
+# Size = on-disk; VRAM at float16 is roughly 1.5-2x the largest weights.
+AVAILABLE_WHISPER = [
+    ("large-v3",        "~3 GB",   "Best accuracy. Project default. ~6-7 GB VRAM (float16)."),
+    ("large-v3-turbo",  "~1.6 GB", "~2.5x faster than large-v3, <1% WER loss. Best speed/quality."),
+    ("distil-large-v3", "~1.5 GB", "Distilled; ~6x faster, English-focused, small accuracy drop."),
+    ("large-v2",        "~3 GB",   "Previous best; very accurate, multilingual."),
+    ("medium",          "~1.5 GB", "Good balance of speed and accuracy."),
+    ("small",           "~500 MB", "Fast, decent accuracy."),
+    ("base",            "~150 MB", "Very fast, lower accuracy."),
+    ("tiny",            "~75 MB",  "Fastest, lowest accuracy. Good for smoke tests."),
+]
 
 
 def dir_size_bytes(path: Path) -> int:
@@ -141,7 +157,7 @@ def fetch_piper(voice: str) -> dict:
     # Attempt 1 — piper.download_voices CLI
     try:
         proc = subprocess.run(
-            ["python3", "-m", "piper.download_voices", voice,
+            [sys.executable, "-m", "piper.download_voices", voice,
              "--data-dir", str(PIPER_DIR)],
             capture_output=True, text=True, timeout=180,
         )
@@ -179,6 +195,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("status")
+    sub.add_parser("available")
 
     p_w = sub.add_parser("whisper")
     p_w.add_argument("model", default="large-v3", nargs="?")
@@ -190,6 +207,13 @@ def main() -> int:
 
     if args.cmd == "status":
         print(json.dumps(status(), indent=2))
+        return 0
+    if args.cmd == "available":
+        print(f"Downloadable Whisper models (cache dir: {WHISPER_DIR}):\n")
+        for name, size, desc in AVAILABLE_WHISPER:
+            print(f"  {name:<16} {size:<9} {desc}")
+        print("\nDownload one:   get-models.cmd whisper <name>")
+        print("Current default in config/models.json: large-v3")
         return 0
     if args.cmd == "whisper":
         result = fetch_whisper(args.model)

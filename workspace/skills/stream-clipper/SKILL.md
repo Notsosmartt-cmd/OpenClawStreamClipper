@@ -12,7 +12,7 @@ metadata:
       bins:
         - ffmpeg
         - ffprobe
-        - python3
+        - python
         - curl
 ---
 
@@ -26,22 +26,22 @@ Pick the right command based on what the user said:
 
 **User names a VOD/streamer** (e.g. "clip lacy", "do the pokimane stream"):
 ```json
-{"tool":"exec","command":"bash /root/scripts/clip-pipeline.sh --style auto --vod lacy 2>&1","yieldMs":5000}
+{"tool":"exec","command":"clip.cmd --style auto --vod lacy 2>&1","yieldMs":5000}
 ```
 
 **User specifies stream type** (e.g. "clip the irl lacy stream"):
 ```json
-{"tool":"exec","command":"bash /root/scripts/clip-pipeline.sh --style auto --vod lacy --type irl 2>&1","yieldMs":5000}
+{"tool":"exec","command":"clip.cmd --style auto --vod lacy --type irl 2>&1","yieldMs":5000}
 ```
 
 **User says generic** (e.g. "clip my stream", "process the vod"):
 ```json
-{"tool":"exec","command":"bash /root/scripts/clip-pipeline.sh --style auto 2>&1","yieldMs":5000}
+{"tool":"exec","command":"clip.cmd --style auto 2>&1","yieldMs":5000}
 ```
 
 **User asks what's available** (e.g. "list vods", "what streams"):
 ```json
-{"tool":"exec","command":"bash /root/scripts/clip-pipeline.sh --list 2>&1","yieldMs":5000}
+{"tool":"exec","command":"clip.cmd --list 2>&1","yieldMs":5000}
 ```
 
 ## Style flag

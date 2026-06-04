@@ -5,7 +5,7 @@ Reads scored_moments.json, dispatches face_pan.py per non-stitch moment.
 Writes <TEMP_DIR>/clip_<t>_campath.json for each successfully tracked clip.
 """
 import json, os, subprocess, sys
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 LIB_DIR = os.environ.get("LIB_DIR", "/root/scripts/lib")
 VOD_PATH = os.environ.get("VOD_PATH", "")
 

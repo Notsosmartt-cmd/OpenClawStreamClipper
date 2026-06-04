@@ -46,6 +46,7 @@ def originality_to_env(orig: dict) -> dict:
         "CLIP_TTS_VO": "true" if orig.get("tts_vo") else "false",
         "CLIP_MUSIC_BED": str(orig.get("music_bed", "") or ""),
         "CLIP_MUSIC_TIER_C": "true" if orig.get("music_tier_c") else "false",
+        "CLIP_STYLE_PROFILES": "true" if orig.get("style_profiles") else "false",
     }
 
 
@@ -117,7 +118,8 @@ def extract_originality_fields(data: dict) -> dict | None:
     """
     disk = load_originality_config()
     keys = ("framing", "originality", "stitch", "narrative",
-            "camera_pan", "tts_vo", "music_bed", "music_tier_c")
+            "camera_pan", "tts_vo", "music_bed", "music_tier_c",
+            "style_profiles")
     touched = False
     merged = dict(disk)
     for k in keys:
