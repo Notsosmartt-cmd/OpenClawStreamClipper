@@ -135,6 +135,7 @@ def run_judge(
         return outage_streak[0] >= fail_limit or time.time() > deadline
 
     rationales: Dict[int, str] = {}
+    games_log: List[Dict[str, Any]] = []  # the pairwise bracket, for diagnostics
 
     def _on(a: Dict[str, Any], b: Dict[str, Any], res: Dict[str, Any]) -> None:
         w = res.get("winner")
@@ -142,6 +143,12 @@ def run_judge(
             rationales[id(a)] = res["reason"]
         elif w == "B" and res.get("reason"):
             rationales[id(b)] = res["reason"]
+        games_log.append({
+            "a": a.get("timestamp"), "b": b.get("timestamp"),
+            "winner": (a.get("timestamp") if w == "A" else b.get("timestamp") if w == "B" else None),
+            "confidence": res.get("confidence"),
+            "reason": (res.get("reason") or "")[:160],
+        })
 
     ranked = vlm_judge.swiss_tournament(
         shortlist, compare,
@@ -157,7 +164,7 @@ def run_judge(
             it.pop("wins", None)
             it.pop("games", None)
         return moments, {"status": "insufficient", "games": total_games,
-                         "outage": outage_streak[0] >= fail_limit}
+                         "outage": outage_streak[0] >= fail_limit, "games_log": games_log}
 
     N = len(ranked)
     span = float(cfg.get("reweight_span", 0.25))
@@ -177,7 +184,8 @@ def run_judge(
         it.pop("games", None)
 
     moments_sorted = sorted(moments, key=_raw_of, reverse=True)
-    return moments_sorted, {"status": "ok", "ranked": N, "games": total_games}
+    return moments_sorted, {"status": "ok", "ranked": N, "games": total_games,
+                            "games_log": games_log}
 
 
 def main(argv: Sequence[str]) -> int:
@@ -209,6 +217,20 @@ def main(argv: Sequence[str]) -> int:
 
     new_moments, info = run_judge(moments, cfg=cfg, work_dir=TEMP_DIR,
                                   transcript=transcript, log=lambda s: print(s, file=sys.stderr))
+
+    # Persist the pairwise tournament bracket for post-run judge tuning (captured
+    # by the Stage-8 diagnostics dump; read back via `logtool axes`). Written even
+    # on a partial/insufficient run so an aborted tournament is still inspectable.
+    if info.get("games_log"):
+        try:
+            with open(f"{TEMP_DIR}/judge_tournament.json", "w", encoding="utf-8") as f:
+                json.dump({"status": info.get("status"), "ranked": info.get("ranked"),
+                           "games": info.get("games"), "comparisons": info["games_log"]},
+                          f, indent=2)
+            print(f"[JUDGE] tournament bracket ({len(info['games_log'])} comparisons) -> judge_tournament.json",
+                  file=sys.stderr)
+        except OSError:
+            pass
 
     if info.get("status") != "ok":
         print(f"[JUDGE] no re-rank applied ({info}); Pass C order preserved", file=sys.stderr)

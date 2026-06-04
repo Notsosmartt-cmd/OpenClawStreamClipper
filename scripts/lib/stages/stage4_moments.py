@@ -2090,6 +2090,94 @@ for bucket in buckets:
 for b in buckets:
     b.sort(key=lambda x: x["final_score"], reverse=True)
 
+# --- Selection-axis observability (rank stamps + per-run tuning report) ------
+# final_score is now finalized (post style/length/position/bucket-norm) and the
+# axis multipliers are stamped, but selection hasn't pruned yet — so this is the
+# point to (1) stamp each candidate's base_rank (by the pre-multiplier
+# normalized_score) and pass_c_rank (by the post-axis final_score) for the
+# rank-churn view, and (2) emit an aggregate report of what each axis actually
+# did this run. Both are failure-soft and never affect selection.
+def _axis_stats(vals):
+    s = sorted(float(v) for v in vals if v is not None)
+    if not s:
+        return {"n": 0}
+    n = len(s)
+    median = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+    return {"n": n, "min": round(s[0], 3), "median": round(median, 3),
+            "mean": round(sum(s) / n, 3), "max": round(s[-1], 3)}
+
+def _emit_axis_report(moments):
+    n = len(moments)
+
+    def block(mult_key, score_key, ceil, floor=None):
+        mults = [float(m.get(mult_key) or 1.0) for m in moments]
+        active = sum(1 for x in mults if abs(x - 1.0) > 1e-9)
+        b = {"active": active, "pct_active": round(100.0 * active / max(1, n), 1),
+             "at_ceil": sum(1 for x in mults if ceil is not None and abs(x - ceil) < 1e-6),
+             "multiplier": _axis_stats(mults)}
+        if floor is not None:
+            b["at_floor"] = sum(1 for x in mults if abs(x - floor) < 1e-6)
+        sc = [m.get(score_key) for m in moments if m.get(score_key) is not None]
+        if sc:
+            b["score"] = _axis_stats(sc)
+        return b
+
+    # how often the global clamp actually bound the accumulated axis product
+    bound = 0
+    for m in moments:
+        prod = (float(m.get("arc_multiplier") or 1.0) * float(m.get("reaction_multiplier") or 1.0)
+                * float(m.get("baseline_multiplier") or 1.0) * float(m.get("engagement_multiplier") or 1.0))
+        if abs(prod - float(m.get("axis_multiplier") or 1.0)) > 1e-6:
+            bound += 1
+
+    report = {
+        "candidates": n,
+        "style": CLIP_STYLE,
+        "dependencies": {
+            "arc": _arc is not None,
+            "reaction": _reaction is not None,
+            "baseline": _baseline is not None and _BASELINE is not None,
+            "engagement": _engagement is not None,
+            "chat_features": CHAT_FEATURES is not None,
+            "audio_events": bool(AUDIO_EVENTS),
+            "conversation_shape": CONVO_SHAPE is not None,
+        },
+        "global_clamp": {"floor": _AXIS_FLOOR, "ceil": _AXIS_CEIL, "bound_count": bound},
+        "axes": {
+            "arc": block("arc_multiplier", "arc_completeness",
+                         float(_ARC_CFG.get("multiplier_ceil", 1.12)), float(_ARC_CFG.get("multiplier_floor", 0.85))),
+            "reaction": block("reaction_multiplier", "reaction_score", float(_REACTION_CFG.get("multiplier_ceil", 1.10))),
+            "baseline": block("baseline_multiplier", "baseline_contrast", float(_BASELINE_CFG.get("multiplier_ceil", 1.18))),
+            "engagement": block("engagement_multiplier", "engagement_score", float(_ENGAGEMENT_CFG.get("multiplier_ceil", 1.12))),
+        },
+    }
+    try:
+        with open(f"{TEMP_DIR}/axis_report.json", "w", encoding="utf-8") as _rf:
+            json.dump(report, _rf, indent=2)
+    except OSError:
+        pass
+
+    d = report["dependencies"]
+    print(f"[AXES] Selection-axis report over {n} candidates (style={CLIP_STYLE}):", file=sys.stderr)
+    print(f"[AXES]   deps: arc={d['arc']} reaction={d['reaction']}(audio={d['audio_events']},chat={d['chat_features']}) "
+          f"baseline={d['baseline']} engagement={d['engagement']} shape={d['conversation_shape']}", file=sys.stderr)
+    for name, blk in report["axes"].items():
+        ms = blk["multiplier"]
+        rng = f"{ms.get('min','-')}/{ms.get('median','-')}/{ms.get('max','-')}" if ms.get("n") else "-"
+        extra = f" at_floor={blk['at_floor']}" if "at_floor" in blk else ""
+        print(f"[AXES]   {name:10s} active {blk['active']:>3}/{n} ({blk['pct_active']:>5.1f}%)  "
+              f"mult min/med/max {rng}  at_ceil={blk['at_ceil']}{extra}", file=sys.stderr)
+    print(f"[AXES]   global clamp [{_AXIS_FLOOR},{_AXIS_CEIL}] bound {bound} moment(s)", file=sys.stderr)
+
+try:
+    for _r, _m in enumerate(sorted(deduped, key=lambda x: x.get("normalized_score", 0.0) or 0.0, reverse=True), 1):
+        _m["base_rank"] = _r
+    for _r, _m in enumerate(sorted(deduped, key=lambda x: x.get("final_score", 0.0) or 0.0, reverse=True), 1):
+        _m["pass_c_rank"] = _r
+    _emit_axis_report(deduped)
+except Exception as _are:
+    print(f"[AXES] axis report skipped ({_are})", file=sys.stderr)
+
 # Minimum spacing based on clip duration (prevents overlapping clips)
 def min_spacing(m):
     """Minimum seconds between this clip and neighbors."""
@@ -2260,6 +2348,11 @@ for m in final:
         "engagement_score": m.get("engagement_score"),
         "engagement_multiplier": m.get("engagement_multiplier", 1.0),
         "axis_multiplier": m.get("axis_multiplier", 1.0),
+        # Rank-churn observability: base_rank = rank by pre-multiplier
+        # normalized_score; pass_c_rank = rank by post-axis final_score. The
+        # Vision Judge later stamps vision_rank, giving base -> pass_c -> vision.
+        "base_rank": m.get("base_rank"),
+        "pass_c_rank": m.get("pass_c_rank"),
         # Tier-2 M1 — speaker context (used by Stage 6 prompt + A2)
         "dominant_speaker": m.get("dominant_speaker"),
         "speaker_count": m.get("speaker_count"),

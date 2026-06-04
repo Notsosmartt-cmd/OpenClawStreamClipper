@@ -57,6 +57,8 @@ So the worst case is "the judge did nothing" — it can never break or empty the
 
 Each judged moment gains `vision_rank`, `vision_win_count`, `judge_rationale`, `pass_c_raw_score` (all captured in the `clips/.diagnostics/last_run_*.json` dump). The stage logs a summary line: `[JUDGE] re-ranked N clips in G comparisons, Ts — T=..(#1) > T=..(#2) ...` plus a per-clip `raw a->b` line.
 
+As of 2026-06-04 the full **pairwise tournament bracket** is also persisted to `judge_tournament.json` (every comparison's `a`/`b`/`winner` timestamps + `confidence` + `reason`, written even on a partial/aborted run), and the `base_rank → pass_c_rank → vision_rank` churn is stamped on every moment. Read it all back per run with `logtool axes` — see [[concepts/observability]].
+
 > [!note] Verification status (2026-06-04)
 > Logic verified offline via `python scripts/lib/stages/stage5_5_judge.py --selftest` (a mock comparator drives the known-best clip to rank #1 and the worst to last; reweight stays within ±span; nothing zeroed; comparison cap respected) + `py_compile`. The **live** multimodal call path (`vision_call`/`compare_pair`) verifies on the next real VOD run — it is failure-soft until then.
 

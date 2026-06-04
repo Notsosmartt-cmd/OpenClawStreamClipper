@@ -32,6 +32,11 @@ import paths as _paths_mod  # scripts/lib on sys.path (run_pipeline sets this up
 
 PATHS = _paths_mod.PATHS
 
+# Per-stage timing marks — (stage_label, monotonic-ish epoch) appended by
+# set_stage at every stage boundary; cleanup() turns consecutive marks into
+# per-stage durations (observability — see logtool `axes` / stage_timings.json).
+_STAGE_MARKS: list = []
+
 
 class PipelineExit(Exception):
     """Raised by a stage to end the run early but still run cleanup.
@@ -103,6 +108,7 @@ def set_stage(log: Logger, stage_text: str) -> None:
             fh.write(f"{datetime.now(timezone.utc).isoformat()} {stage_text}\n")
     except OSError as e:
         log.warn(f"could not write stage marker: {e}")
+    _STAGE_MARKS.append((stage_text, time.time()))
     log.log(f">>> {stage_text}")
 
 
@@ -398,6 +404,27 @@ def cleanup(log: Logger, persistent_log: Path, exit_code: int, start_epoch: floa
     else:
         log.log(f"Pipeline elapsed: {m}m {s}s ({elapsed}s, exit={exit_code})")
 
+    # Per-stage timing breakdown (from set_stage marks). Persisted to the work
+    # dir so the diagnostics snapshot below captures it, and printed inline so a
+    # tuner can immediately see where the time went (esp. the Vision Judge).
+    try:
+        if _STAGE_MARKS:
+            timings = []
+            for idx, (label, ts) in enumerate(_STAGE_MARKS):
+                end = _STAGE_MARKS[idx + 1][1] if idx + 1 < len(_STAGE_MARKS) else time.time()
+                timings.append({"stage": label, "seconds": round(max(0.0, end - ts), 1)})
+            try:
+                (PATHS.work_dir / "stage_timings.json").write_text(
+                    json.dumps({"total_seconds": elapsed, "stages": timings}, indent=2),
+                    encoding="utf-8")
+            except OSError:
+                pass
+            log.log("Per-stage timing:")
+            for t in timings:
+                log.log(f"  {t['seconds']:>7.1f}s  {t['stage']}")
+    except Exception as e:
+        log.warn(f"stage-timing report failed: {e}")
+
     # Diagnostics: snapshot every work-dir JSON (ported from pipeline_common.sh)
     try:
         PATHS.diagnostics_dir.mkdir(parents=True, exist_ok=True)
@@ -408,7 +435,10 @@ def cleanup(log: Logger, persistent_log: Path, exit_code: int, start_epoch: floa
                 data = json.loads(f.read_text(encoding="utf-8"))
                 name = f.stem
                 if isinstance(data, list):
-                    diag[name] = {"count": len(data), "data": data[:30]}
+                    # Keep the full moment lists (logtool `axes` reads these for
+                    # the rank-churn + per-moment axis breakdown); cap the rest.
+                    keep = len(data) if name in ("hype_moments", "scored_moments") else 30
+                    diag[name] = {"count": len(data), "data": data[:keep]}
                 else:
                     diag[name] = data
             except Exception:

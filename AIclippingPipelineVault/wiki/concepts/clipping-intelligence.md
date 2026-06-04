@@ -107,6 +107,7 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 
 > [!note] Selection axes (Plans A-E) — the 2026-06-04 overhaul
 > Plans A (arc-completeness), B (reaction-worthy), C (baseline-contrast), and E (engagement/discussion) are live as Pass C pre-signals; D deferred. E also adds an `engagement` style + the `media-pause-commentary` Stage 6 vision archetype.
+> Pass C also stamps `base_rank`/`pass_c_rank` and emits a per-run **axis report** (`axis_report.json` + the `[AXES]` log) — see [[concepts/observability]] for the full diagnostics + the `logtool axes` tuning view.
 > They no longer each multiply `styled_score` independently — they **accumulate into one clamped product**.
 > See [[concepts/clipping-quality-overhaul]] §Cross-axis design guardrails for the compounding analysis and
 > the rebalanced ceilings. (This resolved the "uncalibrated multiplier chain" weakness noted below.)
