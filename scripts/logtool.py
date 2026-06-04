@@ -19,6 +19,12 @@ Commands:
                          filename substring, or a path. Default: the latest run.
   show RUN [--tail N]    Print a run's full log (or last N lines).
   tail [-n N] [--follow] Read the live work-dir pipeline.log (current run).
+  axes [RUN] [--judge-limit N]
+                         Selection-axis tuning view for a past run: per-axis
+                         coverage + multiplier spread + dependency readiness,
+                         the base->passC->vision rank churn, per-stage timing,
+                         and the Vision-Judge pairwise bracket. RUN = index from
+                         newest, name substring, or path. Default: latest.
 
 Exit code is non-zero from `doctor` when any check fails, so it's CI-friendly.
 """
@@ -360,6 +366,108 @@ def cmd_tail(args) -> int:
         return 0
 
 
+def _diag_runs() -> list:
+    d = PATHS.diagnostics_dir
+    if not d.exists():
+        return []
+    return sorted(d.glob("last_run_*.json"), key=lambda p: p.name, reverse=True)
+
+
+def _resolve_diag(arg: str | None) -> Path | None:
+    runs = _diag_runs()
+    if not runs:
+        return None
+    if not arg:
+        return runs[0]
+    if arg.isdigit():
+        i = int(arg) - 1
+        return runs[i] if 0 <= i < len(runs) else None
+    p = Path(arg)
+    if p.exists():
+        return p
+    for r in runs:
+        if arg.lower() in r.name.lower():
+            return r
+    return None
+
+
+def _moments_list(data: dict, key: str) -> list:
+    """Pull a moment list from a diagnostics snapshot (lists are stored as
+    ``{"count": N, "data": [...]}``; dicts are stored directly)."""
+    v = data.get(key)
+    if isinstance(v, dict) and "data" in v:
+        return v.get("data") or []
+    if isinstance(v, list):
+        return v
+    return []
+
+
+def cmd_axes(args) -> int:
+    """Selection-axis tuning view: axis report + rank churn + stage timing +
+    Vision-Judge bracket, read back from a past run's diagnostics snapshot."""
+    run = _resolve_diag(args.run)
+    if not run:
+        print("(no diagnostics snapshots in " + str(PATHS.diagnostics_dir) + ")")
+        return 1
+    try:
+        data = json.loads(run.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"could not read {run}: {e}")
+        return 1
+
+    print(_c("1", f"== Axis diagnostics: {run.name} =="))
+
+    # 1) Axis tuning report (dependency readiness + per-axis coverage/spread)
+    rep = data.get("axis_report")
+    if isinstance(rep, dict):
+        deps = rep.get("dependencies", {})
+        dep_str = " ".join(f"{k}={'on' if v else 'OFF'}" for k, v in deps.items())
+        print(_c("36", f"\n-- axis report ({rep.get('candidates','?')} candidates, style={rep.get('style','?')}) --"))
+        print(f"  deps: {dep_str}")
+        gc = rep.get("global_clamp", {})
+        print(f"  global clamp [{gc.get('floor')},{gc.get('ceil')}] bound {gc.get('bound_count', 0)} moment(s)")
+        print(f"  {'axis':10s} {'active':>11s}  {'mult min/med/max':>22s}  {'ceil':>4s}")
+        for name, blk in (rep.get("axes") or {}).items():
+            ms = blk.get("multiplier", {})
+            rng = f"{ms.get('min','-')}/{ms.get('median','-')}/{ms.get('max','-')}" if ms.get("n") else "-"
+            act = f"{blk.get('active', 0)} ({blk.get('pct_active', 0)}%)"
+            print(f"  {name:10s} {act:>11s}  {rng:>22s}  {blk.get('at_ceil', 0):>4d}")
+    else:
+        print("  (no axis_report — this run pre-dates the observability update)")
+
+    # 2) Rank churn (base -> pass_c -> vision) over the delivered set
+    moments = _moments_list(data, "scored_moments") or _moments_list(data, "hype_moments")
+    if moments:
+        print(_c("36", "\n-- rank churn (delivered clips: base -> passC -> vision) --"))
+        print(f"  {'T':>7s} {'cat':12s} {'base':>4s} {'passC':>5s} {'vis':>4s} {'axis':>5s} {'score':>5s}")
+        for m in sorted(moments, key=lambda m: (m.get("vision_rank") or m.get("pass_c_rank") or 999,
+                                                -(m.get("score") or 0))):
+            print(f"  {str(m.get('timestamp')):>7s} {str(m.get('category', ''))[:12]:12s} "
+                  f"{str(m.get('base_rank', '-')):>4s} {str(m.get('pass_c_rank', '-')):>5s} "
+                  f"{str(m.get('vision_rank', '-')):>4s} {str(m.get('axis_multiplier', '-')):>5s} "
+                  f"{str(m.get('score', '-')):>5s}")
+
+    # 3) Per-stage timing
+    st = data.get("stage_timings")
+    if isinstance(st, dict) and st.get("stages"):
+        print(_c("36", f"\n-- stage timing (total {st.get('total_seconds','?')}s) --"))
+        for t in st["stages"]:
+            print(f"  {t.get('seconds', 0):>7.1f}s  {t.get('stage', '')}")
+
+    # 4) Vision-Judge tournament bracket
+    jt = data.get("judge_tournament")
+    if isinstance(jt, dict) and jt.get("comparisons"):
+        comps = jt["comparisons"]
+        print(_c("36", f"\n-- vision-judge bracket ({len(comps)} comparisons, status={jt.get('status')}) --"))
+        for c in comps[: args.judge_limit]:
+            win = c.get("winner")
+            conf = f" ({c['confidence']})" if c.get("confidence") is not None else ""
+            print(f"  T{c.get('a')} vs T{c.get('b')} -> {('T' + str(win)) if win else 'tie'}{conf}  {str(c.get('reason', ''))[:70]}")
+        if len(comps) > args.judge_limit:
+            print(f"  ... {len(comps) - args.judge_limit} more (raise --judge-limit)")
+    return 0
+
+
 def main(argv) -> int:
     ap = argparse.ArgumentParser(prog="logtool", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -387,6 +495,11 @@ def main(argv) -> int:
     pt.add_argument("-n", type=int, default=60)
     pt.add_argument("--follow", action="store_true")
 
+    pax = sub.add_parser("axes")
+    pax.add_argument("run", nargs="?", default=None,
+                     help="diagnostics run: index from newest, name substring, or path (default: latest)")
+    pax.add_argument("--judge-limit", type=int, default=20, help="max judge comparisons to print")
+
     args = ap.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor(args)
@@ -398,6 +511,8 @@ def main(argv) -> int:
         return cmd_show(args)
     if args.cmd == "tail":
         return cmd_tail(args)
+    if args.cmd == "axes":
+        return cmd_axes(args)
     ap.print_help()
     return 0
 
