@@ -129,6 +129,19 @@ except Exception as _pe:
 
 PATTERN_IDS = {p["id"] for p in PATTERN_CATALOG if isinstance(p, dict) and p.get("id")}
 
+# Selection Sub-Plan A — arc-completeness scorer. Structural setup->payoff
+# completeness -> a gentle, category-aware multiplier folded into Pass C
+# raw_score (boost-leaning, never gates). Failure-soft: if the module or
+# conversation_shape is unavailable, Pass C runs with a 1.0 multiplier.
+try:
+    import arc_completeness as _arc
+    _ARC_CFG = _arc.load_config()
+    print(f"[ARC] arc-completeness loaded (enabled={_ARC_CFG.get('enabled', True)})", file=sys.stderr)
+except Exception as _arce:
+    _arc = None
+    _ARC_CFG = {}
+    print(f"[ARC] arc_completeness unavailable ({_arce}); Pass C runs without arc factor", file=sys.stderr)
+
 
 def _serialize_pattern_catalog_for_prompt(catalog):
     """Render the Pattern Catalog as a numbered list for the Pass B prompt.
@@ -1815,6 +1828,23 @@ for m in deduped:
     if m.get("speaker_count", 0) >= 2 and (m.get("dominant_speaker_share") or 1.0) < 0.7:
         styled_score *= 1.15
 
+    # Plan A: arc-completeness — gentle, category-aware factor rewarding
+    # self-contained setup->payoff arcs and lightly penalizing fragments.
+    # Boost-leaning + bounded (never gates). Failure-soft -> 1.0 multiplier.
+    if _arc is not None:
+        try:
+            _ace = _arc.evaluate(m, segments, shape_module=CONVO_SHAPE, markers=CONVO_MARKERS, cfg=_ARC_CFG)
+        except Exception:
+            _ace = {"completeness": None, "multiplier": 1.0, "signals": {}}
+        styled_score *= _ace.get("multiplier", 1.0)
+        m["arc_completeness"] = _ace.get("completeness")
+        m["arc_multiplier"] = round(_ace.get("multiplier", 1.0), 3)
+        if _ace.get("signals"):
+            m["arc_signals"] = _ace["signals"]
+    else:
+        m["arc_completeness"] = None
+        m["arc_multiplier"] = 1.0
+
     # Apply length penalty — longer clips need higher base scores
     lp = length_penalty(m["clip_duration"])
     # BUG 37: was min(... * lp, 1.0) — caused 9/10 selected clips to land
@@ -2046,6 +2076,10 @@ for m in final:
         "segment_type": m.get("segment_type", get_segment_type(m["timestamp"])),
         "length_penalty": m.get("length_penalty", 1.0),
         "position_weight": m.get("position_weight", 1.0),
+        # Plan A — arc-completeness (0-1) + the applied multiplier; also consumed
+        # by the future Stage 5.5 Vision Judge and the clip-card diagnostics.
+        "arc_completeness": m.get("arc_completeness"),
+        "arc_multiplier": m.get("arc_multiplier", 1.0),
         # Tier-2 M1 — speaker context (used by Stage 6 prompt + A2)
         "dominant_speaker": m.get("dominant_speaker"),
         "speaker_count": m.get("speaker_count"),
@@ -2081,7 +2115,7 @@ for m in output:
     # Show raw score next to the clamped display value so the operator can
     # see actual ranking distinction even when several moments display 1.000
     # (BUG 37: ranking happens on raw values that routinely exceed 1.0).
-    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
+    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
 print(f"  Category breakdown: {json.dumps(cats_found)}", file=sys.stderr)
 print(f"  Segment breakdown: {json.dumps(segs_found)}", file=sys.stderr)
 print(f"Detected {len(output)} clip-worthy moments")

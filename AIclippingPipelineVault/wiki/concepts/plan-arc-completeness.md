@@ -14,6 +14,15 @@ updated: 2026-06-04
 > Global constraint: **virality weight = light platform-awareness** (borrow polish, not taste — never
 > let "what's trending" drive selection).
 
+> [!note] Implemented — v1 text-side scorer (2026-06-04)
+> Live: `scripts/lib/arc_completeness.py` + `config/selection_axes.json`, wired into
+> `scripts/lib/stages/stage4_moments.py` Pass C as a gentle, category-aware multiplier (~0.85–1.12) on
+> `raw_score`, stamping `arc_completeness` / `arc_multiplier` on each moment (and the diagnostics dump)
+> for the future judge. Verified via `python scripts/lib/arc_completeness.py --selftest` (complete story
+> ×1.09 vs fragment ×0.96; one-liner near-neutral; degraded path safe). **Deferred:** the Stage 5.5 judge
+> *comparison criterion* (needs the Phase-1.a substrate) and stronger *payoff/resolution* detection — v1
+> uses proxies (concession/agreement markers + off-screen intrusion), so the open questions below stand.
+
 ## The metric
 A good clip is a **complete, self-contained moment**: a clear setup that lands a payoff, understandable
 with **zero prior context**, not starting mid-thought or ending before the beat resolves. Reward
