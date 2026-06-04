@@ -13,6 +13,39 @@ updated: 2026-06-04
 > page + [[concepts/clipping-intelligence]]. Axes chosen 2026-06-04. Global constraint: **virality weight
 > = light platform-awareness** (polish, not taste).
 
+> [!note] Implementation plan — approved 2026-06-04 (ready to build; not yet built)
+> The brief below is now backed by a concrete plan (full copy in the session plan file). Building is a
+> separate go-ahead.
+
+## Implementation plan (C-MVP)
+
+**Mechanism:** compute the streamer's *normal* once per VOD; **boost moments that break it** (boost-only —
+absence of deviation is neutral). The most novel axis; counters energy-bias (a quiet beat can win on a
+hype streamer).
+
+- **C1 — `scripts/lib/baseline_contrast.py`** (new, mirrors `arc_completeness.py`):
+  `compute_baseline(segments, convo_shape_index, segment_map, cfg)` (one-time: speaking-rate mean/std over
+  30 s/10 s windows + flattened topic-boundary times from `conversation_shape`) and
+  `evaluate(moment, segments, *, baseline, segment_map, cfg)` → `{contrast_score, multiplier, signals}`.
+  Signals (deliberately **orthogonal to the Tier-2 M1 speaker boost**): **rate deviation** (two-sided z vs
+  baseline, cold-start guarded), **topic shift** (TextTiling boundary inside the window), **genre shift**
+  (segment-type change). **Boost-only** `1 + gain·score` ∈ `[1.0, ~1.15]`. Failure-soft; `--selftest`.
+- **C2 — Pass C** (`scripts/lib/stages/stage4_moments.py`): compute the baseline once before the scoring
+  loop; apply `styled_score *= baseline_mult` right after the arc block; stamp
+  `baseline_contrast`/`baseline_signals` on the moment + output entry (diagnostics + `[PASS C]` log).
+- **C3 — Judge** (`scripts/lib/vlm_judge.py` + `scripts/lib/stages/stage5_5_judge.py`): add "deviations
+  from how this streamer normally behaves are more interesting" to the shared `_INSTRUCTION`; append a
+  `[unusual-for-streamer: 0.NN]` card hint.
+- **C4 — config**: a `baseline_contrast` block in `config/selection_axes.json` (weights/thresholds/gain/
+  ceil/`min_windows`), same robust fallback as Plan A.
+
+**Decisions:** global baseline MVP (per-segment-type = Phase 2); audio-loudness + semantic-drift deferred;
+boost-only; orthogonal to M1 (no double-count); two-sided rate (fast *and* slow are "breaks").
+
+**Verify:** `baseline_contrast.py --selftest` (anomalous moment > typical; cold-start neutral; degraded
+neutral) + `py_compile`; `stage5_5_judge.py --selftest` still passes; live run shows `baseline=` in the
+Pass C log + `baseline_contrast` in `clips/.diagnostics/`.
+
 ## The metric
 A good clip is **unexpected relative to how THIS streamer usually is** — a sudden shift in energy,
 affect, volume, or topic against their own baseline. Clip the moment that breaks the pattern: a calm
