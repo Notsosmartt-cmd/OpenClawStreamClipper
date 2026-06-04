@@ -45,6 +45,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ## Concepts
 
 ### Pipeline
+- [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities
 - [[concepts/clipping-pipeline]] — All stages (incl. optional 4.5 and 6.5) with detail, performance table, temp files
 - [[concepts/segment-detection]] — Stage 3: 5-type classification, stream profile, segment-aware weighting
 - [[concepts/highlight-detection]] — Stage 4: three-pass (keywords + LLM + merge/time-bucket/select)

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "_note": "Tier-4 Phase 4.4 — Pass D rubric judge weights. The LLM scores 7 dimensions 0-10 per moment; this file maps each dimension to a weight that aggregates into rubric_score in [0,1]. final_score = 0.6 * pass_c_score + 0.4 * rubric_score. Edit weights freely; sum doesn't have to be 1.0 — the aggregator divides by the actual sum.",
+  "weights": {
+    "setup_strength":  0.15,
+    "payoff_strength": 0.25,
+    "originality":     0.20,
+    "broad_appeal":    0.15,
+    "replay_value":    0.10,
+    "audio_quality":   0.05,
+    "self_contained":  0.10
+  },
+  "blend": {
+    "pass_c_weight": 0.6,
+    "rubric_weight": 0.4
+  },
+  "rejection_flag_demote": -0.5,
+  "rejection_flag_demote_note": "Per-moment final_score gets THIS additive offset (clamped to [0, 1]) for every rejection_flag. Demotes the moment to the bottom of the bucket without eliminating it.",
+  "mmr_lambda": 0.7,
+  "mmr_lambda_note": "Phase 4.6 MMR diversity ranker — lambda toward score (vs novelty). 0.7 is conservative; raise to 0.8 if early VODs feel under-selected.",
+  "per_moment_timeout_seconds": 60,
+  "stage_timeout_seconds": 600,
+  "fail_streak_limit": 3,
+  "fail_streak_note": "Mirrors BUG 32 fail-fast: 3 consecutive network-shaped failures abort Pass D for the rest of the VOD. Surviving moments keep their Pass C score unchanged."
+}

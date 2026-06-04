@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "description": "Phase 5.2 self-consistency config. When enabled, Stage 6 switches from 'regenerate-once on cascade fail' to 'sample N candidates up-front, rank by consistency, cascade through the ranked list until one passes.' Roughly triples vision cost; disabled by default.",
+  "enabled": false,
+  "n_candidates": 3,
+  "temperature": 0.8,
+  "method": "content_overlap",
+  "method_description": "content_overlap = stdlib-only token-Jaccard via grounding.content_overlap_ratio. Single supported method since 2026-05-01 (the legacy 'minicheck' method was retired alongside the MiniCheck tier in the grounding cascade).",
+  "fields_to_sample": ["title", "hook", "description"],
+  "agreement_weight": 0.4,
+  "agreement_weight_description": "How much to weight USC-style candidate-vs-candidate agreement vs candidate-vs-reference grounding in the final score (0.0 = pure-reference, 1.0 = pure-pairwise). Default 0.4 leans reference-grounded.",
+  "min_score_diff": 0.05,
+  "min_score_diff_description": "If the top two candidates tie within this margin, prefer whichever one passes the cascade first — no tie-break preference."
+}

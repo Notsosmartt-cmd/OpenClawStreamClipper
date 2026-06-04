@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "_note": "Tier-4 Phase 4.7 — style → Pattern Catalog weight mapping. Each new style biases Pass C ranking toward boosted patterns and demotes others. Existing emotion-coded styles (auto, funny, hype, emotional, storytime, hot_take, reactive, variety) get a default identity (no pattern bias). When a moment's primary_pattern matches a boosted entry the moment's score is multiplied by `boost`; when it matches a demoted entry it's multiplied by `demote`. Multipliers default to 1.0 (no change).",
+  "styles": {
+    "conversational": {
+      "label": "Conversation-shape clips (interview / debate / banter)",
+      "boost":   { "challenge_and_fold": 1.30, "interview_revelation": 1.30, "social_callout": 1.20, "setup_external_contradiction": 1.10 },
+      "demote":  { "rap_battle_freestyle": 0.90 }
+    },
+    "informational": {
+      "label": "Substance-rambles (news / financial / motivational / backstory)",
+      "boost":   { "informational_ramble": 1.40, "storytelling_arc": 1.20, "interview_revelation": 1.10 },
+      "demote":  { "rap_battle_freestyle": 0.80, "reading_chat_reaction": 0.90 }
+    },
+    "freestyle": {
+      "label": "Rap battles and freestyles",
+      "boost":   { "rap_battle_freestyle": 1.50 },
+      "demote":  {}
+    },
+    "chatlive": {
+      "label": "Streamer reading-and-reacting-to-chat moments",
+      "boost":   { "reading_chat_reaction": 1.40, "unexpected_topic_shift": 1.10 },
+      "demote":  {}
+    },
+    "spicy": {
+      "label": "Controversial / drama / call-out moments",
+      "boost":   { "hot_take_pushback": 1.30, "social_callout": 1.30, "setup_external_contradiction": 1.20, "challenge_and_fold": 1.20 },
+      "demote":  { "informational_ramble": 0.90 }
+    }
+  },
+  "discord_aliases": {
+    "conversational": ["conversation", "convo", "interview", "interview moments", "dialog", "discussion", "guest", "interview clips"],
+    "informational":  ["informational", "info", "substance", "rant", "rants", "lecture", "explainer", "deep dive"],
+    "freestyle":      ["freestyle", "rap battle", "rap", "verse", "bars"],
+    "chatlive":       ["chat", "chat reactions", "reading chat", "chatlive", "chat moments"],
+    "spicy":          ["spicy", "controversial", "drama", "callout", "call out", "beef", "tea"]
+  }
+}

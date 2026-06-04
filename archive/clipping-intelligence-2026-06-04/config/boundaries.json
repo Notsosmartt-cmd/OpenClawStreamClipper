@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Phase 4.2 boundary-snap config (see IMPLEMENTATION_PLAN.md). Pragmatic variable-length windows via Whisper sentence boundaries + pyannote silence gaps. CG-DETR deferred.",
+  "enabled": true,
+  "enabled_description": "Master toggle. When false, Pass C's (clip_start, clip_end) values flow straight through unchanged.",
+  "sentence_snap": {
+    "enabled": true,
+    "description": "Snap start/end to the nearest word-level boundary in transcript.json. Uses Phase 3's WhisperX word-level timestamps when available; falls back to segment boundaries when they're not.",
+    "max_start_drift_sec": 3.0,
+    "max_end_drift_sec": 8.0,
+    "max_end_drift_sec_description": "End may drift LATER by up to 8 s to capture a payoff that lands just past the tentative window. Snapping earlier capped at 2 s — better to include extra than to chop the reaction."
+  },
+  "silence_snap": {
+    "enabled": true,
+    "description": "After sentence-snapping, further nudge start/end to nearby silence gaps (gaps in the word-level timeline > silence_threshold_ms). Preserves clean cut points for Stage 7 render.",
+    "silence_threshold_ms": 250,
+    "max_extra_drift_sec": 1.5
+  },
+  "shot_cut_snap": {
+    "enabled": false,
+    "description": "TransNet V2 shot-boundary detection. Disabled by default — adds a ~50 MB model dep and ~30 s of inference per VOD. Enable only if your streams have frequent hard scene cuts (editing-heavy content, game menus, etc.).",
+    "max_extra_drift_sec": 5.0
+  },
+  "duration_bounds": {
+    "min_sec": 15,
+    "max_sec": 90,
+    "description": "Absolute safety clamps on the snapped window. A snap that would exceed these is rejected and the original tentative boundaries are kept."
+  },
+  "deferred": {
+    "cg_detr": "Saliency-guided moment retrieval via CG-DETR on ±90 s windows. Research-grade (needs QVHighlights-trained weights + SlowFast/CLIP features per window). Revisit after Phase 5 bootstraps a Twitch-clip eval dataset.",
+    "sg_detr_lighthouse": "Same note — Lighthouse wraps CG-DETR/SG-DETR/QD-DETR but still needs training data that matches streaming content."
+  }
+}
