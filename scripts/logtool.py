@@ -75,7 +75,8 @@ _RULES = [
     ("ffmpeg", "ERR", re.compile(r"ffmpeg.*(error|failed)|Render failed", re.I)),
     ("file", "ERR", re.compile(r"No such file|Permission denied|FileNotFoundError", re.I)),
     # WARN — notable but the pipeline handles it
-    ("llm-skip", "WARN", re.compile(r"LLM call (attempt \d|failed)|skipping", re.I)),
+    ("llm-empty", "WARN", re.compile(r"LLM returned empty content", re.I)),
+    ("llm-skip", "WARN", re.compile(r"LLM call (attempt \d+|failed)|Chunk \d+: LLM call failed", re.I)),
     ("warn-tag", "WARN", re.compile(r"\[WARN\]")),
     ("timeout", "WARN", re.compile(r"timed out|Read timed out", re.I)),
 ]
@@ -87,6 +88,10 @@ _BENIGN = (
     "thinking not fully disabled", "no chat data available",
     "no event data available", "no_audio_source", "skipped_reason",
     "[GROUND]", "auto_fetch-disabled", "model likely already loaded",
+    # normal "skipping" lines — not problems:
+    "Found cached transcription", "Skipping transcription",
+    "skipping VRAM swap", "models are the same", "already loaded",
+    "skipping pre-load",
 )
 
 _SEV_ORDER = {"CRIT": 0, "ERR": 1, "WARN": 2}
