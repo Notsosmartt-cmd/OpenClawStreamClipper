@@ -183,6 +183,7 @@ def _reset_work_artifacts(p) -> None:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    paths.load_dotenv()  # pull HF_TOKEN / other secrets from .env into the env
     ctx = Ctx(args)
     p = ctx.paths
     p.ensure_dirs()

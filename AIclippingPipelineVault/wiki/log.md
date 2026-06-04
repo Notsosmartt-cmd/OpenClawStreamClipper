@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-04] update | Wired HF_TOKEN/.env for optional speaker diarization (graceful without token)
+Added `paths.load_dotenv()` (loads the gitignored `.env` into the environment at orchestrator startup) and called it from `run_pipeline.py`, so `HF_TOKEN` reaches `speech.py` for Tier-2 M1 diarization. Added an `HF_TOKEN=` placeholder to `.env` + documented it in `.env.example`; made `config/speech.json::diarization` explicit (enabled by default — the token is the only gate). A clone without `.env`/token transcribes normally (diarization auto-skips). Diarization runs 100% locally; the token only authenticates the one-time pyannote weight download. Pages: [[entities/diarization]].
+
 ## [2026-06-04] update | Whisper model-download helper (get-models.cmd) + future-agent commit mandate
 Made `scripts/lib/fetch_assets.py` native (repo-relative `models\whisper` default) and added an `available` command listing downloadable Whisper models (tiny → large-v3, plus large-v3-turbo / distil-large-v3) with sizes + tradeoffs; added the `get-models.cmd` wrapper. Added a **"Commit after significant changes"** mandate to `CLAUDE.md` (top prompt-injection note + full section; single-branch `main`). Gitignored the `VideoToText-main/` reference repo + local backups. Pages: [[concepts/bare-metal-windows]], [[entities/faster-whisper]].
 

@@ -3,7 +3,7 @@ title: "Speaker diarization (Tier-2 M1)"
 type: entity
 tags: [diarization, whisperx, pyannote, hf-token, pass-a, pass-c, tier-2, m1, module, stage-2, stage-4, audio, signals]
 sources: 1
-updated: 2026-04-27
+updated: 2026-06-04
 ---
 
 # Speaker diarization
@@ -23,6 +23,31 @@ Requires three things to be true; falls through unchanged when any is missing:
 3. WhisperX exposes `DiarizationPipeline` (or `whisperx.diarize.DiarizationPipeline` on newer releases) with `pyannote-audio` installed
 
 When skipped, `[SPEECH] M1: HF_TOKEN unset; skipping diarization` (or a similar message) is logged and the rest of Stage 2 proceeds without speaker labels.
+
+### Setup on bare metal (2026-06-04)
+
+The token lives in the **gitignored `.env`**, so a cloner *without* one runs
+normally — diarization just stays off. `run_pipeline.py` calls
+`paths.load_dotenv()` at startup, which loads `.env` into the environment so
+`speech.py` sees `HF_TOKEN`. To enable:
+
+1. Create a free token (Read scope): https://huggingface.co/settings/tokens
+2. Accept the gated-model terms at `pyannote/speaker-diarization-3.1` **and**
+   `pyannote/segmentation-3.0`.
+3. Put it in `.env`: `HF_TOKEN=hf_...`
+4. Re-transcribe (clear the VOD's cache in `vods\.transcriptions\` or run with
+   `--force`) — cached transcripts don't gain speaker labels retroactively.
+
+The token only authenticates the **one-time weight download**; inference is 100%
+local CPU thereafter. `config/speech.json::diarization.enabled` is `true` by
+default, so the token is the only switch.
+
+> [!note] torchcodec / pyannote 4.x
+> The diarization call passes **preloaded audio** (`whisperx.load_audio` → ffmpeg)
+> into the pipeline, so it doesn't depend on `torchcodec` (removed to keep
+> `sentence-transformers` working on torch 2.8). If a pyannote-4.x / whisperx
+> version mismatch surfaces at runtime it fails soft (skips) — the pipeline is
+> never blocked, so it stays safe to leave enabled.
 
 ---
 

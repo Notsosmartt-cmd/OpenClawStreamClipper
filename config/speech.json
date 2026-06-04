@@ -20,6 +20,13 @@
     "model": "htdemucs_ft",
     "description": "Run Demucs v4 vocals stem separation before transcription. Adds ~60-120s overhead per hour of audio on a 4090 (much longer on CPU). Enable for streams with heavy background music / game audio drowning the streamer — IRL content, DJ sets, concerts, music-game streams. Default off because most Twitch content doesn't need it."
   },
+  "diarization": {
+    "enabled": true,
+    "model": "pyannote/speaker-diarization-3.1",
+    "min_speakers": null,
+    "max_speakers": null,
+    "description": "Multi-speaker labeling (Tier-2 M1) — a boost-only signal for banter/interaction moments. Runs 100% locally via pyannote-audio; the gated weights need a one-time HF_TOKEN (set in .env) to download, then it works offline. Auto-skips when no token is present. CPU-bound; adds ~25-30% to Stage 2."
+  },
   "streamer_prompts_path": "/root/.openclaw/streamer_prompts.json",
   "fallback_chunk_seconds": 1200,
   "fallback_chunk_seconds_description": "Only used by the faster-whisper fallback path. WhisperX's VAD-based chunking replaces this."
