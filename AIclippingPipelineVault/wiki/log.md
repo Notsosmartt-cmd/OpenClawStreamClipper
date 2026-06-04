@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-04] update | Logged session findings — BUG 57 (Qwen thinking-leak / empty-content chunk skips)
+Reviewing a bare-metal clipping session with `logtool` surfaced the one operational issue worth a dedicated bug entry: qwen3.5-9b (and the 27b) reason on every Pass B call under LM Studio 0.4.14 despite the pipeline's no-think directives, causing slowness and occasional `total_tokens=1` empty responses that skip ~2/15 chunks (handled gracefully — the run still produced 9 clips). Filed as [[concepts/bugs-and-fixes#BUG 57]]; the fix is to disable reasoning in LM Studio's model settings. Everything else from this session (bare-metal migration, lms model management, Whisper/WhisperX + LM Studio interaction docs, logtool, get-models, diarization wiring + validation) was logged incrementally in the entries below. Pages: [[concepts/bugs-and-fixes]].
+
 ## [2026-06-04] update | Speaker diarization validated working end-to-end (3 speakers detected)
 With a classic Read HF token + terms accepted on all three gated pyannote models (`speaker-diarization-3.1`, `segmentation-3.0`, and pyannote-v4's `speaker-diarization-community-1`), `scripts/validate_diarization.py --full` ran the full `speech.transcribe` path on a 3-minute plaqueboymax sample: WhisperX ASR → wav2vec2 align → pyannote diarize → assign_word_speakers, producing 3 speakers labeled on 77/79 transcript segments in ~5 s of diarization on GPU. Diarization is fully functional; enable on real VODs by re-transcribing (`--force`). Added a `--full` production-path mode to the validator. Pages: [[entities/diarization]].
 
