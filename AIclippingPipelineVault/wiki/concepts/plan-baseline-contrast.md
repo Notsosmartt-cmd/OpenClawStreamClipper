@@ -13,9 +13,18 @@ updated: 2026-06-04
 > page + [[concepts/clipping-intelligence]]. Axes chosen 2026-06-04. Global constraint: **virality weight
 > = light platform-awareness** (polish, not taste).
 
-> [!note] Implementation plan — approved 2026-06-04 (ready to build; not yet built)
-> The brief below is now backed by a concrete plan (full copy in the session plan file). Building is a
-> separate go-ahead.
+> [!done] BUILT 2026-06-04 — Pass-C pre-signal shipped (judge criterion deferred)
+> `scripts/lib/baseline_contrast.py` (`compute_baseline` + `evaluate`, boost-only, `--selftest` PASS) is
+> wired into Pass C of `stage4_moments.py`: the per-VOD baseline is computed **once** before the scoring
+> loop (speaking-rate mean/std over rolling windows + modal segment-type + topic boundaries flattened from
+> `CONVO_SHAPE_INDEX`), then each moment is scored on **two-sided rate z-deviation + a start-aligned topic
+> pivot + a genre (segment-type) shift**. Per the pre-build evaluation, C is given the **most authority of
+> the axes (ceil 1.18)** — it is the corrective for energy bias. The `[unusual-for-streamer]` **judge
+> criterion is DEFERRED** to the first live judge run (lean-judge-prompt discipline). The topic signal is
+> deliberately **start-aligned** (a pivot INTO a topic), not a mid-clip crossing, so it does **not** fight
+> Plan A (which penalizes mid-clip crossings). Config: the `baseline_contrast` block in
+> `config/selection_axes.json`. Diagnostics: `baseline_contrast`/`baseline_multiplier` + `bc=` in the
+> `[PASS C]` log; the per-VOD baseline is logged once at `[BASELINE]`.
 
 ## Implementation plan (C-MVP)
 
