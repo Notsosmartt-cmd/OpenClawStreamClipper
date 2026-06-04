@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub]
 sources: 3
-updated: 2026-05-02
+updated: 2026-06-04
 ---
 
 # Web Dashboard
@@ -66,7 +66,7 @@ Dashboard starts automatically inside the container on port 5000 (via `entrypoin
 | Feature | Description |
 |---|---|
 | **VOD Library** | All VODs with size, duration, processed status, transcription cache indicator |
-| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox |
+| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox (re-runs from selection AND re-transcribes, replacing the cached transcript — see [[concepts/bugs-and-fixes]] BUG 58) |
 | **Pipeline Monitor** | 8-stage progress dots, real-time log streaming via SSE, stage history with timestamps |
 | **Clips Gallery** | In-browser video preview, download links |
 | **Docker Status** | Green/red badge showing Docker container connectivity |

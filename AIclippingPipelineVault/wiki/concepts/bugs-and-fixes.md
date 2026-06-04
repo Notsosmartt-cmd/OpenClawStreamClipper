@@ -84,6 +84,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 52 | Configured model not in LM Studio — pipeline limps with HTTP 400 fallbacks for hours; needs `verify_models` startup probe |
 | BUG 54 | `HOOK: unbound variable` at stage7_render.sh:19 — bash double-quoted python heredoc bash-expanded `$HOOK` inside a python *comment* under `set -u` |
 | BUG 56 | Title/visual mismatch — Pass C merged keyword (T=1179, "prom") with LLM (T=1187, "bus") but kept keyword's T → Stage 5 frames + Stage 6 transcript window grounded vision in dialog *outside* the rendered clip |
+| BUG 58 | "Force reprocess" never re-transcribed — Stage 2 cache ignored `--force`; now re-transcribes + replaces the cache |
 
 ### Grounding / Hallucination
 | # | Title |
@@ -94,6 +95,16 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 58 — "Force reprocess" never re-transcribed: Stage 2 reused the cached transcript even with `--force`
+
+**Symptom**: Checking "Force reprocess" in the dashboard (or passing `--force`) re-ran the pipeline but did **not** re-transcribe the VOD — the old transcript in `vods/.transcriptions/<stem>.transcript.json/.srt` was reused, so a bad or outdated transcription could never be replaced from the UI.
+
+**Cause**: `scripts/pipeline/stages/stage2.py` gated the transcription cache purely on file existence — `if cached_json.exists() and cached_srt.exists():` — and never consulted `ctx.force`. The `--force` flag (dashboard "Force reprocess" → `pipeline_routes.py` `--force` → `run_pipeline.py:50 self.force`) only affected **Stage 1 VOD *selection*** (latest-VOD pick past the `processed.log` gate — see [[#BUG 1]]), not the transcription cache. So every forced run still took the cache-hit branch and skipped Whisper entirely.
+
+**Fix**: the cache-hit branch now also requires `not ctx.force`. When `ctx.force` is set and a cache exists, Stage 2 logs `Force reprocess: discarding cached transcription for '<vod>' and re-transcribing.`, deletes the stale `cached_json`/`cached_srt` (`unlink(missing_ok=True)`), then re-transcribes; the else-branch already re-copies the fresh transcript back into `.transcriptions`, so the old cache is **replaced**. Without `--force`, caching is unchanged (transcription is the slowest GPU stage, so the cache stays valuable). One-line behavior change, failure-soft. (The legacy Docker `clip-pipeline.sh` path is decommissioned and was not touched.)
 
 ---
 
