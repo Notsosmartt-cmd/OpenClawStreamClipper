@@ -18,6 +18,12 @@ The approved roadmap for fixing "clips are not good." Companion to the evaluatio
 > commercial "virality score" clippers (see the [[#Differentiation stance]] section). The selection
 > *brain* will be our own; we only borrow the *packaging* craft.
 
+> [!note] Build progress
+> **Phase 1.a — Stage 5.5 Vision Judge: built 2026-06-04** → [[entities/vision-judge]] (the shared
+> substrate for axes A-E; tournament re-rank that finally lets vision *select*). Plan A's arc-completeness
+> Pass-C pre-signal also shipped → [[concepts/plan-arc-completeness]]. Still to do: Plan 1 phases 1.b and
+> 2.a-4, and turning each per-axis brief (A-E) into its judge criterion / pre-signal.
+
 ---
 
 ## Context

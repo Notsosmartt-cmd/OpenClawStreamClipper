@@ -30,6 +30,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[entities/dashboard]] — Web UI (Flask, port 5000); 8-stage monitor; SSE streaming; docker exec bridge; Models + Hardware panels
 - [[entities/grounding]] — 2-tier grounding cascade (regex denylist + content overlap → main-model LLM judge); used by Pass B and Stage 6
 - [[entities/lmstudio]] — minimal HTTP client used by the grounding cascade's LLM judge call
+- [[entities/vision-judge]] — **Stage 5.5** multimodal tournament re-ranker; lets vision *select* which moments win (Plan 1.a)
 - [[entities/chat-fetch]] — VOD chat acquisition (anonymous Twitch GraphQL + TwitchDownloader importer)
 - [[entities/chat-features]] — stdlib feature extractor for Pass A' chat scoring and prompt grounding
 - [[entities/speech-module]] — Stage 2 transcription wrapper (WhisperX primary, faster-whisper fallback)

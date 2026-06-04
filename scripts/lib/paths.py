@@ -223,6 +223,8 @@ class Paths:
         env["CLIP_RUBRIC_CONFIG"] = str(self.config("rubric.json"))
         env["CLIP_PATTERNS_CONFIG"] = str(self.config("patterns.json"))
         env["CLIP_STYLE_PATTERN_WEIGHTS"] = str(self.config("style_pattern_weights.json"))
+        env["CLIP_JUDGE_CONFIG"] = str(self.config("judge.json"))
+        env["CLIP_SELECTION_AXES_CONFIG"] = str(self.config("selection_axes.json"))
         # Asset dirs + module dir.
         env["LIB_DIR"] = str(self.lib_dir)
         env["PIPER_VOICE_DIR"] = str(self.repo_root / "models" / "piper")
