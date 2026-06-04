@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-04] update | Diarization: fixed whisperx token kwarg + added validate_diarization.py
+Implementing/testing Tier-2 M1 diarization on bare metal surfaced two issues. (1) Code bug — whisperx 3.8.6 / pyannote 4.x renamed the auth kwarg `use_auth_token` → `token`; `speech.py::_maybe_diarize` now selects it via signature inspection (works on old + new whisperx). (2) Added `scripts/validate_diarization.py` — downloads the pyannote weights and runs diarization on a short sample as an end-to-end check (uses the authoritative `auth_check`, not `model_info`). Also learned the HF token must be a **classic Read** token (fine-grained tokens 403 on gated repos despite `model_info` reporting OK) with terms accepted on both `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`. The end-to-end run is still blocked on the user's HF gated access. Pages: [[entities/diarization]].
+
 ## [2026-06-04] update | Wired HF_TOKEN/.env for optional speaker diarization (graceful without token)
 Added `paths.load_dotenv()` (loads the gitignored `.env` into the environment at orchestrator startup) and called it from `run_pipeline.py`, so `HF_TOKEN` reaches `speech.py` for Tier-2 M1 diarization. Added an `HF_TOKEN=` placeholder to `.env` + documented it in `.env.example`; made `config/speech.json::diarization` explicit (enabled by default — the token is the only gate). A clone without `.env`/token transcribes normally (diarization auto-skips). Diarization runs 100% locally; the token only authenticates the one-time pyannote weight download. Pages: [[entities/diarization]].
 

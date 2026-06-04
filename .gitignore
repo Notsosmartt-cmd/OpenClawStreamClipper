@@ -68,8 +68,9 @@ build/
 models/whisper/
 models/piper/
 models/sentence-transformers/
-# GPU validation test artifact
+# Validation test artifacts
 test_gate.wav
+diar_sample.wav
 
 # ============================================================
 # Node
