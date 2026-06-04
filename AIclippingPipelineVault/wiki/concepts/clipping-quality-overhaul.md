@@ -28,9 +28,13 @@ The approved roadmap for fixing "clips are not good." Companion to the evaluatio
 > pre-signal with a **deliberately small ceiling (1.10)** + the new **global axis-multiplier clamp**
 > ([[concepts/plan-reaction-worthy]]). **Plan C — baseline-contrast: built 2026-06-04** — per-VOD
 > relative-to-self anomaly detection (rate/topic/genre deviation), boost-only, given the **most authority
-> (ceil 1.18)** as the energy-bias corrective ([[concepts/plan-baseline-contrast]]). Still to do: Plan E (D
-> deferred), Plan 1 phases 1.b and 2.a-4, and the deferred per-axis **judge criteria** (held until the
-> first live judge run).
+> (ceil 1.18)** as the energy-bias corrective ([[concepts/plan-baseline-contrast]]). **Plan E — engagement/discussion: built 2026-06-04** —
+> a low-impact-but-talkable take axis (predicted firm-stance + **observed sustained chat discussion** over
+> `[T, T+60]`) + an `engagement` style + the `media-pause-commentary` Stage 6 vision archetype
+> ([[concepts/plan-engagement-discussion]]). **The A/B/C/E Pass-C axis set is now COMPLETE** (D deferred).
+> Still to do: the deferred per-axis **judge criteria** (held until the first live judge run), Plan 1 phases
+> 1.b and 2.a-4, and — highest priority — **a live VOD run** to validate the whole stack (the Vision Judge
+> has still never run live).
 
 ---
 

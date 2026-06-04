@@ -26,6 +26,11 @@
       "label": "Controversial / drama / call-out moments",
       "boost":   { "hot_take_pushback": 1.30, "social_callout": 1.30, "setup_external_contradiction": 1.20, "challenge_and_fold": 1.20 },
       "demote":  { "informational_ramble": 0.90 }
+    },
+    "engagement": {
+      "label": "Discussion-worthy takes (yap / opinion / debate-bait)",
+      "boost":   { "hot_take_pushback": 1.30, "informational_ramble": 1.25, "social_callout": 1.20, "challenge_and_fold": 1.15 },
+      "demote":  { "rap_battle_freestyle": 0.85, "reading_chat_reaction": 0.90 }
     }
   },
   "discord_aliases": {
@@ -33,6 +38,7 @@
     "informational":  ["informational", "info", "substance", "rant", "rants", "lecture", "explainer", "deep dive"],
     "freestyle":      ["freestyle", "rap battle", "rap", "verse", "bars"],
     "chatlive":       ["chat", "chat reactions", "reading chat", "chatlive", "chat moments"],
-    "spicy":          ["spicy", "controversial", "drama", "callout", "call out", "beef", "tea"]
+    "spicy":          ["spicy", "controversial", "drama", "callout", "call out", "beef", "tea"],
+    "engagement":     ["engagement", "engaging", "discussion", "debate", "opinions", "takes", "yap", "yapping"]
   }
 }
