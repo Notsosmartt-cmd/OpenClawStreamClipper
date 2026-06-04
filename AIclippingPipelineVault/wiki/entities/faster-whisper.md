@@ -10,7 +10,7 @@ updated: 2026-06-04
 
 OpenAI's Whisper speech recognition model running through the `faster-whisper` engine — a CTranslate2 reimplementation that runs 4–6x faster than the original OpenAI implementation with identical accuracy.
 
-Model: `large-v3` (not turbo). Runs inside the `stream-clipper` container. Runs on **GPU (float16) when available**, automatically falls back to CPU (int8) if not.
+Default model (2026-06-04): **`large-v3-turbo`** — a distilled large-v3 (decoder pruned 32→4 layers, encoder unchanged; ~809M params, ~1.6 GB) that runs **~2.5x faster for <1% WER loss**. **`large-v3`** stays selectable as the accuracy ceiling for noisy / accented / overlapping-speech audio. Runs **natively** (bare-metal Windows venv) on **GPU (float16) when available**, auto-falling back to CPU (int8).
 
 > [!note] Corrected: not CPU-only
 > Earlier documentation incorrectly stated Whisper always runs on CPU. In practice, the pipeline explicitly unloads all Ollama models from VRAM before Stage 2 so Whisper can claim the full GPU. Whisper uses ~6–7GB VRAM at float16.
@@ -69,12 +69,20 @@ consequences on Windows:
 - **Device & compute**: `config/speech.json::device`/`compute_type` default
   `auto` → `cuda`+`float16` when `torch.cuda.is_available()`, else `cpu`+`int8`.
   Env `CLIP_WHISPER_DEVICE` / `CLIP_WHISPER_COMPUTE` override.
-- **Model**: `large-v3` (from `config/models.json::whisper_model` →
-  `CLIP_WHISPER_MODEL`; this overrides speech.py's own `large-v3-turbo` default).
+- **Model**: **`large-v3-turbo`** by default (from `config/models.json::whisper_model`
+  → `CLIP_WHISPER_MODEL`, exported by the orchestrator; this overrides speech.py's
+  own `cfg["model"]`, which also defaults to turbo). Selectable sizes in the dashboard
+  dropdown (`dashboard/_state.py::WHISPER_MODELS`): **large-v3-turbo, large-v3,
+  large-v2, medium, small, base, tiny**. faster-whisper 1.2.1 resolves
+  `large-v3-turbo`/`turbo` → `mobiuslabsgmbh/faster-whisper-large-v3-turbo`.
 - **Model weights cache**: `WHISPER_MODEL_DIR` → **`<repo>\models\whisper`**
-  (HuggingFace layout `models--Systran--faster-whisper-large-v3`). Downloads
-  ~3 GB on first use; this repo already has it cached, so first run skips the
-  download. (Replaces the Docker image pre-bake.)
+  (HuggingFace layout, e.g. `models--mobiuslabsgmbh--faster-whisper-large-v3-turbo`
+  ~1.6 GB and `models--Systran--faster-whisper-large-v3` ~3 GB). Sizes download on
+  first use; turbo + large-v3 are pre-cached in this repo. **Windows symlink fix**:
+  HF Hub's snapshot→blob symlinks raise `WinError 1314` ("required privilege not
+  held") without admin / Developer Mode, so `paths.child_env()` sets
+  `HF_HUB_DISABLE_SYMLINKS=1` (copy mode); without it a first-use download of an
+  uncached size hard-fails mid-download (BUG 59). (Replaces the Docker image pre-bake.)
 
 ### Output
 

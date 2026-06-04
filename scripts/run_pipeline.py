@@ -72,7 +72,7 @@ class Ctx:
         self.vision_model = pick("CLIP_VISION_MODEL", "vision_model", self.text_model)
         self.text_model_passb = os.environ.get("CLIP_TEXT_MODEL_PASSB") or models.get("text_model_passb") or self.text_model
         self.vision_model_stage6 = os.environ.get("CLIP_VISION_MODEL_STAGE6") or models.get("vision_model_stage6") or self.vision_model
-        self.whisper_model = pick("CLIP_WHISPER_MODEL", "whisper_model", "large-v3")
+        self.whisper_model = pick("CLIP_WHISPER_MODEL", "whisper_model", "large-v3-turbo")
         self.context_length = int(pick("CLIP_CONTEXT_LENGTH", "context_length", 8192))
 
         self.captions_enabled = _bool_env("CLIP_CAPTIONS", True)
