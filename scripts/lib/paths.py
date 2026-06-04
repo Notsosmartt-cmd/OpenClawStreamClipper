@@ -231,6 +231,12 @@ class Paths:
         env["CALLBACKS_CACHE_DIR"] = str(self.repo_root / "models" / "sentence-transformers")
         # Quieter HF cache on Windows (no symlink support without dev mode).
         env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+        # Windows: HF Hub symlink creation (snapshots -> blobs) raises WinError
+        # 1314 ("required privilege not held") without admin / Developer Mode, so
+        # copy blobs into snapshots instead. Without this, a first-use download of
+        # a not-yet-cached model (e.g. a Whisper size picked in the dashboard)
+        # would hard-fail mid-download. Costs ~2x cache disk; correctness > disk.
+        env.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
         # Put the venv's CUDA DLLs on PATH so CTranslate2 (faster-whisper)
         # finds cuDNN/cuBLAS in child processes (Stage 2 / Stage 7 captions).
         nv = nvidia_bin_dirs()

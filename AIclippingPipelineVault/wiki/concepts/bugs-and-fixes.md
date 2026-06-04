@@ -27,6 +27,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 18 | Pipeline logs lost after EXIT cleanup — added persistent timestamped log |
 | BUG 31 | Docker Desktop named pipe 500 kills `docker exec` mid-Pass-B — detached pipeline lifecycle |
 | BUG 32 | Container loses `host.docker.internal` route mid-run — Pass B / Stage 6 fail-fast after 3 consecutive ENETUNREACH |
+| BUG 59 | HF model download hard-fails on Windows — symlink WinError 1314; set `HF_HUB_DISABLE_SYMLINKS=1` (copy mode) |
 
 ### Dashboard
 | # | Title |
@@ -95,6 +96,16 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 59 — HuggingFace model download hard-fails on Windows: symlink WinError 1314
+
+**Symptom**: Pre-fetching a not-yet-cached model into `models/whisper/` (e.g. `large-v3-turbo`) crashes mid-download with `OSError: [WinError 1314] A required privilege is not held by the client` while `huggingface_hub` calls `os.symlink(... blobs/<sha> -> snapshots/<rev>/config.json)`. The same would hit the pipeline's own first-use download of any uncached Whisper size picked in the dashboard.
+
+**Cause**: HF Hub's cache layout symlinks `snapshots/<rev>/<file>` → `blobs/<sha>`. Creating symlinks on Windows needs admin or Developer Mode; without it the syscall fails. `HF_HUB_DISABLE_SYMLINKS_WARNING=1` only silences the *warning* — it does **not** change the behavior.
+
+**Fix**: set **`HF_HUB_DISABLE_SYMLINKS=1`** (copy blobs into snapshots instead of symlinking). Added to `paths.child_env()` (`scripts/lib/paths.py`) so every pipeline-spawned download is safe, and used for the manual `faster_whisper.download_model("large-v3-turbo", cache_dir=models/whisper)` pre-fetch. Costs ~2x cache disk per model (blob + copy); correctness beats disk on a bare-metal Windows box. Already-cached models are unaffected (the env only changes download/cache-write behavior, not reads).
 
 ---
 

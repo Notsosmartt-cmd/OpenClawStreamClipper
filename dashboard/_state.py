@@ -88,7 +88,7 @@ DEFAULT_ORIGINALITY = {
 DEFAULT_MODELS = {
     "text_model": "qwen/qwen3.5-9b",
     "vision_model": "qwen/qwen3.5-9b",
-    "whisper_model": "large-v3",
+    "whisper_model": "large-v3-turbo",
     "llm_url": "http://host.docker.internal:1234",
     "context_length": 8192,
 }
@@ -129,8 +129,9 @@ SUGGESTED_MODELS = {
         "alternatives": ["qwen/qwen3-vl-8b", "qwen/qwen2.5-vl-7b"],
     },
     "whisper_model": {
-        "id": "large-v3",
-        "reason": "Best transcription accuracy. Recommended for GPU. ~3 GB VRAM.",
+        "id": "large-v3-turbo",
+        "reason": "Distilled large-v3: ~2.5x faster transcription (the slowest non-LLM stage) for <1% WER loss, and ~half the VRAM (~1.6 GB). Switch to large-v3 for noisy / accented / overlapping-speech VODs where the accuracy ceiling matters.",
+        "alternatives": ["large-v3"],
     },
 }
 
@@ -142,7 +143,8 @@ CONTEXT_LENGTH_GUIDE = [
 ]
 
 WHISPER_MODELS = [
-    {"name": "large-v3", "size": "~3 GB", "description": "Best accuracy, recommended for GPU"},
+    {"name": "large-v3-turbo", "size": "~1.6 GB", "description": "Distilled large-v3 — ~2.5x faster, <1% WER loss. Default/recommended"},
+    {"name": "large-v3", "size": "~3 GB", "description": "Quality ceiling — safest on noisy / accented / overlapping-speech audio"},
     {"name": "large-v2", "size": "~3 GB", "description": "Previous best, very accurate"},
     {"name": "medium", "size": "~1.5 GB", "description": "Good balance of speed and accuracy"},
     {"name": "small", "size": "~500 MB", "description": "Fast, decent accuracy"},

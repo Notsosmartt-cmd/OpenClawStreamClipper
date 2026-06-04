@@ -21,7 +21,9 @@ Models are configured in `config/models.json` — the specific model ID and its 
 | `google/gemma-4-26b-a4b` (current default) | ~14–16 GB | 32K tokens |
 | `qwen3.5-9b-instruct` (text-only option) | ~11.2 GB | 32K tokens (capped) |
 | `qwen2.5-vl-7b-instruct` (vision option) | ~8.8 GB | 32K tokens |
-| [[entities/faster-whisper]] `large-v3` | ~6–7 GB | N/A (audio model) |
+| [[entities/faster-whisper]] `large-v3-turbo` (default) / `large-v3` | ~3–4 GB / ~6–7 GB | N/A (audio model) |
+
+Whisper never co-resides with the LLM (the pipeline unloads LM Studio before Stage 2), so turbo's smaller footprint doesn't add LLM headroom — but it loads faster and transcribes ~2.5x quicker. See [[entities/faster-whisper]].
 
 Peak VRAM usage: determined by the configured LLM. Gemma-4 26B on a 16GB GPU is tight — check LM Studio's VRAM meter after loading.
 
