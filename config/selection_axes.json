@@ -1,6 +1,24 @@
 {
   "version": 1,
-  "_note": "Per-axis selection tunables (Plans A-E). Hot-editable; read with a robust fallback to built-in defaults so a malformed edit never breaks the pipeline. Plan A = arc_completeness (the only axis implemented so far). See AIclippingPipelineVault/wiki/concepts/plan-arc-completeness.md.",
+  "_note": "Per-axis selection tunables (Plans A-E). Hot-editable; read with a robust fallback to built-in defaults so a malformed edit never breaks the pipeline. Implemented: arc_completeness (A), reaction (B). See AIclippingPipelineVault/wiki/concepts/clipping-quality-overhaul.md.",
+  "global": {
+    "_note": "Cross-axis compounding guardrail (overhaul eval finding #1). The A-E axis multipliers each stay bounded, but their PRODUCT is clamped to [floor, ceil] before being applied to raw_score so no moment runs away by tripping several correlated axes at once. Only arc may push below 1.0; the rest are boost-only.",
+    "axis_multiplier_floor": 0.80,
+    "axis_multiplier_ceil": 1.35
+  },
+  "reaction": {
+    "enabled": true,
+    "_note": "Plan B — reaction-worthy. Cheap INTENSITY pre-signal (audio crowd-response near the peak + a post-beat chat-breadth spike over [T, T+post_window_s]). Boost-only and deliberately the SMALLEST ceiling, since energy is already heavily rewarded in Pass C (cross_validated x1.20, speaker x1.15, Pass A crowd gating) — B must not amplify energy bias. Authenticity (earned vs forced hype) is the Vision Judge's job, not measured here.",
+    "gain": 0.18,
+    "multiplier_ceil": 1.10,
+    "z_norm": 3.0,
+    "unique_chatter_min": 4,
+    "post_window_s": 12.0,
+    "weights": {"audio": 0.55, "chat": 0.40, "rhythm": 0.05},
+    "sub_legitimacy_bonus": 0.10,
+    "category_gain": {"reactive": 1.0, "funny": 1.0, "hype": 1.0, "dancing": 0.9, "controversial": 0.8, "hot_take": 0.7, "storytime": 0.6, "emotional": 0.6},
+    "default_category_gain": 0.85
+  },
   "arc_completeness": {
     "enabled": true,
     "_note": "Structural 'is this a complete, self-contained setup->payoff arc?' score in [0,1] -> a gentle, category-aware multiplier on Pass C raw_score. Boost-leaning, never gates. neutral_point is the completeness at which the multiplier is exactly 1.0; below it = mild penalty, above = mild boost.",

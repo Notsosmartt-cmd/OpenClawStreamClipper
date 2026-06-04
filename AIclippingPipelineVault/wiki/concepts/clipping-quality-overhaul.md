@@ -21,8 +21,45 @@ The approved roadmap for fixing "clips are not good." Companion to the evaluatio
 > [!note] Build progress
 > **Phase 1.a — Stage 5.5 Vision Judge: built 2026-06-04** → [[entities/vision-judge]] (the shared
 > substrate for axes A-E; tournament re-rank that finally lets vision *select*). Plan A's arc-completeness
-> Pass-C pre-signal also shipped → [[concepts/plan-arc-completeness]]. Still to do: Plan 1 phases 1.b and
-> 2.a-4, and turning each per-axis brief (A-E) into its judge criterion / pre-signal.
+> Pass-C pre-signal also shipped → [[concepts/plan-arc-completeness]].
+> **Pre-build evaluation 2026-06-04** (before building B-E): the per-axis plans are individually sound and
+> their reused APIs verified, but combining them surfaced cross-cutting risks → see [[#Cross-axis design
+> guardrails (pre-build eval)]]. **Plan B — reaction-worthy: built 2026-06-04** as a boost-only Pass-C
+> pre-signal with a **deliberately small ceiling (1.10)** + the new **global axis-multiplier clamp**
+> ([[concepts/plan-reaction-worthy]]). Still to do: Plan C, Plan E (D deferred), Plan 1 phases 1.b and
+> 2.a-4, and the deferred per-axis **judge criteria** (held until the first live judge run).
+
+---
+
+## Cross-axis design guardrails (pre-build eval)
+
+A pre-build evaluation of plans A-E (2026-06-04) found each plan individually sound — the reused APIs
+(`chat_features.window`, the `conversation_shape` discourse markers, `apply_style_weights`, the Pass C
+insertion point) were all verified to exist as described. The risk was **emergent**: four axes each
+applying a bounded `styled_score *= mult` in Pass C, uncoordinated. These guardrails were adopted **before**
+building B and apply to C/E as they land:
+
+1. **Global axis-multiplier clamp (the key one).** The axes are accumulated into one product (`axis_mult`)
+   that is **clamped to `[0.80, 1.35]`** (the `global` block of `config/selection_axes.json`) before being
+   applied once. Each axis is individually bounded, but their *product* was not — a moment tripping several
+   correlated axes (e.g. a loud reaction that also breaks baseline) could compound to ~1.63× and run away.
+   Pass C ranks on the **uncapped** `raw_score` (BUG 37 soft-caps only at display), so this matters for
+   ordering. The clamp is the coordinating layer that makes axes safe to add incrementally.
+2. **Rebalanced ceilings.** B (reaction) gets the **smallest** ceiling (1.10), not the largest — it
+   overlaps the most with already-rewarded signals (`cross_validated` ×1.20, the speaker boost ×1.15, Pass
+   A crowd gating), so a big B ceiling would *amplify* the energy bias the user dislikes. C (baseline-
+   contrast) — the corrective, most-novel axis — gets the **most** authority (ceil ~1.18).
+3. **Lean judge-prompt.** The shared `vlm_judge._INSTRUCTION` is **not** allowed to accrete a competing
+   sentence per axis (base "prefer a real beat over hype" already partly cancels E's "surface a calm
+   take"). Per-axis **judge criteria are deferred** to the first live judge run, where their effect can
+   actually be observed; until then the axes act only through Pass C `raw_score` (which still feeds the
+   judge's shortlist + seed order). The judge has never run live — not piling unverifiable prompt changes
+   onto it is deliberate.
+4. **D downgraded.** Batch-diversity stays deferred (Pass C already delivers visible diversity); if built
+   it is a `raw_score`-moving reorder, not a full axis.
+
+> [!note] Build order chosen by the user: **B → C → E** (D deferred). Each axis is a boost-only (except A)
+> Pass-C pre-signal mirroring `arc_completeness.py`, fully offline-selftested before wiring.
 
 ---
 

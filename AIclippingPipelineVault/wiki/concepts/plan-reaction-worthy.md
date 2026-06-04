@@ -13,9 +13,17 @@ updated: 2026-06-04
 > page + [[concepts/clipping-intelligence]]. Axes chosen 2026-06-04. Global constraint: **virality weight
 > = light platform-awareness** (polish, not taste).
 
-> [!note] Implementation plan — approved 2026-06-04 (ready to build; not yet built)
-> The brief below is now backed by a concrete plan (full copy in the session plan file). Building is a
-> separate go-ahead.
+> [!done] BUILT 2026-06-04 — Pass-C pre-signal shipped (judge criterion deferred)
+> `scripts/lib/reaction_signals.py` (boost-only intensity scorer, `--selftest` PASS) is wired into Pass C
+> of `stage4_moments.py` as part of the accumulated, globally-clamped selection-axis product. **Deviations
+> from the original plan, per the pre-build evaluation** ([[concepts/clipping-quality-overhaul]] §Cross-axis
+> design guardrails): ceiling **lowered to 1.10** (B is the most-redundant axis — energy is already
+> rewarded — so it gets the *smallest* boost, not the ≤1.20 originally planned); the **judge criterion +
+> `[reaction: 0.NN]` card hint are DEFERRED** to the first live judge run (lean-judge-prompt discipline);
+> the **diarized-interruption signal was dropped** to avoid double-counting the existing M1 speaker boost
+> (B leans on audio `crowd_response` + the post-beat chat-breadth spike, gated on `unique_chatters`).
+> Config: the `reaction` + `global` blocks in `config/selection_axes.json`. Diagnostics: `reaction_score`,
+> `reaction_multiplier`, `axis_multiplier` on each moment + `rx=`/`ax=` in the `[PASS C]` log.
 
 ## Implementation plan (B-MVP)
 
