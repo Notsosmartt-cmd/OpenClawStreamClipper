@@ -327,7 +327,12 @@ def _maybe_diarize(segments, audio, device, diar_cfg, whisperx):
             )
             return segments
         t0 = time.time()
-        diarize_kwargs = {"use_auth_token": hf_token, "device": device}
+        # whisperx 3.8.x / pyannote 4.x renamed use_auth_token -> token. Pick
+        # whichever kwarg this whisperx build accepts so old and new both work.
+        import inspect as _inspect
+        _params = _inspect.signature(DiarizationPipeline.__init__).parameters
+        _tok_kw = "token" if "token" in _params else "use_auth_token"
+        diarize_kwargs = {_tok_kw: hf_token, "device": device}
         try:
             diarize_model = DiarizationPipeline(
                 model_name=diar_cfg.get("model") or "pyannote/speaker-diarization-3.1",

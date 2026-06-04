@@ -49,6 +49,21 @@ default, so the token is the only switch.
 > version mismatch surfaces at runtime it fails soft (skips) — the pipeline is
 > never blocked, so it stays safe to leave enabled.
 
+> [!warning] whisperx 3.8.x token kwarg + classic HF token (found while validating)
+> Two gotchas surfaced bringing this live on bare metal:
+> - **whisperx 3.8.x / pyannote 4.x renamed `use_auth_token` → `token`.**
+>   `_maybe_diarize` now selects the right kwarg via signature inspection, so
+>   both old and new whisperx builds work.
+> - **Use a classic "Read" HF token, not a fine-grained one.** Fine-grained
+>   tokens don't grant gated-repo download access by default → the model fetch
+>   401/403s *even though `model_info` reports OK* (`model_info` only reads public
+>   metadata; `auth_check` is the authoritative test). You must also click
+>   "Agree and access repository" on **both** `pyannote/speaker-diarization-3.1`
+>   **and** `pyannote/segmentation-3.0`.
+>
+> `scripts/validate_diarization.py` downloads the weights + runs diarization on a
+> short sample to prove the whole chain end-to-end.
+
 ---
 
 ## Config
