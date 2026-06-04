@@ -11,6 +11,7 @@ Behavior is byte-identical to the pre-extraction heredoc — only the
 config-passing mechanism changed (bash interpolation → os.environ).
 """
 import json, re, sys, time, os, math
+from pathlib import Path
 try:
     import urllib.request
 except:
@@ -141,6 +142,37 @@ except Exception as _arce:
     _arc = None
     _ARC_CFG = {}
     print(f"[ARC] arc_completeness unavailable ({_arce}); Pass C runs without arc factor", file=sys.stderr)
+
+# Selection Sub-Plan B — reaction-worthy. A cheap intensity pre-signal (audio
+# crowd-response + a post-beat chat-breadth spike) -> a small, boost-only
+# multiplier. Intentionally the lightest axis (energy is already well-rewarded
+# in Pass C); authenticity is left to the Vision Judge. Failure-soft -> 1.0.
+try:
+    import reaction_signals as _reaction
+    _REACTION_CFG = _reaction.load_config()
+    print(f"[REACTION] reaction-worthy loaded (enabled={_REACTION_CFG.get('enabled', True)}, ceil={_REACTION_CFG.get('multiplier_ceil')})", file=sys.stderr)
+except Exception as _rxe:
+    _reaction = None
+    _REACTION_CFG = {}
+    print(f"[REACTION] reaction_signals unavailable ({_rxe}); Pass C runs without reaction factor", file=sys.stderr)
+
+# Cross-axis compounding guardrail (clipping-quality-overhaul eval finding #1):
+# the selection axes (A/B/C/E) each return a bounded multiplier, but their
+# PRODUCT is unbounded — a moment tripping several correlated axes could run
+# away. We accumulate them and clamp the product to [floor, ceil] before
+# applying it once. Loaded from the "global" block of selection_axes.json.
+_AXIS_FLOOR, _AXIS_CEIL = 0.80, 1.35
+try:
+    for _sap in (os.environ.get("CLIP_SELECTION_AXES_CONFIG"),
+                 str(Path(__file__).resolve().parents[3] / "config" / "selection_axes.json")):
+        if _sap and os.path.exists(_sap):
+            _sa_glob = (json.loads(Path(_sap).read_text(encoding="utf-8")) or {}).get("global", {})
+            _AXIS_FLOOR = float(_sa_glob.get("axis_multiplier_floor", _AXIS_FLOOR))
+            _AXIS_CEIL = float(_sa_glob.get("axis_multiplier_ceil", _AXIS_CEIL))
+            break
+    print(f"[AXES] selection-axis product clamp = [{_AXIS_FLOOR}, {_AXIS_CEIL}]", file=sys.stderr)
+except Exception as _sae:
+    print(f"[AXES] global clamp using defaults [{_AXIS_FLOOR}, {_AXIS_CEIL}] ({_sae})", file=sys.stderr)
 
 
 def _serialize_pattern_catalog_for_prompt(catalog):
@@ -1828,15 +1860,23 @@ for m in deduped:
     if m.get("speaker_count", 0) >= 2 and (m.get("dominant_speaker_share") or 1.0) < 0.7:
         styled_score *= 1.15
 
+    # --- Selection axes (Plans A/B/C/E) ------------------------------------
+    # Each axis returns a bounded, failure-soft multiplier. They ACCUMULATE into
+    # one product (`axis_mult`) that is globally clamped before being applied, so
+    # no moment can run away by tripping several (often correlated) axes at once.
+    # Each axis still only re-ranks — none ever gates a clip.
+    axis_mult = 1.0
+    _mt = float(m.get("timestamp", 0) or 0)
+
     # Plan A: arc-completeness — gentle, category-aware factor rewarding
-    # self-contained setup->payoff arcs and lightly penalizing fragments.
-    # Boost-leaning + bounded (never gates). Failure-soft -> 1.0 multiplier.
+    # self-contained setup->payoff arcs and lightly penalizing fragments. The
+    # only axis that may demote (floor 0.85). Failure-soft -> 1.0 multiplier.
     if _arc is not None:
         try:
             _ace = _arc.evaluate(m, segments, shape_module=CONVO_SHAPE, markers=CONVO_MARKERS, cfg=_ARC_CFG)
         except Exception:
             _ace = {"completeness": None, "multiplier": 1.0, "signals": {}}
-        styled_score *= _ace.get("multiplier", 1.0)
+        axis_mult *= _ace.get("multiplier", 1.0)
         m["arc_completeness"] = _ace.get("completeness")
         m["arc_multiplier"] = round(_ace.get("multiplier", 1.0), 3)
         if _ace.get("signals"):
@@ -1844,6 +1884,43 @@ for m in deduped:
     else:
         m["arc_completeness"] = None
         m["arc_multiplier"] = 1.0
+
+    # Plan B: reaction-worthy — cheap intensity pre-signal (audio crowd-pop +
+    # post-beat chat-breadth spike). Boost-only, smallest ceiling. Authenticity
+    # is the Vision Judge's job; this only measures that a reaction is present.
+    if _reaction is not None:
+        _audio_sig = None
+        try:
+            if AUDIO_EVENTS:
+                _awin = float(getattr(_audio_events_mod, "WINDOW_SIZE_DEFAULT", 30.0))
+                _audio_sig = _audio_events_mod.lookup_window(
+                    AUDIO_EVENTS, max(0.0, _mt - _awin / 2.0), _awin)
+        except Exception:
+            _audio_sig = None
+        _chat_sig = None
+        try:
+            if CHAT_FEATURES is not None:
+                _pw = float(_REACTION_CFG.get("post_window_s", 12.0))
+                _chat_sig = CHAT_FEATURES.window(_mt, _mt + _pw)
+        except Exception:
+            _chat_sig = None
+        try:
+            _rx = _reaction.evaluate(m, segments, audio=_audio_sig, chat=_chat_sig, cfg=_REACTION_CFG)
+        except Exception:
+            _rx = {"reaction_score": None, "multiplier": 1.0, "signals": {}}
+        axis_mult *= _rx.get("multiplier", 1.0)
+        m["reaction_score"] = _rx.get("reaction_score")
+        m["reaction_multiplier"] = round(_rx.get("multiplier", 1.0), 3)
+        if _rx.get("signals"):
+            m["reaction_signals"] = _rx["signals"]
+    else:
+        m["reaction_score"] = None
+        m["reaction_multiplier"] = 1.0
+
+    # Compounding guardrail: clamp the accumulated A-E product, then apply once.
+    axis_mult = max(_AXIS_FLOOR, min(_AXIS_CEIL, axis_mult))
+    m["axis_multiplier"] = round(axis_mult, 3)
+    styled_score *= axis_mult
 
     # Apply length penalty — longer clips need higher base scores
     lp = length_penalty(m["clip_duration"])
@@ -2080,6 +2157,12 @@ for m in final:
         # by the future Stage 5.5 Vision Judge and the clip-card diagnostics.
         "arc_completeness": m.get("arc_completeness"),
         "arc_multiplier": m.get("arc_multiplier", 1.0),
+        # Plan B — reaction-worthy intensity pre-signal + the CLAMPED product of
+        # every selection-axis multiplier actually applied to raw_score (so the
+        # Vision Judge / diagnostics can see the net axis contribution).
+        "reaction_score": m.get("reaction_score"),
+        "reaction_multiplier": m.get("reaction_multiplier", 1.0),
+        "axis_multiplier": m.get("axis_multiplier", 1.0),
         # Tier-2 M1 — speaker context (used by Stage 6 prompt + A2)
         "dominant_speaker": m.get("dominant_speaker"),
         "speaker_count": m.get("speaker_count"),
@@ -2115,7 +2198,7 @@ for m in output:
     # Show raw score next to the clamped display value so the operator can
     # see actual ranking distinction even when several moments display 1.000
     # (BUG 37: ranking happens on raw values that routinely exceed 1.0).
-    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
+    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} rx={m.get('reaction_score')} ax={m.get('axis_multiplier',1.0)} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
 print(f"  Category breakdown: {json.dumps(cats_found)}", file=sys.stderr)
 print(f"  Segment breakdown: {json.dumps(segs_found)}", file=sys.stderr)
 print(f"Detected {len(output)} clip-worthy moments")
