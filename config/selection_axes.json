@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "_note": "Per-axis selection tunables (Plans A-E). Hot-editable; read with a robust fallback to built-in defaults so a malformed edit never breaks the pipeline. Plan A = arc_completeness (the only axis implemented so far). See AIclippingPipelineVault/wiki/concepts/plan-arc-completeness.md.",
+  "arc_completeness": {
+    "enabled": true,
+    "_note": "Structural 'is this a complete, self-contained setup->payoff arc?' score in [0,1] -> a gentle, category-aware multiplier on Pass C raw_score. Boost-leaning, never gates. neutral_point is the completeness at which the multiplier is exactly 1.0; below it = mild penalty, above = mild boost.",
+    "neutral_point": 0.55,
+    "arc_weight": 0.20,
+    "light_weight": 0.07,
+    "multiplier_floor": 0.85,
+    "multiplier_ceil": 1.12,
+    "arc_categories": ["storytime", "emotional", "controversial", "hot_take", "arc"],
+    "light_categories": ["reactive", "hype", "funny", "dancing"],
+    "complete_arc_patterns": [
+      "storytelling_arc", "setup_external_contradiction", "challenge_and_fold",
+      "hot_take_pushback", "interview_revelation", "social_callout", "informational_ramble"
+    ],
+    "opener_classes": ["story_opener", "claim_stake", "info_ramble_marker"],
+    "resolution_classes": ["concession", "agreement", "pushback"],
+    "continuation_starts": ["and", "but", "so", "because", "cause", "which", "anyway", "also", "plus", "then", "or", "yeah"],
+    "weights_arc":   {"baseline": 0.50, "opener": 0.20, "resolution": 0.20, "pattern": 0.15, "monologue": 0.10, "topic_penalty": 0.15, "mid_start_penalty": 0.15},
+    "weights_light": {"baseline": 0.65, "opener": 0.05, "resolution": 0.10, "pattern": 0.05, "monologue": 0.00, "topic_penalty": 0.05, "mid_start_penalty": 0.20}
+  }
+}

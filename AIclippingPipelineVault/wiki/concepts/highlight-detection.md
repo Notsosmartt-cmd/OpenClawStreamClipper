@@ -155,6 +155,8 @@ Skipped silently when `sentence-transformers` isn't installed or Pass B produced
 
 3. **Style weighting**: multipliers applied based on `--style` flag (e.g., `--style funny` gives funny moments 1.4× multiplier)
 
+   **Arc-completeness factor** (Plan A, 2026-06-04): a gentle, category-aware multiplier (~0.85–1.12) folded into the same Pass C score chain. `scripts/lib/arc_completeness.py` scores each moment's structural setup→payoff completeness — opener + resolution + monologue coherence − topic-crossing / mid-thought start — from `conversation_shape` discourse markers + pattern fit, and stamps `arc_completeness` on the moment (also consumed by the future Stage 5.5 Vision Judge). Boost-leaning, **never gates**; arc categories (storytime/emotional/controversial/hot_take/arc) are weighted, one-liner categories (reactive/hype/funny/dancing) stay near-neutral. Tunable in `config/selection_axes.json`. See [[concepts/plan-arc-completeness]].
+
 4. **Category cap**: for `auto` style, no single category can exceed 60% of final candidates
 
 5. **Time-bucket distribution** (prevents early-VOD bias):
