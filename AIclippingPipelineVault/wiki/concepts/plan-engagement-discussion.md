@@ -13,6 +13,39 @@ updated: 2026-06-04
 > [[concepts/clipping-intelligence]]. Added 2026-06-04 from the user's "yap / take clip" insight. Global
 > constraint: **virality weight = light platform-awareness**.
 
+> [!note] Implementation plan — approved 2026-06-04 (not yet built)
+> Backed by a concrete plan (full copy in the session plan file). Consolidates heavily with existing
+> style/pattern/chat machinery. Building is a separate go-ahead.
+
+## Implementation plan (E-MVP)
+
+**Genuine new value** (vs the existing `spicy`/`informational` styles + patterns): the **observed
+sustained post-moment chat discussion** signal (currently-unused `chat_features` `z_score`/`unique_chatters`
+on `[T, T+60]`) and the **`media_pause_commentary`** vision archetype. Everything else reuses existing machinery.
+
+- **E1 — `scripts/lib/engagement_signals.py`** (new, mirrors `arc_completeness.py`):
+  `evaluate(moment, segments, *, chat_features, shape_module, markers, cfg)` → predicted stance
+  (`claim_stake`/`info_ramble_marker` without an immediate `concession` + a held monologue, kept modest) +
+  observed sustained chat discussion (`window(T, T+post_window)` `z_score`/`unique_chatters`). **Boost-only**
+  `1 + gain·score` ∈ `[1.0, ~1.15]`. Failure-soft (no chat → predicted-only). `--selftest`.
+- **E2 — Pass C** (`scripts/lib/stages/stage4_moments.py`): apply right after the arc-completeness block;
+  stamp `engagement_*`. Surfaces takes **in auto mode**, not only the style.
+- **E3 — an "engagement" style** (config-only): add to `config/style_pattern_weights.json` (+ aliases) —
+  the existing `apply_style_weights()` auto-applies it; add matching `style_prompts`/`weight_map` entries
+  in `stage4_moments.py`.
+- **E4 — multimodal + judge**: add `media-pause-commentary` to the Stage 6 `interaction_shape` enum
+  (`stage6_vision.py`) + a "clear take worth debating in the comments (even if calm)" criterion in
+  `vlm_judge._INSTRUCTION` + an `[engagement: 0.NN]` card hint.
+- **E5 — config**: an `engagement` block in `config/selection_axes.json`.
+
+**Decisions:** both an always-on axis (E1) AND a selectable style (E3); **no new text pattern** (reuse
+`hot_take_pushback`/`social_callout` + the pre-signal; `media_pause_commentary` is vision-only); niche
+detection deferred; boost-only; B (`[T,T+12]` spike) vs E (`[T,T+60]` sustained) keeps them distinct.
+
+**Verify:** `engagement_signals.py --selftest` (sustained-chat + clear-stake moment > flat; no-chat →
+predicted-only) + `py_compile`; `stage5_5_judge.py --selftest` still passes; `--style engagement`
+round-trips; live run shows `engagement=` in the Pass C log + `clips/.diagnostics/`.
+
 ## The metric
 A good clip can be **low-impact but high-engagement** — it makes the **audience talk to each other in the
 comments**: agree, disagree, relate, share their own take. The streamer doesn't need a big reaction; they
