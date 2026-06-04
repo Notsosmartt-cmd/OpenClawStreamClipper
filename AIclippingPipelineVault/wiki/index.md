@@ -47,7 +47,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ### Pipeline
 - [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities
 - [[concepts/clipping-quality-overhaul]] — **Approved plan/roadmap** to fix bad clips: promote the multimodal model to *judge*, arc-driven duration, hook boundaries, kinetic captions; differentiation stance vs commercial clippers
-- Selection sub-plans (per north-star axis, for future sessions): [[concepts/plan-arc-completeness]], [[concepts/plan-reaction-worthy]], [[concepts/plan-baseline-contrast]], [[concepts/plan-batch-diversity]]
+- Selection sub-plans (per north-star axis, for future sessions): [[concepts/plan-arc-completeness]], [[concepts/plan-reaction-worthy]], [[concepts/plan-baseline-contrast]], [[concepts/plan-batch-diversity]], [[concepts/plan-engagement-discussion]]
 - [[concepts/clipping-pipeline]] — All stages (incl. optional 4.5 and 6.5) with detail, performance table, temp files
 - [[concepts/segment-detection]] — Stage 3: 5-type classification, stream profile, segment-aware weighting
 - [[concepts/highlight-detection]] — Stage 4: three-pass (keywords + LLM + merge/time-bucket/select)

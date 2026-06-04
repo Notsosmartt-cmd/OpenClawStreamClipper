@@ -103,17 +103,19 @@ What we **adapt** vs **reject** vs make **ours**:
 Instead of an opaque 0-99 virality number, our selector optimizes a **transparent, tunable set of axes we
 control**, judged **relative to the same stream** (tournament), with **virality weight = light
 platform-awareness** (a small nudge for hook strength / sound-off readability — never the driver of *what*
-gets clipped). All four axes are in scope (stream content varies too much to pick one), each decomposed
+gets clipped). All five axes are in scope (stream content varies too much to pick one), each decomposed
 into its **own research/implementation sub-plan for a future session**:
 
 - [[concepts/plan-arc-completeness]] — **A.** complete, self-contained setup→payoff
 - [[concepts/plan-reaction-worthy]] — **B.** genuine, earned reaction (the multimodal/audio/chat signals selection ignores today)
 - [[concepts/plan-baseline-contrast]] — **C.** deviates from the streamer's *own* norm (novelty — our most original mechanism)
 - [[concepts/plan-batch-diversity]] — **D.** the delivered *set* is varied (no five near-identical clips)
+- [[concepts/plan-engagement-discussion]] — **E.** drives audience *discussion/comments* (the "yap" / pause-and-opine take) — engagement, not impact
 
-These compose on the **Stage 5.5 Vision Judge** (Phase 1.a) as the shared substrate: A and B become judge
-comparison criteria, C feeds a cheap pre-signal into Pass A + the judge card, D is a post-tournament
-re-rank. Each sub-plan page is self-contained so a future agent can pick up exactly one.
+These compose on the **Stage 5.5 Vision Judge** (Phase 1.a) as the shared substrate: A, B and E become
+judge comparison criteria (E is also a Pass-A chat/pattern pre-signal **and** a selectable style), C feeds
+a cheap pre-signal into Pass A + the judge card, D is a post-tournament re-rank. Each sub-plan page is
+self-contained so a future agent can pick up exactly one.
 
 ## Related
 - [[concepts/clipping-intelligence]] — evaluation of the current stack (what we're improving)
