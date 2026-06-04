@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-04] update | Speaker diarization validated working end-to-end (3 speakers detected)
+With a classic Read HF token + terms accepted on all three gated pyannote models (`speaker-diarization-3.1`, `segmentation-3.0`, and pyannote-v4's `speaker-diarization-community-1`), `scripts/validate_diarization.py --full` ran the full `speech.transcribe` path on a 3-minute plaqueboymax sample: WhisperX ASR → wav2vec2 align → pyannote diarize → assign_word_speakers, producing 3 speakers labeled on 77/79 transcript segments in ~5 s of diarization on GPU. Diarization is fully functional; enable on real VODs by re-transcribing (`--force`). Added a `--full` production-path mode to the validator. Pages: [[entities/diarization]].
+
 ## [2026-06-04] update | Diarization: fixed whisperx token kwarg + added validate_diarization.py
 Implementing/testing Tier-2 M1 diarization on bare metal surfaced two issues. (1) Code bug — whisperx 3.8.6 / pyannote 4.x renamed the auth kwarg `use_auth_token` → `token`; `speech.py::_maybe_diarize` now selects it via signature inspection (works on old + new whisperx). (2) Added `scripts/validate_diarization.py` — downloads the pyannote weights and runs diarization on a short sample as an end-to-end check (uses the authoritative `auth_check`, not `model_info`). Also learned the HF token must be a **classic Read** token (fine-grained tokens 403 on gated repos despite `model_info` reporting OK) with terms accepted on both `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`. The end-to-end run is still blocked on the user's HF gated access. Pages: [[entities/diarization]].
 

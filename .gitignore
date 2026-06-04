@@ -71,6 +71,7 @@ models/sentence-transformers/
 # Validation test artifacts
 test_gate.wav
 diar_sample.wav
+diar_full_out.*
 
 # ============================================================
 # Node

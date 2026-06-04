@@ -58,11 +58,20 @@ default, so the token is the only switch.
 >   tokens don't grant gated-repo download access by default → the model fetch
 >   401/403s *even though `model_info` reports OK* (`model_info` only reads public
 >   metadata; `auth_check` is the authoritative test). You must also click
->   "Agree and access repository" on **both** `pyannote/speaker-diarization-3.1`
->   **and** `pyannote/segmentation-3.0`.
+>   "Agree and access repository" on **all three** gated pyannote models —
+>   `speaker-diarization-3.1`, `segmentation-3.0`, **and**
+>   `speaker-diarization-community-1` (pyannote v4's 3.1 pipeline pulls the last
+>   one for its embedding/PLDA weights; `wespeaker-voxceleb-resnet34-LM` is public).
 >
-> `scripts/validate_diarization.py` downloads the weights + runs diarization on a
-> short sample to prove the whole chain end-to-end.
+> `scripts/validate_diarization.py [--full]` downloads the weights + runs
+> diarization (and optionally the full `speech.transcribe`) on a short sample to
+> prove the whole chain end-to-end.
+
+> [!note] Validated working (2026-06-04)
+> Confirmed end-to-end via `validate_diarization.py --full`: a 3-minute
+> plaqueboymax sample produced **3 speakers** (`SPEAKER_00/01/02`) with labels on
+> **77/79** segments, diarization in ~5 s on GPU. To get labels on a real VOD,
+> re-transcribe it (`--force` or clear its `.transcriptions` cache) so Stage 2 reruns.
 
 ---
 
@@ -116,9 +125,9 @@ All uses are boost-only. Diarization mistakes (mis-merged similar voices, missed
 
 ## Cost
 
-- Wall time: pyannote diarization is CPU-bound; WhisperX runs it after alignment, adding roughly 25-30 % to Stage 2 wall time on a typical VOD.
-- VRAM: zero (CPU pipeline).
-- New dependency: `pyannote-audio` (~150 MB model + transitive Torch bits).
+- Wall time: with `device=cuda` (default when a GPU is present) diarization is **fast** — ~5 s for a 3-minute sample (measured 2026-06-04), a few percent of Stage 2, not the CPU-bound 25-30 % originally assumed here. CPU-only rigs see the slower figure.
+- VRAM: small; shares the GPU with WhisperX and runs after ASR + alignment.
+- Gated models (one-time HF download, ~360 MB): `speaker-diarization-3.1`, `segmentation-3.0`, `speaker-diarization-community-1`, plus the public `wespeaker-voxceleb-resnet34-LM` embedding.
 
 ---
 
