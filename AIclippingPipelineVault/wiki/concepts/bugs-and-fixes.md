@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-05-02
+updated: 2026-06-04
 ---
 
 # Bugs and Fixes
@@ -65,6 +65,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 37c | A2 callback_confirmed multiplier reintroduced the 1.0 clamp at Stage 6 — A2-boosted callbacks can't sort above plain 1.000s without a `raw_score` field |
 | BUG 53 | Stage 6 vision boost saturated at 1.0 — read clamped score not raw, so `transcript_score × 1.15` re-clamped to 1.000 → "vision BOOST: 1.000 -> 1.000" no-op |
 | BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
+| BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips; disable thinking in LM Studio settings |
 
 ### Pipeline / Rendering
 | # | Title |
@@ -93,6 +94,22 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 57 — Qwen reasoning models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips
+
+**Symptom** (bare-metal, 2026-06-04, `qwen/qwen3.5-9b`): every Pass B chunk logs `LLM used N reasoning tokens (thinking not fully disabled — check LM Studio settings)` with N ≈ 5,000–6,300. On a 9-clip plaqueboymax run, 2 of 15 chunks logged `LLM returned empty content (attempt 2): finish=stop, reasoning_tokens=0, total_tokens=1` and were skipped (`Chunk N: LLM call failed, skipping`). The run still completed cleanly (exit 0, 9 clips) — moments from the skipped chunks were simply lost. Also makes Pass B / Stage 6 noticeably slow.
+
+**Cause**: LM Studio 0.4.14 does **not** honor the pipeline's no-think request for these Qwen3.x reasoning models — both `chat_template_kwargs:{enable_thinking:false}` and the `/no_think` prefix are ignored (documented LM Studio limitation; same root as BUG 17 / 20 / 38). The model reasons on every call. The empty `total_tokens=1` responses are transient LM Studio glitches (not budget exhaustion — Pass B already sends `max_tokens=8000`), which surface more often under the constant thinking load.
+
+**Fix / mitigation**:
+- The pipeline already degrades gracefully — `call_llm` retries then skips the chunk; Pass A keyword moments still flow through, so clips are still produced. No code change required.
+- To eliminate it: **disable reasoning/thinking for the model in LM Studio's own settings** (the API flags don't take). This also speeds runs up dramatically.
+- Or point `config/models.json::text_model_passb` at a genuinely non-thinking model.
+- `scripts/logtool.py errors <run>` classifies these as `llm-empty` / `llm-skip`, so skipped chunks are easy to spot.
+
+Surfaced while reviewing a clipping session with `logtool`. See [[entities/lm-studio]] §"Thinking models".
 
 ---
 
