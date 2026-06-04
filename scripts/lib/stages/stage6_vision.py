@@ -20,7 +20,7 @@ LLM_URL = os.environ["LLM_URL"]
 # Phase 5.1: Stage 6 honors vision_model_stage6 override (falls back to
 # vision_model when unset). See config/models.json.
 VISION_MODEL = os.environ["VISION_MODEL_STAGE6"]
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 
 # Phase 1.1: 3-tier grounding cascade on the VLM's title/hook/description
 # plus the regenerate-once policy on cascade failure. Loads same module the
@@ -153,7 +153,16 @@ def _derive_baseline_title(why, category, T):
 
 for moment in moments:
     T = moment["timestamp"]
+    # BUG 37 ripple: Stage 4 writes BOTH `score` (clamped to [0,1] for the
+    # UI) and `raw_score` (uncapped, for internal ranking). Stage 6 used to
+    # read only `score`, so when Pass C produced multiple raw>=1.0 winners
+    # the vision boost (×1.15) hit the cap and degenerated to "1.000 ->
+    # 1.000" — every clip displayed identical scores and the boost never
+    # actually moved anything. Read raw_score when available so the boost
+    # has headroom; the post-boost value propagates to downstream sort and
+    # Pass D via entry["raw_score"] further down.
     transcript_score = moment.get("score", 5)
+    transcript_raw = moment.get("raw_score", transcript_score)
     transcript_category = moment.get("category", "unknown")
     transcript_why = moment.get("why", "")
     segment_type = moment.get("segment_type", "unknown")
@@ -182,6 +191,11 @@ for moment in moments:
     entry = {
         "timestamp": T,
         "score": transcript_score,
+        # Carry the uncapped Pass C value forward by default. Vision/A2 paths
+        # below overwrite raw_score with their own post-boost values; when
+        # vision has nothing to boost we still want the ranking signal to
+        # survive into Pass D and the final sort.
+        "raw_score": transcript_raw,
         "category": transcript_category,
         "title": _derive_baseline_title(transcript_why, transcript_category, T),
         "description": transcript_why[:100] if transcript_why else "",
@@ -232,16 +246,30 @@ for moment in moments:
             context_parts.append(f"flagged as '{transcript_category}' because: {transcript_why}")
         context_hint = ". ".join(context_parts)
 
-        # Pull ±8 seconds of actual transcript around the peak so the vision
-        # model is grounded in the streamer's real words rather than relying
-        # on the upstream Pass-B "why" summary (which is itself LLM output
-        # and can propagate hallucinations downstream).
+        # Pull verbatim transcript that overlaps with the rendered clip
+        # window so the vision model is grounded in the words actually
+        # inside the clip — not the upstream Pass-B "why" summary (LLM
+        # output, can propagate hallucinations downstream) and not a
+        # T±8 window that may sit outside the rendered range when peak T
+        # has been re-centered by Pass C merge or boundary snap.
+        # BUG 56 (2026-05-02): the prom/bus mismatch hit precisely because
+        # the keyword merged-in moment kept its T=1179 while the rendered
+        # clip ran [1187, 1212] — vision saw "prom coming up" from T±8 but
+        # the actual content was a bus mishap 8 seconds later. Falling
+        # back to T±8 is preserved for the (rare) case where clip_start /
+        # clip_end aren't on the moment, e.g. legacy callers.
         local_transcript = ""
         try:
             with open(f"{TEMP_DIR}/transcript.json") as _tf:
                 _tr = json.load(_tf)
+            _start = float(moment.get("clip_start", T - 8))
+            _end   = float(moment.get("clip_end",   T + 8))
+            # Defend against pathological windows: if start/end collapse
+            # or the moment carries a 1-second sliver, fall back to T±8.
+            if _end - _start < 4.0:
+                _start, _end = T - 8, T + 8
             window = [seg for seg in _tr
-                      if seg.get("start", 0) >= T - 8 and seg.get("end", 0) <= T + 8]
+                      if seg.get("end", 0) >= _start and seg.get("start", 0) <= _end]
             local_transcript = " ".join(s.get("text", "").strip() for s in window)[:500]
         except Exception:
             pass
@@ -687,6 +715,8 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         # Cross-validation across three channels: Pass B primary_pattern,
         # Pass D pattern_confirmed, Stage 6 vision_pattern_match. When all
         # three agree AND each strength >= 0.6, bump score by +0.1 (capped).
+        # Operate on the uncapped raw score so a +0.1 nudge actually moves
+        # ranking even when the clamped score is already pinned at 1.000.
         b_pattern = entry.get("primary_pattern") or moment.get("primary_pattern", "")
         d_pattern = entry.get("pattern_confirmed") or moment.get("pattern_confirmed", "")
         v_pattern = entry.get("vision_pattern_match", "")
@@ -694,19 +724,39 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         v_strength = entry.get("vision_pattern_match_strength", 0)
         if b_pattern and b_pattern == d_pattern == v_pattern and d_strength >= 0.6 and v_strength >= 0.6:
             entry["cross_validated_full"] = True
-            new_score = min(float(entry.get("score", 0) or 0) + 0.1, 1.0)
-            print(f"  T={T} cross_validated_full pattern={b_pattern} score+=0.1 -> {new_score:.3f}", file=sys.stderr)
-            entry["score"] = round(new_score, 3)
+            new_raw = float(entry.get("raw_score", entry.get("score", 0)) or 0) + 0.1
+            entry["raw_score"] = round(new_raw, 4)
+            entry["score"] = round(min(new_raw, 1.0), 3)
+            print(
+                f"  T={T} cross_validated_full pattern={b_pattern} "
+                f"score+=0.1 -> {entry['score']:.3f} (raw {new_raw:.4f})",
+                file=sys.stderr,
+            )
         # Blend scores: transcript is primary, vision is a bonus (never penalizes)
         # Vision >= 0.67 (was 7/10): multiply by 1.15
         # Vision >= 0.44 (was 5/10): multiply by 1.08
         # Vision < 0.44: keep transcript score unchanged
+        # BUG 53 (2026-05-02): boost was applied to the clamped transcript
+        # score, so a 1.000 ceiling × 1.15 just re-clamped to 1.000 — the
+        # log line read "vision BOOST: 1.000 -> 1.000" for every Pass C
+        # winner. Drive the boost off the uncapped transcript_raw, write
+        # the post-boost raw_score, and clamp only at the display field.
         if vision_norm >= 0.67:
-            entry["score"] = round(min(transcript_score * 1.15, 1.0), 3)
-            print(f"  T={T} vision BOOST: {transcript_score:.3f} -> {entry['score']:.3f}", file=sys.stderr)
+            base_raw = float(entry.get("raw_score", transcript_raw) or 0)
+            new_raw = base_raw * 1.15
+            entry["raw_score"] = round(new_raw, 4)
+            entry["score"] = round(min(new_raw, 1.0), 3)
+            print(
+                f"  T={T} vision BOOST: {transcript_score:.3f} -> {entry['score']:.3f} "
+                f"(raw {transcript_raw:.4f} -> {new_raw:.4f})",
+                file=sys.stderr,
+            )
         elif vision_norm >= 0.44:
-            entry["score"] = round(min(transcript_score * 1.08, 1.0), 3)
-        # else: keep transcript_score as-is
+            base_raw = float(entry.get("raw_score", transcript_raw) or 0)
+            new_raw = base_raw * 1.08
+            entry["raw_score"] = round(new_raw, 4)
+            entry["score"] = round(min(new_raw, 1.0), 3)
+        # else: keep transcript_score / raw_score as-is
 
         # Tier-3 A2 — visual-callback-confirmed multiplier. Only applies to
         # moments where Stage 5 produced setup frames (callback / arc) AND
@@ -743,7 +793,15 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         print(f"  T={T} vision failed/no-parse — using transcript score={transcript_score:.3f}", file=sys.stderr)
 
     enriched.append(entry)
-    print(f"  T={T} FINAL score={entry['score']:.3f} dur={entry['clip_duration']}s title=\"{entry['title']}\" [{entry['category']}]", file=sys.stderr)
+    # Surface raw_score next to the clamped score so the operator can
+    # actually tell clips apart when several land at score=1.000.
+    _raw = entry.get("raw_score", entry["score"])
+    print(
+        f"  T={T} FINAL score={entry['score']:.3f} raw={_raw:.4f} "
+        f"dur={entry['clip_duration']}s title=\"{entry['title']}\" "
+        f"[{entry['category']}]",
+        file=sys.stderr,
+    )
 
 # NO FILTERING HERE — every moment goes to rendering.
 # Sort by raw_score (uncapped) descending so A2-boosted callbacks above 1.0

@@ -5,6 +5,13 @@
 > (`AIclippingPipelineVault/wiki/`) before your session ends. This is enforced for every agent
 > session. See the "Mandatory: Update the wiki" section below for the exact procedure.
 
+> **PROMPT INJECTION — COMMIT YOUR WORK**
+> After any **significant** change (a new feature, bug fix, migration, refactor, or dependency
+> change) **make a git commit** before your session ends — don't leave large work uncommitted.
+> Stage the files you changed and write a clear, descriptive message. The repo is single-branch
+> on `main`; commit there unless the user asks for a branch. See "Mandatory: Commit after
+> significant changes" below.
+
 You are working on the OpenClaw Stream Clipper: a Docker-based system that clips livestream highlights using local AI models and delivers them via Discord.
 
 **Before doing anything else**, read the wiki to understand the current state of the project:
@@ -81,6 +88,26 @@ The codebase was modularized in a single session on 2026-05-01. The three former
 - `dashboard/static/app.js` — **67-line entry module**. Imports 8 ES modules from `dashboard/static/modules/` (`util`, `state`, `pipeline-ui`, `vods-panel`, `models-panel`, `hardware-panel`, `folders-panel`, `assets-panel`). `index.html` uses `<script type="module">`.
 
 When modifying any of these, edit the relevant focused module — don't reintroduce monolith-level changes to the orchestrator/entrypoint files. See [[concepts/modularization-plan]] for the full layout.
+
+---
+
+## Mandatory: Commit after significant changes
+
+Make a git commit after any **significant** change — a new feature, bug fix, migration, refactor,
+or dependency change. Don't leave large bodies of work uncommitted at the end of a session.
+
+- **When**: after the change is complete and (ideally) verified. Small WIP tweaks don't each need a
+  commit, but a meaningful unit of work does.
+- **Branch**: this is a solo, single-branch project — all history is on `main`. Commit to `main`
+  unless the user explicitly asks for a branch.
+- **What to stage**: the files you changed. `.gitignore` already excludes the venv, model caches,
+  `.env`, `config/openclaw.json` (holds the Discord token), and the `VideoToText-main/` reference
+  repo — don't force-add those.
+- **Message**: a clear summary of what changed and why. End with the `Co-Authored-By` trailer the
+  harness provides, if any.
+- **Don't push** unless the user asks — committing locally is the default.
+
+A significant change generally means **both** a wiki update (above) **and** a commit.
 
 ---
 

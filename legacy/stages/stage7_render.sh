@@ -16,7 +16,13 @@ CLIP_FILES=()
 
 # --- 7a. Generate clip manifest (now includes clip boundaries) ---
 log "  Generating clip manifest..."
-python3 -c "
+# BUG 54 (2026-05-02): the previous `python3 -c "..."` form double-quoted
+# the heredoc through bash, so any `$VAR` mention inside python source
+# (even inside a comment!) was bash-expanded. Under `set -u` the comment
+# `# Empty hook → bash's [ -n "$HOOK" ]...` errored with "HOOK: unbound
+# variable" before python ever ran. The single-quoted heredoc here is
+# bash-opaque so $HOOK / $VAR / etc. inside python source are literal.
+python3 - <<'PYEOF' > "$TEMP_DIR/clip_manifest.txt"
 import json
 moments = json.load(open('/tmp/clipper/scored_moments.json'))
 def _scrub_field(s, allow_unicode=True):
@@ -29,24 +35,24 @@ def _scrub_field(s, allow_unicode=True):
         s = str(s or '')
     return s.replace('|', '-').replace('\r', ' ').replace('\n', ' ').strip()
 for m in moments:
-    title = m['title'].replace('/', '-').replace('\\\\', '-').replace('|', '-').replace('\"', '')
+    title = m['title'].replace('/', '-').replace('\\', '-').replace('|', '-').replace('"', '')
     title = ''.join(c for c in title if c.isalnum() or c in ' -')[:50].strip()
     if not title:
-        title = f'Clip T{m[\"timestamp\"]}'
+        title = f'Clip T{m["timestamp"]}'
     clip_start = m.get('clip_start', max(0, m['timestamp'] - 15))
     clip_end = m.get('clip_end', m['timestamp'] + 15)
     clip_duration = m.get('clip_duration', 30)
-    score_str = f\"{m['score']:.3f}\" if isinstance(m['score'], float) else str(m['score'])
+    score_str = f"{m['score']:.3f}" if isinstance(m['score'], float) else str(m['score'])
     description = _scrub_field(m.get('description', ''))[:500]
     # Hook only renders when vision (or another stage) explicitly produced one.
     # We deliberately do NOT fall back to the title here — that path used to
     # leak baseline titles like "ClipT1805" into the burned-in hook caption.
-    # Empty hook → bash's `[ -n "$HOOK" ]` is false → no overlay rendered.
+    # Empty hook → bash's [ -n "$HOOK" ] is false → no overlay rendered.
     hook = _scrub_field(m.get('hook', ''))
     category = _scrub_field(m.get('category', 'unknown'))
     segment_type = _scrub_field(m.get('segment_type', 'unknown'))
-    print(f\"{m['timestamp']}|{title}|{score_str}|{category}|{description}|{hook}|{segment_type}|{clip_start}|{clip_duration}\")
-" > "$TEMP_DIR/clip_manifest.txt"
+    print(f"{m['timestamp']}|{title}|{score_str}|{category}|{description}|{hook}|{segment_type}|{clip_start}|{clip_duration}")
+PYEOF
 
 MANIFEST_COUNT=$(wc -l < "$TEMP_DIR/clip_manifest.txt")
 log "  Manifest: $MANIFEST_COUNT clips to process"
@@ -148,6 +154,53 @@ while IFS='|' read -r T TITLE SCORE CATEGORY DESC HOOK SEG_TYPE CLIP_START_SEC C
         rescale_srt "$CLIP_SRT" "$CLIP_SRT_RENDER" "$CLIP_SPEED"
     else
         CLIP_SRT_RENDER="$CLIP_SRT"
+    fi
+
+    # --- AI editing-profiles dispatch (CLIP_STYLE_PROFILES=true) ----------
+    # Per-category renderer: profile_render.py reads scored_moments.json,
+    # synthesizes / honors the moment's edit_plan, layers in zoom punches,
+    # SFX cues, kinetic captions, meme/B-roll overlays, and applies always-
+    # on audio + container fingerprint perturbation. On any failure we
+    # fall through to the legacy render path so the user still gets output.
+    if [ "${CLIP_STYLE_PROFILES:-false}" = "true" ]; then
+        MOMENT_JSON_FILE="$TEMP_DIR/moment_${T}.json"
+        # Extract this moment from scored_moments.json into a per-clip file.
+        if python3 - "$T" "$TEMP_DIR/scored_moments.json" "$MOMENT_JSON_FILE" <<'PYM' 2>/dev/null
+import json, sys
+T = int(float(sys.argv[1]))
+moments = json.load(open(sys.argv[2]))
+m = next((x for x in moments if int(float(x.get("timestamp", -1))) == T), None)
+if m is None:
+    sys.exit(2)
+json.dump(m, open(sys.argv[3], "w"), indent=2)
+PYM
+        then
+            log "  [profile-mode] Rendering: $TITLE (T=${T}s, dur=${CLIP_LENGTH}s, category=$CATEGORY)"
+            if python3 "$LIB_DIR/profile_render.py" \
+                --moment-json "$MOMENT_JSON_FILE" \
+                --src "$VOD_PATH" \
+                --srt "$CLIP_SRT_RENDER" \
+                --out "$CLIP_OUTPUT" \
+                --clip-start "$CLIP_START" \
+                --clip-duration "$CLIP_LENGTH" \
+                --speed "$CLIP_SPEED" \
+                --captions "$CAPTIONS_ENABLED" \
+                --hook "$HOOK_CAPTION_ENABLED" \
+                --hook-text "$HOOK" \
+                --temp-dir "$TEMP_DIR" \
+                --music-folder "$CLIP_MUSIC_BED" 2>&1 | while IFS= read -r line; do log "    [PROFILE] $line"; done; then
+                if [ -f "$CLIP_OUTPUT" ]; then
+                    FINAL_SIZE=$(stat -c%s "$CLIP_OUTPUT" 2>/dev/null || echo 0)
+                    FINAL_MB=$((FINAL_SIZE / 1048576))
+                    log "  Done [profile-mode]: $TITLE — ${FINAL_MB}MB (category=$CATEGORY)"
+                    echo "${TITLE}|${SCORE}|${CATEGORY}|${DESC}|${FINAL_MB}MB|${SEG_TYPE}|${CLIP_LENGTH}s" >> "$TEMP_DIR/clips_made.txt"
+                    continue
+                fi
+            fi
+            warn "Profile render failed for T=$T — falling back to legacy render"
+        else
+            warn "Could not extract moment T=$T from scored_moments.json — falling back to legacy"
+        fi
     fi
 
     # --- Mirror + color + motion filter fragments shared by all framings. ---

@@ -20,7 +20,7 @@ LLM_URL = os.environ["LLM_URL"]
 TEXT_MODEL = os.environ["TEXT_MODEL"]
 TEXT_MODEL_PASSB = os.environ["TEXT_MODEL_PASSB"]
 CLIP_STYLE = os.environ["CLIP_STYLE"]
-TEMP_DIR = "/tmp/clipper"
+TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 
 # Two-tier grounding cascade (regex denylist + content overlap → main-model
 # LLM judge). MiniCheck NLI and Lynx-8B were retired 2026-05-01; the same
@@ -117,7 +117,7 @@ except Exception as _ce:
 # prompt. User-editable in config/patterns.json (mounted at /root/.openclaw).
 PATTERN_CATALOG = []
 try:
-    _pat_path = "/root/.openclaw/patterns.json"
+    _pat_path = os.environ.get("CLIP_PATTERNS_CONFIG") or "/root/.openclaw/patterns.json"
     if not os.path.exists(_pat_path):
         _pat_path = "/root/scripts/lib/../../config/patterns.json"
     with open(_pat_path) as _pf:
@@ -1669,18 +1669,68 @@ for m in all_moments:
     for d in deduped:
         if abs(m["timestamp"] - d["timestamp"]) < 25:
             if m["source"] != d["source"]:
-                # Cross-validated: multiplicative boost (×1.25) — much better than additive
-                d["normalized_score"] = min(max(d["normalized_score"], m["normalized_score"]) * 1.25, 1.0)
+                # BUG 56 (2026-05-02): the merge identifies the LLM moment
+                # (richer semantic preview, possibly different peak) and the
+                # keyword moment (transcript snippet at the literal trigger
+                # word) as the same event. Previously we kept the keyword's
+                # timestamp + preview but inherited the LLM's clip window,
+                # so peak T sat OUTSIDE the rendered clip — Stage 5 frame
+                # extraction (T-2..T+5) and Stage 6 transcript grounding
+                # (±8 s around T) both pulled content from before the clip
+                # starts. Vision then titled the clip about whatever the
+                # keyword caught, not what was actually rendered.
+                #
+                # Fix: when keyword + LLM merge AND the LLM has a real clip
+                # window, treat the LLM as authoritative for peak T,
+                # boundaries, primary_pattern, and the human-readable
+                # preview/why. Keyword still contributes the cross-val
+                # boost and "score" via the max() below.
+                llm_side = m if m["source"] == "llm" else d
+                kw_side  = d if m["source"] == "llm" else m
+                d["normalized_score"] = min(
+                    max(d["normalized_score"], m["normalized_score"]) * 1.25,
+                    1.0,
+                )
                 d["cross_validated"] = True
                 for cat in m.get("categories", []):
                     if cat not in d.get("categories", []):
                         d["categories"].append(cat)
-                # Inherit clip boundaries from LLM if keyword doesn't have them
-                if "clip_start" not in d and "clip_start" in m:
-                    d["clip_start"] = m["clip_start"]
-                    d["clip_end"] = m["clip_end"]
-                if m["normalized_score"] > d["normalized_score"] * 0.8:
-                    d["preview"] = m.get("why") or m.get("preview", d["preview"])
+                # Re-center on the LLM's peak when its clip window exists
+                # AND the keyword's timestamp falls outside it. Keeps the
+                # cohort happy for cases where keyword+LLM agree on peak
+                # (just both fired in the same beat) — only re-centers
+                # when they actually disagree about where the story is.
+                llm_start = llm_side.get("clip_start")
+                llm_end   = llm_side.get("clip_end")
+                if llm_start is not None and llm_end is not None:
+                    d["clip_start"] = llm_start
+                    d["clip_end"]   = llm_end
+                    # If the keyword's T is outside the LLM's window,
+                    # snap d's timestamp to the LLM's T so downstream
+                    # Stage 5 / 6 (which key off `timestamp`) work on
+                    # frames + transcript that are inside the clip.
+                    if not (llm_start <= d["timestamp"] <= llm_end):
+                        d["timestamp"] = llm_side["timestamp"]
+                # LLM preview/why is the semantic description ("Pattern
+                # storytelling_arc: ..."); keyword preview is just the
+                # transcript fragment containing the trigger word. The
+                # old `> d * 0.8` check fired AFTER the ×1.25 boost, so
+                # it was effectively dead code for cross-validated
+                # moments. Always prefer the LLM's why when it exists.
+                llm_why = llm_side.get("why") or llm_side.get("preview")
+                if llm_why:
+                    d["preview"] = llm_why
+                    d["why"] = llm_why
+                # Carry the LLM's pattern label into the merged record so
+                # Pass D / Stage 6 / Stage 7 cross-validation paths can
+                # use it. Without this the keyword survivor has no
+                # primary_pattern even though the LLM identified one.
+                if llm_side.get("primary_pattern") and not d.get("primary_pattern"):
+                    d["primary_pattern"] = llm_side["primary_pattern"]
+                # Same for primary_category — LLM categorization is more
+                # reliable than the keyword's pattern-word lookup.
+                if llm_side.get("primary_category"):
+                    d["primary_category"] = llm_side["primary_category"]
             elif m["normalized_score"] > d["normalized_score"]:
                 old_boundaries = {k: d.get(k) for k in ("clip_start", "clip_end") if k in d}
                 d.update(m)

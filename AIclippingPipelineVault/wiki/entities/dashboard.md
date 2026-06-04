@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub]
 sources: 3
-updated: 2026-05-01
+updated: 2026-05-02
 ---
 
 # Web Dashboard
@@ -27,15 +27,19 @@ New panel driving the [[concepts/originality-stack]]. Every control posts to `PU
 
 | Control | `CLIP_*` env | Effect |
 |---|---|---|
-| Framing mode | `CLIP_FRAMING` | `blur_fill` / `smart_crop` / `centered_square` / `camera_pan` |
+| Framing mode | `CLIP_FRAMING` + `CLIP_CAMERA_PAN` | `blur_fill` (legacy) or `camera_pan` (face track). Picking `camera_pan` sets *both* env vars — consolidated 2026-05-02; was previously a dropdown + separate "Face-tracked camera pan" checkbox where the two had to agree manually. |
 | Per-clip randomization | `CLIP_ORIGINALITY` | Wave A blur/eq/mirror/hook/subtitle variance |
 | Narrative merge | `CLIP_NARRATIVE` | Wave C long-form storytime arcs |
 | Stitch short moments | `CLIP_STITCH` | Wave C multi-segment posts |
-| Face-tracked camera pan | `CLIP_CAMERA_PAN` | Wave E (requires framing=camera_pan) |
 | Voiceover layer | `CLIP_TTS_VO` | Wave D Piper TTS mix |
 | Music bed folder | `CLIP_MUSIC_BED` | Wave D music path |
 | Tier C music matching | `CLIP_MUSIC_TIER_C` | Wave D librosa scoring |
+| AI editing profiles | `CLIP_STYLE_PROFILES` | Per-category editing layer — see [[concepts/style-profiles]]. Off by default. |
 | **Scan Music** button | — | Runs `scripts/lib/scan_music.py` via `POST /api/music/scan` |
+| **Scan Libraries** button | — | Runs `scripts/seed_libraries.py --scan` via `POST /api/libraries/scan` |
+
+> [!note] HTML cache headers
+> The `/` route in `dashboard/app.py` returns `Cache-Control: no-cache, no-store, must-revalidate` so future UI changes appear on a normal refresh. Static JS/CSS still cache normally. Before 2026-05-02 the HTML inherited Flask's default 12-hour `send_from_directory` cache, which made dashboard updates appear "missing" until the user hard-refreshed.
 
 ---
 

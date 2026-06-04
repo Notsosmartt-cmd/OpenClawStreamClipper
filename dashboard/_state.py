@@ -33,21 +33,30 @@ PATHS_CONFIG = PROJECT_DIR / "config" / "paths.json"
 ORIGINALITY_CONFIG = PROJECT_DIR / "config" / "originality.json"
 DOCKER_COMPOSE_FILE = PROJECT_DIR / "docker-compose.yml"
 
-# Pipeline script paths
-PIPELINE_SCRIPT = str(PROJECT_DIR / "scripts" / "clip-pipeline.sh")
+# Pipeline script paths. Bare-metal native mode runs the Python orchestrator
+# directly; DOCKER_PIPELINE_SCRIPT is kept only for the legacy docker-exec path.
+PIPELINE_SCRIPT = str(PROJECT_DIR / "scripts" / "run_pipeline.py")
 DOCKER_PIPELINE_SCRIPT = "/root/scripts/clip-pipeline.sh"
 
-# Lifecycle marker paths (always inside the container)
-PIPELINE_PID_PATH = "/tmp/clipper/pipeline.pid"
-PIPELINE_DONE_PATH = "/tmp/clipper/pipeline.done"
+# Temp/work dir for pipeline state files. Resolve from the orchestrator's
+# single source of truth (scripts/lib/paths.py) so the dashboard reads the
+# exact stage/log/marker files run_pipeline.py writes.
+try:
+    import sys as _sys
+    _sys.path.insert(0, str(PROJECT_DIR / "scripts" / "lib"))
+    import paths as _paths  # type: ignore
+    TEMP_DIR = _paths.PATHS.work_dir
+except Exception:
+    if INSIDE_DOCKER:
+        TEMP_DIR = Path("/tmp/clipper")
+    elif os.name == "nt":
+        TEMP_DIR = Path(os.environ.get("TEMP", "C:/Temp")) / "clipper"
+    else:
+        TEMP_DIR = Path("/tmp/clipper")
 
-# Temp dir for pipeline state files (resolved at module import)
-if INSIDE_DOCKER:
-    TEMP_DIR = Path("/tmp/clipper")
-elif os.name == "nt":
-    TEMP_DIR = Path(os.environ.get("TEMP", "C:/Temp")) / "clipper"
-else:
-    TEMP_DIR = Path("/tmp/clipper")
+# Lifecycle marker paths — the local work dir on bare metal.
+PIPELINE_PID_PATH = str(TEMP_DIR / "pipeline.pid")
+PIPELINE_DONE_PATH = str(TEMP_DIR / "pipeline.done")
 
 STAGE_FILE = TEMP_DIR / "pipeline_stage.txt"
 LOG_FILE = TEMP_DIR / "pipeline.log"
@@ -68,6 +77,12 @@ DEFAULT_ORIGINALITY = {
     "tts_vo": False,
     "music_bed": "",
     "music_tier_c": False,
+    # 2026-05-02: AI editing profiles toggle (per-category zoom punches,
+    # freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues,
+    # kinetic captions, and audio + container fingerprint perturbation).
+    # Off by default — when on, Stage 7 dispatches each clip through
+    # scripts/lib/profile_render.py instead of the legacy render path.
+    "style_profiles": False,
 }
 
 DEFAULT_MODELS = {

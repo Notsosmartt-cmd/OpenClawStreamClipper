@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "../generic/surprised.png",
+      "tags": [
+        "surprise",
+        "shock",
+        "wow"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f632.png"
+    },
+    {
+      "file": "../generic/facepalm.png",
+      "tags": [
+        "facepalm",
+        "regret",
+        "ugh"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f926.png"
+    },
+    {
+      "file": "../generic/clap.png",
+      "tags": [
+        "clap",
+        "applause",
+        "respect"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f44f.png"
+    },
+    {
+      "file": "../generic/fire.png",
+      "tags": [
+        "fire",
+        "hype",
+        "lit"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f525.png"
+    },
+    {
+      "file": "../generic/100.png",
+      "tags": [
+        "100",
+        "fact",
+        "respect"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f4af.png"
+    },
+    {
+      "file": "../generic/heart_eyes.png",
+      "tags": [
+        "love",
+        "wow",
+        "beautiful"
+      ],
+      "license": "CC-BY 4.0",
+      "attribution": "Reaction emoji from Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, CC-BY 4.0.",
+      "source": "https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f60d.png"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-05-01
+updated: 2026-05-02
 ---
 
 # Bugs and Fixes
@@ -63,6 +63,8 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 50 | MOG2 misfires 100 % on Stage 5's [-2, 0, +1, +2, +3, +5]-second frame layout — fundamental frame-spacing mismatch; BUG 42's first-frame priming was insufficient |
 | BUG 37b | Score-display visibility: 9/10 selected clips show 1.000 because BUG 37's raw-score ranking value is hidden behind the user-facing 0–1 clamp |
 | BUG 37c | A2 callback_confirmed multiplier reintroduced the 1.0 clamp at Stage 6 — A2-boosted callbacks can't sort above plain 1.000s without a `raw_score` field |
+| BUG 53 | Stage 6 vision boost saturated at 1.0 — read clamped score not raw, so `transcript_score × 1.15` re-clamped to 1.000 → "vision BOOST: 1.000 -> 1.000" no-op |
+| BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
 
 ### Pipeline / Rendering
 | # | Title |
@@ -79,6 +81,8 @@ Known bugs encountered during development and how they were resolved. Useful for
 | Whisper | Degenerate loop (`... ...`) on long audio — chunk audio to 20-min segments |
 | BUG 51 | Stage 3 + 6 truncate after `Pre-loading` — `\n` artifact + unbounded curl + missing `import os` (3 followups) |
 | BUG 52 | Configured model not in LM Studio — pipeline limps with HTTP 400 fallbacks for hours; needs `verify_models` startup probe |
+| BUG 54 | `HOOK: unbound variable` at stage7_render.sh:19 — bash double-quoted python heredoc bash-expanded `$HOOK` inside a python *comment* under `set -u` |
+| BUG 56 | Title/visual mismatch — Pass C merged keyword (T=1179, "prom") with LLM (T=1187, "bus") but kept keyword's T → Stage 5 frames + Stage 6 transcript window grounded vision in dialog *outside* the rendered clip |
 
 ### Grounding / Hallucination
 | # | Title |
@@ -89,6 +93,171 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 56 — Pass C keyword+LLM merge keeps the wrong peak T: title says "Prom Compliment" on a clip that's actually a bus mishap
+
+**Symptom**: 2026-05-02 19:10 run produced a clip titled "Prom Compliment on the Bus" with hook "Prom is coming up, you look beautiful" — but the user reported the actual rendered video was about *"someone missing the bus and everyone reacting."* The clip itself contained the right footage; the title, hook, description, and voiceover all described content from a side comment that never made it into the rendered window.
+
+Diagnostic excerpt (`clips/.diagnostics/last_run_20260502_191052.json`):
+
+```json
+// keyword moment (transcript trigger)
+{"timestamp": 1179, "source": "keyword",
+ "preview": "Yo, you know, you know, you know, prom coming up, right? No, prom coming up. You look very beautiful."}
+
+// LLM moment (Pass B pattern)
+{"timestamp": 1187, "source": "llm",
+ "preview": "Pattern storytelling_arc: ... a mini-narrative about Ray missing the bus and landing the punchline...",
+ "primary_pattern": "storytelling_arc",
+ "clip_start": 1187, "clip_end": 1212}
+
+// merged record after Pass C dedup (the buggy state)
+{"timestamp": 1179, "preview": "Yo... prom coming up... You look very beautiful.",
+ "clip_start": 1186.66, "clip_end": 1212.27}
+```
+
+The merged record's peak is at 1179 but the rendered window starts at 1186.66 — peak T sits **7.66 seconds before the clip even starts**. Stage 5 extracts payoff-window frames at `[T-2, T, T+1, T+2, T+3, T+5]` (= 1177-1184, all before the clip), Stage 6 grounds against a `T±8s` transcript window (1171-1187, almost zero overlap with the 1187-1212 rendered range). Vision saw nothing of the bus and grounded in dialog that was effectively outside the clip.
+
+**Cause**: three compounding decisions in `scripts/lib/stages/stage4_moments.py`'s 25-second dedup merge:
+
+1. **Wrong source-of-truth for peak T**: when keyword + LLM moments merged, the keyword's `timestamp` was kept and the LLM's `clip_start` / `clip_end` were inherited. The two are unrelated coordinates: keyword T marks the trigger word, LLM clip-window marks the story. Nothing enforced that peak T fell *inside* the clip window.
+
+2. **Dead `0.8 × d` preview-replacement check**: the original code had
+
+   ```python
+   d["normalized_score"] = min(max(d["normalized_score"], m["normalized_score"]) * 1.25, 1.0)
+   ...
+   if m["normalized_score"] > d["normalized_score"] * 0.8:
+       d["preview"] = m.get("why") or m.get("preview", d["preview"])
+   ```
+
+   The cross-val ×1.25 boost runs *first*, pushing `d` toward 1.0. Then the threshold check compares `m` against `0.8 × boosted_d` — which is almost always above `m`'s pre-boost score. The replacement was effectively dead code for cross-validated moments, so the keyword's transcript-snippet preview always survived over the LLM's semantic narrative.
+
+3. **No primary_pattern transfer**: the LLM identified `storytelling_arc` (rich pattern signal that Pass D rubric judge and Stage 6 vision cross-validation both consume), but the merged keyword survivor never picked it up.
+
+The merge logic was written in early development when the assumption was *"keyword and LLM at nearby timestamps describe the same beat."* That holds when they're 1-3 seconds apart. It breaks at 8+ seconds because keywords trigger on side comments while LLM moments capture the actual story arc.
+
+**Fix** (`scripts/lib/stages/stage4_moments.py` Pass C merge body, ~line 1670):
+
+1. **Identify the LLM side explicitly** (`llm_side = m if m["source"] == "llm" else d`) instead of treating the dedup'd record as authoritative regardless of who arrived first.
+
+2. **Re-center peak T inside the clip window when they disagree**: when the LLM provides `clip_start` / `clip_end`, adopt those boundaries AND, if the existing peak T isn't inside that window, snap T to the LLM's timestamp. Stage 5 / Stage 6 / boundary snap all key off `timestamp`, so this single change carries through the rest of the pipeline.
+
+3. **Always prefer the LLM's `why` for preview**: dropped the broken 0.8× threshold. LLM `why` is a semantic description of the pattern (`"Pattern storytelling_arc: ... a mini-narrative about Ray missing the bus..."`) — strictly more useful than the keyword's transcript fragment for vision grounding, Pass D, and human review.
+
+4. **Carry `primary_pattern` and `primary_category` forward** from the LLM side so downstream pattern-cross-validation paths actually have something to validate against.
+
+**Defense in depth** (`scripts/lib/stages/stage6_vision.py:_local_transcript`): replaced the `T±8s` transcript window with `[clip_start, clip_end]` (with a `min duration < 4s` fallback to T±8 for legacy callers). Even if a future code path re-introduces a peak-T-outside-window state, vision still grounds against the words actually inside the rendered clip.
+
+**Verification**: replay of the real T=1179 case through the new merge body — peak T snaps from 1179 → 1187, `clip_start ≤ T ≤ clip_end` invariant holds, preview/why both become the LLM's bus narrative, `primary_pattern = storytelling_arc` propagates, `cross_validated = True`, normalized_score boosts from 0.7 → 0.959. Stage 5 frame extraction at `[T-2..T+5] = [1185, 1187, 1188, 1189, 1190, 1192]` — all inside the rendered window [1187, 1212]. AST parse on both files passes (Python 3.10 grammar).
+
+**Related**: [[#BUG 53]] (Stage 6 vision boost saturation — sibling Stage 6 fix from the same run); [[#BUG 35]] (Pass B moments stacking at chunk_start — earlier same-family timestamp-vs-content split); [[#BUG 36]] (Pass C overflow distribution — also touched the merge path); [[concepts/highlight-detection]] (Pass C ranking + dedup); [[concepts/vision-enrichment]] (Stage 6 transcript-window grounding).
+
+---
+
+## BUG 55 — Pass D rubric judge fails 10/10 on thinking models: `s.find("{") ... s.rfind("}")` swallows reasoning prefix into one un-parseable blob
+
+**Symptom**: 2026-05-02 19:10 run, `qwen/qwen3.6-35b-a3b` for both Pass B text and Stage 6 vision. Pipeline log shows the rubric judge running without errors but every single moment falls through to "keeping Pass C score":
+
+```
+[PASS D] T=4849 unparseable response; keeping Pass C score
+[PASS D] T=7177 unparseable response; keeping Pass C score
+[PASS D] T=5595 unparseable response; keeping Pass C score
+... (10/10)
+```
+
+The Pass D rubric judge is silently no-op. The five-dimension rubric (setup_strength / payoff_strength / originality / broad_appeal / replay_value / audio_quality / self_contained), audit_one_liner, and pattern confirmation all stay null — Tier-4 Phase 4.4's blend (`0.6 × pass_c + 0.4 × rubric`) collapses to the unblended Pass C score.
+
+**Cause**: `scripts/lib/stages/stage4_rubric.py:_parse_response` extracted JSON with the naive heuristic:
+
+```python
+js = s.find("{")
+je = s.rfind("}")
+obj = json.loads(s[js:je + 1])
+```
+
+That works fine when the LLM emits clean JSON. It explodes on a thinking model's `reasoning_content`, which is a long internal monologue that routinely contains stray `{...}` fragments — pseudo-code dicts ("`returning {scores: ...}`"), unicode escapes (`\u{1F600}`), or natural-language braces ("the `{payoff}` lands here"). When `enable_thinking: False` is honored only partially (BUG 17 / 35B+ Gemma reasoning fallback at line 233 dumps `reasoning_content` when `content` is empty), `find("{")` grabs the first stray brace from the reasoning prefix, `rfind("}")` grabs the closing brace of the actual answer, and the slice is everything in between — un-parseable garbage.
+
+The log's `(thinking not disabled: 5460-7222 reasoning tokens used)` warnings on Pass B are the same root cause: this model emits reasoning regardless of the disable flag.
+
+**Fix** (`scripts/lib/stages/stage4_rubric.py`): introduced `_extract_last_json_object(s)` — a single forward pass that records the (start, end) span of every top-level balanced `{...}` object, ignoring braces inside string literals (proper `"..."` + escape tracking). Then walk the candidate spans **last-first**, accepting the most recent one that round-trips through `json.loads` AND contains a `"scores"` key. Falls back to any syntactically valid object if no scored one is found, so the caller can still inspect/log it.
+
+Verified with six synthetic cases on the host: clean JSON, thinking prefix with stray braces and unicode escapes, no-json-at-all (returns None correctly), markdown-fenced JSON, JSON followed by trailing prose, and a decoy `{"foo": "bar"}` object before the real answer. All six pass.
+
+**Related**: [[#BUG 17]] (35B+ Gemma reasoning_content fallback), [[#BUG 33]] (`response_format` rejected by Gemma — Pass D already drops it), [[#BUG 30]] (HTTP 400 cascade on Gemma 4 — same family of "thinking model defeats clean-JSON assumptions"); [[entities/lm-studio]] (the reasoning_content fallback path); [[concepts/tier-4-conversation-shape]] (Phase 4.4 — Pass D rubric judge).
+
+---
+
+## BUG 54 — `HOOK: unbound variable` at stage7_render.sh:19 because bash expanded `$HOOK` inside a python *comment*
+
+**Symptom**: 2026-05-02 19:10 run, immediately after Stage 6 finished:
+
+```
+[PIPELINE]   Generating clip manifest...
+/root/scripts/stages/stage7_render.sh: line 19: HOOK: unbound variable
+[PIPELINE]   Manifest: 10 clips to process
+```
+
+The error doesn't kill the pipeline — `set -e` does, but `set -u` only warns on the substitution and continues with empty string — but it produces a bogus manifest record where the HOOK column lands in the wrong field after the bad expansion. (Stage 7 saved itself this run because the heredoc's stdout still contained 10 lines from the pre-error iterations; on a different code path it would corrupt the pipe-delimited manifest.)
+
+**Cause**: `scripts/stages/stage7_render.sh:19` opened the manifest-builder heredoc as `python3 -c "..."` — bash double-quoted. Bash interpolates `$VAR` everywhere inside that string, including inside the python source. Line 44 of the file was a python *comment*:
+
+```python
+    # Empty hook → bash's `[ -n "$HOOK" ]` is false → no overlay rendered.
+```
+
+Bash didn't care that the line was a python comment — it sees the `"$HOOK"` substring, tries to expand `$HOOK`, and under `set -u` (set in `clip-pipeline.sh:9`) flags the variable as unbound because `HOOK` is only bound by the `read -r` loop at line 57, which hasn't run yet. The error prints; bash continues with `$HOOK` substituted as `""`; the rest of the python source compiles and runs.
+
+**Fix** (`scripts/stages/stage7_render.sh:19`): convert `python3 -c "..."` → single-quoted heredoc `python3 - <<'PYEOF' ... PYEOF`. The single-quoted heredoc delimiter (`'PYEOF'`) makes the entire heredoc bash-opaque — no interpolation, no expansion, no escape processing. Side benefit: removed all the manual `\"` and `\\\\` escaping that was needed for the previous double-quoted form, so the python source now reads naturally.
+
+Verified with `bash -n scripts/stages/stage7_render.sh` (clean) and visual inspection that no `$VAR` inside the heredoc gets interpreted by bash.
+
+**Related**: [[#BUG 39]] (stage 4 raw backticks in unquoted heredoc — sibling problem); [[#BUG 46]] (BUG 39 redux at line 2160 — same family); [[#BUG 29]] (the original "backtick markdown in unquoted heredocs" pattern). The recurring lesson: **bash heredocs that ship to other interpreters should always be single-quoted unless the heredoc actively needs bash interpolation**.
+
+---
+
+## BUG 53 — Stage 6 vision boost saturates: every Pass C winner already at score=1.000 → "vision BOOST: 1.000 -> 1.000"
+
+**Symptom**: 2026-05-02 19:10 run. All 10 Pass C winners landed at exactly `score=1.000`. Stage 6 vision boost log line read:
+
+```
+T=7177 vision BOOST: 1.000 -> 1.000
+T=5595 vision BOOST: 1.000 -> 1.000
+T=3249 vision BOOST: 1.000 -> 1.000
+T=9664 vision BOOST: 1.000 -> 1.000
+T=9989 vision BOOST: 1.000 -> 1.000
+... (every moment)
+```
+
+The boost never moved any score because the input was already at the cap. Operationally this means: (a) operator can't rank the surviving clips (they all display 1.000); (b) vision quality is invisible in the output; (c) downstream sort/Pass D have no ranking signal among the cohort.
+
+**Cause**: BUG 37 (Pass C score saturation, fixed 2026-04-XX) introduced the "soft-cap during ranking, clip only at serialization boundary" pattern — Pass C carries `final_score` uncapped (range `[0, ~1.4]`) so cross-validated × style-weighted × position × bucket-normalized boosts don't lose ranking distinction. At serialization, `score` is clamped to `[0, 1]` for the UI but `raw_score` is preserved.
+
+`stage6_vision.py:156` then read `transcript_score = moment.get("score", 5)` — i.e. the **clamped** value. Vision boost at line 705 was:
+
+```python
+entry["score"] = round(min(transcript_score * 1.15, 1.0), 3)
+```
+
+So `1.000 × 1.15 = 1.15` → re-clamped to `1.000`. The boost has zero effect for any moment that survived Pass C's selection (since by definition Pass C winners are the highest-scoring, and the highest-scoring tend to be raw≥1.0).
+
+A2 callback boost (BUG 37c fix) had already side-stepped this by reading `entry.get("raw_score", entry.get("score", 0))` and writing back `entry["raw_score"]` post-boost. Vision boost and the cross-validated-full +0.1 path both remained on the clamped value.
+
+**Fix** (`scripts/lib/stages/stage6_vision.py`): three changes.
+
+1. Read both fields from the input moment: `transcript_score = moment.get("score", 5)` (clamped, kept for log compatibility) AND `transcript_raw = moment.get("raw_score", transcript_score)` (uncapped, used for boost math).
+
+2. Initialize `entry["raw_score"] = transcript_raw` so the field always exists — vision-failed and vision-skipped entries propagate their Pass C raw value to the downstream sort and Pass D, instead of relying on the `entry.get("raw_score", entry["score"])` fallback at line 752 which was returning a sea of clamped 1.000s.
+
+3. In all three boost paths (`cross_validated_full +0.1`, `vision_norm >= 0.67 ×1.15`, `vision_norm >= 0.44 ×1.08`): operate on `entry["raw_score"]`, write the post-boost raw to `entry["raw_score"]`, and clamp only at `entry["score"]` for the UI.
+
+Also surfaced `raw=` in the Stage 6 FINAL log line: instead of `T=4849 FINAL score=1.000 dur=26.76s ...` it now reads `T=4849 FINAL score=1.000 raw=1.3593 dur=26.76s ...` — operators can tell clips apart even when several pin the displayed cap.
+
+**Verification**: Python AST parse passes. Logical trace on the 10-moment 2026-05-02 sample: Pass C raw values were `1.1820, 1.1820, 1.1820, 1.1456, 1.1456, 1.1400, 1.1400, 1.1380, 1.1352, 1.0651`. After the new vision boost (5 of these had vision_score≥7, getting ×1.15): post-boost raw spread becomes `1.359, 1.359, 1.359, 1.318, 1.146, 1.311, 1.140, 1.149, 1.135, 1.225` (rough simulation — actual numbers depend on per-clip vision_score). Still all show `score=1.000` to the user, but `raw_score` cleanly differentiates and the sort at line 788 picks them apart correctly.
+
+**Related**: [[#BUG 37]] (the original Pass C saturation), [[#BUG 37b]] (the parallel display-visibility issue in Pass C logs), [[#BUG 37c]] (the A2 callback variant of this same family). This is **BUG 37d** in lineage; numbered 53 to keep chronological numbering monotone but conceptually it's the third-and-final extension of the BUG 37 family. After this fix, every score boost in the pipeline operates on raw and writes raw — there are no remaining clamped-input boosts.
 
 ---
 

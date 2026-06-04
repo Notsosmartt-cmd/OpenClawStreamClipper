@@ -10,6 +10,11 @@ updated: 2026-04-22
 
 How to set up, run, and maintain the OpenClaw Stream Clipper.
 
+> [!warning] Superseded by bare-metal Windows (2026-06-04)
+> This page documents the **legacy Docker** deployment. The project now runs
+> natively on Windows with no Docker — see [[concepts/bare-metal-windows]] for
+> the current setup. The Docker files are retained under `legacy/`.
+
 > [!note] Image is now slim — model weights live on the host
 > As of April 2026 the Docker image no longer bakes in Whisper or Piper weights. The host-mounted `./models/` folder holds them, so the image is ~5 GB instead of ~8 GB and you can inspect / swap weights without a rebuild. See [[concepts/image-slimming]] for the full rationale, the `ORIGINALITY_STACK` build arg (`full` default / `slim`), and the `requirements*.txt` files that are now the source of truth for Python deps.
 

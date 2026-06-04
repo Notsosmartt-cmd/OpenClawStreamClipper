@@ -11,7 +11,7 @@ When someone asks you to clip/process/highlight a stream, you MUST use the `exec
 You have an `exec` tool. You MUST call it. Do NOT just reply with text.
 
 Example — user says "clip the lacy stream":
-1. Call exec: `bash /root/scripts/clip-pipeline.sh --style auto --vod lacy 2>&1`
+1. Call exec: `clip.cmd --style auto --vod lacy 2>&1`
 2. If exec returns "still running", call process tool with action "poll" to wait
 3. When done, tell the user how many clips were made
 
@@ -19,17 +19,17 @@ Example — user says "clip the lacy stream":
 
 Clip a named VOD:
 ```
-bash /root/scripts/clip-pipeline.sh --style auto --vod NAME 2>&1
+clip.cmd --style auto --vod NAME 2>&1
 ```
 
 Clip next unprocessed VOD:
 ```
-bash /root/scripts/clip-pipeline.sh --style auto 2>&1
+clip.cmd --style auto 2>&1
 ```
 
 List available VODs:
 ```
-bash /root/scripts/clip-pipeline.sh --list 2>&1
+clip.cmd --list 2>&1
 ```
 
 ## STYLE (pick from user's words, default "auto")

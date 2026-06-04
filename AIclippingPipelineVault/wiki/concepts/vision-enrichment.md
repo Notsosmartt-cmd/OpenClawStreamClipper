@@ -3,7 +3,7 @@ title: "Vision Enrichment (Stage 6)"
 type: concept
 tags: [vision, enrichment, non-gatekeeping, gemma-4, qwen35, scoring, titles, originality, grounding, stage-6, tier-3, a2]
 sources: 4
-updated: 2026-04-23
+updated: 2026-05-02
 ---
 
 # Vision Enrichment (Stage 6)
@@ -56,15 +56,28 @@ Additional context fed to the prompt:
 
 ## Score blending
 
-Vision scores are blended additively into transcript scores:
+Vision is multiplicative on the **uncapped** Pass C `raw_score`, not the displayed `score`. After fix [[#BUG 53]] (2026-05-02), all three boost paths read and write `raw_score`; the user-facing `score` is the same value clamped to `[0, 1]` only at the display field.
 
-| Vision score | Effect on transcript score |
+| Vision norm (= `(raw - 1) / 9`) | Multiplier on `raw_score` |
 |---|---|
-| ≥ 7 | + 2 (capped at 10) |
-| ≥ 5 | + 1 |
-| < 5 | unchanged |
+| ≥ 0.67 (vision_score ≥ 7) | × 1.15 |
+| ≥ 0.44 (vision_score ≥ 5) | × 1.08 |
+| < 0.44 | unchanged |
 
-If vision fails (bad JSON, timeout, model error): transcript score used unchanged. Clips still render.
+A separate cross-validated-full bonus (`+0.1` on raw) fires when Pass B `primary_pattern`, Pass D `pattern_confirmed`, and Stage 6 `vision_pattern_match` all agree at strength ≥ 0.6.
+
+If vision fails (bad JSON, timeout, model error): both `score` and `raw_score` are carried over from Pass C unchanged. Clips still render.
+
+> [!warning] Why the boost looked like a no-op before BUG 53
+> The boost previously read `transcript_score` from `moment["score"]` (the clamped 0–1 value). When Pass C produced multiple raw≥1.0 winners (very common, since cross-val × style × position routinely pushes above 1.0), the boost computed `1.000 × 1.15 = 1.15` and re-clamped to 1.000 — every winner showed `vision BOOST: 1.000 -> 1.000` in the log. The fix is to operate on `raw_score` end-to-end and clamp only at display.
+
+The Stage 6 FINAL log line now surfaces both fields side by side, so an operator can rank cohort members even when several display a tied 1.000:
+
+```
+T=4849 FINAL score=1.000 raw=1.3593 dur=26.76s title="..." [emotional]
+T=7177 FINAL score=1.000 raw=1.3593 dur=27.43s title="..." [funny]
+T=8367 FINAL score=1.000 raw=1.1380 dur=15.93s title="..." [funny]
+```
 
 ---
 

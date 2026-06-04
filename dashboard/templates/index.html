@@ -106,7 +106,7 @@
                 <div class="controls" id="originality-controls">
                     <div class="control-group">
                         <label>Framing mode</label>
-                        <select id="sel-framing" onchange="onOriginalityChange()">
+                        <select id="sel-framing" onchange="onOriginalityChange()" title="Blur-fill: legacy 9:16 with blurred sidebars (safe default). Camera pan: OpenCV face detection drives a virtual camera across speakers; falls back to blur-fill silently if no faces are detected.">
                             <option value="blur_fill" selected>Blur-fill (legacy)</option>
                             <option value="camera_pan">Camera pan (face track)</option>
                         </select>
@@ -122,10 +122,6 @@
                     <div class="checkbox-group">
                         <input type="checkbox" id="chk-stitch" onchange="onOriginalityChange()">
                         <label for="chk-stitch" title="Bundle 3-4 short moments into one multi-segment post">Stitch short moments</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-camera-pan" onchange="onOriginalityChange()">
-                        <label for="chk-camera-pan" title="Requires framing mode 'camera_pan'. Runs OpenCV face detection to drive a virtual camera across speakers.">Face-tracked camera pan</label>
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="chk-tts-vo" onchange="onOriginalityChange()">
@@ -144,6 +140,12 @@
                     </div>
                     <button id="btn-scan-music" class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanMusicLibrary()" title="Run librosa on every track in the folder and write music_library.json">Scan Music</button>
                     <span id="music-scan-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
+                    <div class="checkbox-group" style="margin-left: auto;">
+                        <input type="checkbox" id="chk-style-profiles" onchange="onOriginalityChange()">
+                        <label for="chk-style-profiles" title="Per-category editing profiles: zoom punches, freeze frames, slow-mo (≥50 fps), meme cutaways, B-roll inserts, SFX cues, kinetic captions, plus always-on audio + container fingerprint perturbation. Reads assets under assets/. Off by default.">AI editing profiles (per-category)</label>
+                    </div>
+                    <button id="btn-scan-libraries" class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanLibraries()" title="Re-read assets/sfx, music, broll, memes from disk and rebuild every library.json — useful after dropping in your own files.">Scan Libraries</button>
+                    <span id="libraries-scan-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
                 </div>
                 <div class="hw-hint hw-hint-note" style="margin-top: 10px; font-size: 0.72rem;">
                     💡 Smart crop relies on the vision model flagging chrome_regions. If the model returns no regions (clean stream), smart_crop falls back to blur-fill automatically. Narrative and stitch modes require enough moments in the right categories or they emit zero groups.

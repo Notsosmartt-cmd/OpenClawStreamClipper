@@ -9,8 +9,8 @@ import json, sys, os, glob
 
 from faster_whisper import WhisperModel
 
-cache_dir = "/root/.cache/whisper-models"
-temp_dir = "/tmp/clipper"
+cache_dir = os.environ.get("WHISPER_MODEL_DIR", "/root/.cache/whisper-models")
+temp_dir = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
 whisper_device = os.environ.get("CLIP_WHISPER_DEVICE", "cuda")
 whisper_compute = os.environ.get("CLIP_WHISPER_COMPUTE", "float16" if whisper_device == "cuda" else "int8")

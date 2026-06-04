@@ -11,8 +11,10 @@ from .paths_routes import bp as paths_bp
 from .originality_routes import bp as originality_bp
 from .music_routes import bp as music_bp
 from .assets_routes import bp as assets_bp
+from .library_routes import bp as library_bp
 
 ALL_BLUEPRINTS = (
     pipeline_bp, vods_bp, models_bp, hardware_bp,
     paths_bp, originality_bp, music_bp, assets_bp,
+    library_bp,
 )

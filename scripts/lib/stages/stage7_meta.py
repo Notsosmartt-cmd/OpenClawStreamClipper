@@ -7,7 +7,7 @@ populate render flags: mirror_safe|vo_text|vo_placement|group_id|group_kind.
 import json, os, sys
 T = int(os.environ["CLIP_T"])
 try:
-    with open("/tmp/clipper/scored_moments.json") as f:
+    with open(os.path.join(os.environ.get("CLIP_WORK_DIR", "/tmp/clipper"), "scored_moments.json")) as f:
         moments = json.load(f)
 except Exception:
     moments = []

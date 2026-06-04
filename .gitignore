@@ -60,6 +60,18 @@ dist/
 build/
 
 # ============================================================
+# Bare-metal Windows (native, no Docker)
+# ============================================================
+# Python venv — multi-GB; recreate from requirements-windows.txt
+.venv/
+# Local model caches — recreate on first pipeline run
+models/whisper/
+models/piper/
+models/sentence-transformers/
+# GPU validation test artifact
+test_gate.wav
+
+# ============================================================
 # Node
 # ============================================================
 node_modules/
@@ -82,6 +94,40 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 *~
+
+# ============================================================
+# Asset library binaries (regenerable via scripts/seed_libraries.py)
+# Manifests, README, and the fetch script itself stay in git.
+# ============================================================
+assets/sfx/**/*.wav
+assets/sfx/**/*.mp3
+assets/sfx/**/*.ogg
+assets/sfx/**/*.flac
+assets/music/**/*.mp3
+assets/music/**/*.wav
+assets/music/**/*.ogg
+assets/music/**/*.flac
+assets/broll/**/*.mp4
+assets/broll/**/*.webm
+assets/broll/**/*.mov
+assets/memes/**/*.png
+assets/memes/**/*.jpg
+assets/memes/**/*.jpeg
+assets/memes/**/*.gif
+assets/memes/**/*.webp
+# Keep manifests, README, caption-style templates
+!assets/**/library.json
+!assets/README.md
+!assets/caption_styles/**
+
+# ============================================================
+# Reference / scratch (not part of this project)
+# ============================================================
+# VideoToText-main is a separate repo dropped in as reference for the bare-metal
+# migration — it has its own .venv with thousands of files. Never commit it.
+VideoToText-main/
+config/openclaw.json.last-good
+config/plugin-runtime-deps/
 
 # ============================================================
 # Deprecated / old files

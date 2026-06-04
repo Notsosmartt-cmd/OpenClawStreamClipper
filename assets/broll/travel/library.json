@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "flight_charleston_miami_a.mp4",
+      "tags": ["travel", "flight", "airplane", "window", "clouds", "sky"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/FlightBetweenCharlestonAndMiamiSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "in-flight, sunny window view"
+    },
+    {
+      "file": "flight_charleston_miami_b.mp4",
+      "tags": ["travel", "flight", "airplane", "window", "clouds"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/FlightBetweenCharlestonAndMiamiSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "in-flight, mid-route"
+    },
+    {
+      "file": "flight_charleston_miami_c.mp4",
+      "tags": ["travel", "flight", "airplane", "window", "approach"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/FlightBetweenCharlestonAndMiamiSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "approach to destination"
+    },
+    {
+      "file": "landing_miami_a.mp4",
+      "tags": ["travel", "landing", "airport", "miami", "approach", "city"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LandingAtMiamiInternationalAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "early descent, sky and city"
+    },
+    {
+      "file": "landing_miami_b.mp4",
+      "tags": ["travel", "landing", "airport", "miami", "descent"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LandingAtMiamiInternationalAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "mid-descent over coast"
+    },
+    {
+      "file": "landing_miami_c.mp4",
+      "tags": ["travel", "landing", "airport", "miami", "runway", "touchdown"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LandingAtMiamiInternationalAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "near touchdown / runway"
+    },
+    {
+      "file": "liftoff_charleston_a.mp4",
+      "tags": ["travel", "takeoff", "airport", "charleston", "runway", "departure"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LiftoffAtCharlestonAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "ground, pre-takeoff or rolling"
+    },
+    {
+      "file": "liftoff_charleston_b.mp4",
+      "tags": ["travel", "takeoff", "airport", "charleston", "ascent"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LiftoffAtCharlestonAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "post-takeoff ascent"
+    },
+    {
+      "file": "liftoff_charleston_c.mp4",
+      "tags": ["travel", "flight", "cruise", "airplane", "window"],
+      "license": "CC0",
+      "source": "https://archive.org/download/PublicDomainCc0AirTravelStockVideoFootage/LiftoffAtCharlestonAirportSummer2013.mp4",
+      "duration_s": 5,
+      "scene": "cruise altitude"
+    }
+  ]
+}

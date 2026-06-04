@@ -56,6 +56,13 @@ CLIP_TTS_VO="${CLIP_TTS_VO:-false}"
 CLIP_MUSIC_BED="${CLIP_MUSIC_BED:-}"
 CLIP_MUSIC_TIER_C="${CLIP_MUSIC_TIER_C:-false}"
 CLIP_CAMERA_PAN="${CLIP_CAMERA_PAN:-false}"
+# AI editing-profiles toggle (2026-05-02). When true, Stage 7 dispatches
+# each clip through scripts/lib/profile_render.py for per-category zoom
+# punches, freeze frames, slow-mo (FPS-gated), meme cutaways, B-roll
+# inserts, SFX cues, kinetic captions, and audio + container fingerprint
+# perturbation. Falls back to the legacy render path on any per-clip
+# failure so the user still gets output. See concepts/style-profiles.
+CLIP_STYLE_PROFILES="${CLIP_STYLE_PROFILES:-false}"
 LIB_DIR="/root/scripts/lib"
 SCRIPTS_DIR="/root/scripts"
 STAGES_DIR="$SCRIPTS_DIR/stages"
@@ -127,6 +134,8 @@ if [ "$TEXT_MODEL_PASSB" != "$TEXT_MODEL" ] || [ "$VISION_MODEL_STAGE6" != "$VIS
     log "Phase 5.1 split active: Pass B=$TEXT_MODEL_PASSB | Stage 6=$VISION_MODEL_STAGE6"
 fi
 log "Originality: orig=${CLIP_ORIGINALITY} framing=${CLIP_FRAMING} stitch=${CLIP_STITCH} narrative=${CLIP_NARRATIVE} pan=${CLIP_CAMERA_PAN} tts=${CLIP_TTS_VO} music=$( [ -n "$CLIP_MUSIC_BED" ] && echo "$CLIP_MUSIC_BED tier_c=${CLIP_MUSIC_TIER_C}" || echo off )"
+log "Style profiles: ${CLIP_STYLE_PROFILES} (per-category editing layer)"
+export CLIP_STYLE_PROFILES
 
 # Fail-fast: confirm all configured LM Studio models are actually downloaded
 # (BUG 52). Without this, a typo or missing model produces HTTP 400 on every
