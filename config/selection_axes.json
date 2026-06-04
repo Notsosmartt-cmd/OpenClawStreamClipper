@@ -32,6 +32,21 @@
     "topic_near_s": 8.0,
     "weights": {"rate": 0.45, "topic": 0.35, "genre": 0.20}
   },
+  "engagement": {
+    "enabled": true,
+    "_note": "Plan E — engagement/discussion-worthiness. Surfaces low-impact but high-engagement 'yap'/take clips: a firm stance (claim_stake/info_ramble_marker WITHOUT an immediate concession) + a held monologue (predicted, always), plus SUSTAINED post-moment chat discussion over [T, T+post_window_s] gated on unique_chatters (observed — the genuinely new signal, distinct from Plan B's [T,T+12] reaction spike). Boost-only; predicted-stance kept modest to avoid double-counting the hot_take category + spicy/engagement style. Category-aware (talky cats full, dancing/hype damped).",
+    "gain": 0.18,
+    "multiplier_ceil": 1.12,
+    "post_window_s": 60.0,
+    "z_norm": 2.5,
+    "unique_chatter_min": 6,
+    "weights": {"predicted": 0.40, "observed": 0.60},
+    "weights_predicted": {"stance": 0.6, "monologue": 0.4},
+    "stance_classes": ["claim_stake", "info_ramble_marker"],
+    "concession_classes": ["concession"],
+    "category_gain": {"hot_take": 1.0, "controversial": 1.0, "storytime": 1.0, "emotional": 1.0, "reactive": 0.9, "funny": 0.85, "hype": 0.85, "dancing": 0.7},
+    "default_category_gain": 0.9
+  },
   "arc_completeness": {
     "enabled": true,
     "_note": "Structural 'is this a complete, self-contained setup->payoff arc?' score in [0,1] -> a gentle, category-aware multiplier on Pass C raw_score. Boost-leaning, never gates. neutral_point is the completeness at which the multiplier is exactly 1.0; below it = mild penalty, above = mild boost.",

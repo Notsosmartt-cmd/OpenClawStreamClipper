@@ -13,9 +13,17 @@ updated: 2026-06-04
 > [[concepts/clipping-intelligence]]. Added 2026-06-04 from the user's "yap / take clip" insight. Global
 > constraint: **virality weight = light platform-awareness**.
 
-> [!note] Implementation plan — approved 2026-06-04 (not yet built)
-> Backed by a concrete plan (full copy in the session plan file). Consolidates heavily with existing
-> style/pattern/chat machinery. Building is a separate go-ahead.
+> [!done] BUILT 2026-06-04 (E-MVP) — Pass-C axis + style + vision archetype shipped (judge criterion deferred)
+> Shipped: **E1** `scripts/lib/engagement_signals.py` (predicted firm-stance from `conversation_shape`
+> markers + **observed sustained chat discussion** over `[T, T+60]`, boost-only ceil 1.12, predicted-only
+> kept modest; `--selftest` PASS); **E2** wired into Pass C of `stage4_moments.py` (the always-on axis,
+> inside the clamped product); **E3** an `engagement` **style** in `config/style_pattern_weights.json`
+> (+ aliases incl. "yap") with matching `style_prompts`/`weight_map` entries; **E4** the
+> `media-pause-commentary` archetype added to the Stage 6 `interaction_shape` enum; **E5** the `engagement`
+> block in `config/selection_axes.json`. **Deferred** (per the lean-judge-prompt guardrail): the
+> discussion-worthiness **judge criterion + `[engagement]` card hint** — held until the first live judge
+> run. Niche detection deferred (v1 niche-agnostic). Diagnostics: `engagement_score`/`engagement_multiplier`
+> + `eng=` in the `[PASS C]` log. **This completes the A/B/C/E Pass-C axis set** (D deferred).
 
 ## Implementation plan (E-MVP)
 

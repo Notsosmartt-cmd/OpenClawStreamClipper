@@ -170,6 +170,20 @@ except Exception as _bce:
     _BASELINE_CFG = {}
     print(f"[BASELINE] baseline_contrast unavailable ({_bce}); Pass C runs without baseline factor", file=sys.stderr)
 
+# Selection Sub-Plan E — engagement / discussion-worthiness. Surfaces low-impact
+# but high-engagement "yap"/take clips: a firm stance + SUSTAINED post-moment chat
+# discussion over [T, T+60] (breadth-gated debate, distinct from Plan B's [T, T+12]
+# spike). Boost-only; the predicted-stance term is kept modest because the hot_take
+# category + spicy/engagement style already weight stance. Failure-soft -> 1.0.
+try:
+    import engagement_signals as _engagement
+    _ENGAGEMENT_CFG = _engagement.load_config()
+    print(f"[ENGAGEMENT] engagement loaded (enabled={_ENGAGEMENT_CFG.get('enabled', True)}, ceil={_ENGAGEMENT_CFG.get('multiplier_ceil')})", file=sys.stderr)
+except Exception as _ege:
+    _engagement = None
+    _ENGAGEMENT_CFG = {}
+    print(f"[ENGAGEMENT] engagement_signals unavailable ({_ege}); Pass C runs without engagement factor", file=sys.stderr)
+
 # Cross-axis compounding guardrail (clipping-quality-overhaul eval finding #1):
 # the selection axes (A/B/C/E) each return a bounded multiplier, but their
 # PRODUCT is unbounded — a moment tripping several correlated axes could run
@@ -1005,6 +1019,7 @@ style_prompts = {
     "reactive": "Prioritize strong reactions — rage, shock, disbelief, over-the-top responses to events or content.",
     "controversial": "Prioritize drama, call-outs, beef, tea-spilling, edgy statements, anything that would blow up on social media.",
     "dancing": "Prioritize physical performance moments — dancing, moves, vibing, physical comedy, any body-based entertainment.",
+    "engagement": "Prioritize discussion-worthy takes — a clear, relatable opinion on a topic the audience will argue about in the comments. Pause-and-opine moments, side-notes on a named brand/person/event, confident stances. The streamer doesn't need a big reaction; they need a take worth debating.",
     "variety": "Find ONE moment from EACH category. Maximum diversity across all categories."
 }
 style_hint = style_prompts.get(CLIP_STYLE, style_prompts["auto"])
@@ -1874,6 +1889,7 @@ for m in deduped:
         "reactive": {"reactive": 1.3, "hot_take": 1.15},
         "controversial": {"controversial": 1.3, "hot_take": 1.2, "reactive": 1.15},
         "dancing": {"dancing": 1.3, "funny": 1.1},
+        "engagement": {"hot_take": 1.25, "controversial": 1.2, "storytime": 1.1, "emotional": 1.1},
         "variety": {}
     }
 
@@ -1967,6 +1983,30 @@ for m in deduped:
     else:
         m["baseline_contrast"] = None
         m["baseline_multiplier"] = 1.0
+
+    # Plan E: engagement / discussion-worthiness — boost low-impact-but-talkable
+    # takes (a firm stance + sustained post-moment chat discussion over [T, T+60]).
+    # Boost-only; predicted-stance kept modest to avoid double-counting hot_take.
+    if _engagement is not None:
+        _ech = None
+        try:
+            if CHAT_FEATURES is not None:
+                _epw = float(_ENGAGEMENT_CFG.get("post_window_s", 60.0))
+                _ech = CHAT_FEATURES.window(_mt, _mt + _epw)
+        except Exception:
+            _ech = None
+        try:
+            _eg = _engagement.evaluate(m, segments, chat=_ech, shape_module=CONVO_SHAPE, markers=CONVO_MARKERS, cfg=_ENGAGEMENT_CFG)
+        except Exception:
+            _eg = {"engagement_score": None, "multiplier": 1.0, "signals": {}}
+        axis_mult *= _eg.get("multiplier", 1.0)
+        m["engagement_score"] = _eg.get("engagement_score")
+        m["engagement_multiplier"] = round(_eg.get("multiplier", 1.0), 3)
+        if _eg.get("signals"):
+            m["engagement_signals"] = _eg["signals"]
+    else:
+        m["engagement_score"] = None
+        m["engagement_multiplier"] = 1.0
 
     # Compounding guardrail: clamp the accumulated A-E product, then apply once.
     axis_mult = max(_AXIS_FLOOR, min(_AXIS_CEIL, axis_mult))
@@ -2216,6 +2256,9 @@ for m in final:
         # Plan C — baseline-contrast (how much this moment breaks the streamer's norm)
         "baseline_contrast": m.get("baseline_contrast"),
         "baseline_multiplier": m.get("baseline_multiplier", 1.0),
+        # Plan E — engagement / discussion-worthiness (talkable take + sustained chat)
+        "engagement_score": m.get("engagement_score"),
+        "engagement_multiplier": m.get("engagement_multiplier", 1.0),
         "axis_multiplier": m.get("axis_multiplier", 1.0),
         # Tier-2 M1 — speaker context (used by Stage 6 prompt + A2)
         "dominant_speaker": m.get("dominant_speaker"),
@@ -2252,7 +2295,7 @@ for m in output:
     # Show raw score next to the clamped display value so the operator can
     # see actual ranking distinction even when several moments display 1.000
     # (BUG 37: ranking happens on raw values that routinely exceed 1.0).
-    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} rx={m.get('reaction_score')} bc={m.get('baseline_contrast')} ax={m.get('axis_multiplier',1.0)} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
+    print(f"  T={m['timestamp']}s [{m['category']}] score={m['score']:.3f} raw={raw:.4f} dur={dur}s lp={lp} pw={pw:.2f} arc={m.get('arc_completeness')} rx={m.get('reaction_score')} bc={m.get('baseline_contrast')} eng={m.get('engagement_score')} ax={m.get('axis_multiplier',1.0)} segment={m.get('segment_type','')} src={m['source']}{xv} — {m.get('why','')[:60]}", file=sys.stderr)
 print(f"  Category breakdown: {json.dumps(cats_found)}", file=sys.stderr)
 print(f"  Segment breakdown: {json.dumps(segs_found)}", file=sys.stderr)
 print(f"Detected {len(output)} clip-worthy moments")

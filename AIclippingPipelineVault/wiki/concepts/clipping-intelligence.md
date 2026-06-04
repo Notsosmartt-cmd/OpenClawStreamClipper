@@ -102,11 +102,11 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 | Time-bucket distribution | :1830-1971 | 2 buckets/hr (3-10); Phase-1 guaranteed pick/bucket, Phase-2 round-robin overflow (BUG 36), within-bucket 70/30 normalization, Phase-3 style re-rank |
 | Category cap (auto) | :1998 | no category > 50% of clips |
 | Soft-cap | BUG 37, :1820-1827 | rank on *raw* score (can exceed 1.0); clamp to [0,1] only at the display field |
-| **Selection axes** (A arc, B reaction, C baseline) | `arc_completeness.py` / `reaction_signals.py` / `baseline_contrast.py` | each a bounded, failure-soft `×mult` (A may demote to 0.85; B boost-only ≤1.10; C boost-only ≤1.18) accumulated into one `axis_mult` product. C's per-VOD baseline is computed once before the loop |
+| **Selection axes** (A arc, B reaction, C baseline, E engagement) | `arc_completeness.py` / `reaction_signals.py` / `baseline_contrast.py` / `engagement_signals.py` | each a bounded, failure-soft `×mult` (A may demote to 0.85; B ≤1.10; C ≤1.18; E ≤1.12, all boost-only) accumulated into one `axis_mult` product. C's per-VOD baseline is computed once before the loop |
 | **Global axis-product clamp** | overhaul eval #1 | the accumulated A-E axis product is clamped to **[0.80, 1.35]** before being applied once — the coordinating guardrail so correlated axes can't compound and run away |
 
 > [!note] Selection axes (Plans A-E) — the 2026-06-04 overhaul
-> Plans A (arc-completeness), B (reaction-worthy), and C (baseline-contrast) are live as Pass C pre-signals; E is planned, D deferred.
+> Plans A (arc-completeness), B (reaction-worthy), C (baseline-contrast), and E (engagement/discussion) are live as Pass C pre-signals; D deferred. E also adds an `engagement` style + the `media-pause-commentary` Stage 6 vision archetype.
 > They no longer each multiply `styled_score` independently — they **accumulate into one clamped product**.
 > See [[concepts/clipping-quality-overhaul]] §Cross-axis design guardrails for the compounding analysis and
 > the rebalanced ceilings. (This resolved the "uncalibrated multiplier chain" weakness noted below.)

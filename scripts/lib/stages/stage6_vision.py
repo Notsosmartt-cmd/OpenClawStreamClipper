@@ -393,7 +393,7 @@ Also flag render hints:
 - voiceover: a short creator-POV narration line (8-14 words, spoken English, no hashtags). Do NOT restate the streamer's words — instead point at the moment or add context. Specify placement = "intro" | "peak" | "outro" and tone = "hype" | "deadpan" | "earnest" | "snarky".
 
 Tier-4 Phase 4.5 — also identify the INTERACTION SHAPE the frames depict:
-- interaction_shape: one of "monologue" (one person, talking to camera), "reading-chat" (gaze toward chat panel; reading or paraphrasing), "dialog-with-on-screen-guest" (two visible people in conversation), "dialog-with-off-screen-voice" (one visible person reacting to an off-screen voice), "gameplay-with-commentary" (game footage primary, person inset), "silent-gameplay" (game footage, no commentary visible), "multi-speaker-stage" (3+ visible speakers).
+- interaction_shape: one of "monologue" (one person, talking to camera), "reading-chat" (gaze toward chat panel; reading or paraphrasing), "dialog-with-on-screen-guest" (two visible people in conversation), "dialog-with-off-screen-voice" (one visible person reacting to an off-screen voice), "gameplay-with-commentary" (game footage primary, person inset), "silent-gameplay" (game footage, no commentary visible), "multi-speaker-stage" (3+ visible speakers), "media-pause-commentary" (external media/a video is paused or frozen on screen and the streamer turns to the camera to give their own take on it — the pause-and-opine archetype).
 - pattern_match: which catalog pattern the frames best support — "setup_external_contradiction", "challenge_and_fold", "reading_chat_reaction", "storytelling_arc", "hot_take_pushback", "informational_ramble", "interview_revelation", "rap_battle_freestyle", "social_callout", "unexpected_topic_shift", or null.
 - pattern_match_strength: 0.0-1.0 — confidence the frames support pattern_match.
 - gaze_direction: "at-camera" / "at-chat" / "at-screen" / "at-guest" / "off-screen" / "down".
@@ -407,7 +407,7 @@ Respond ONLY with JSON: {{
   "grounded_in_transcript": true|false,
   "mirror_safe": true|false,
   "voiceover": {{"text": "...", "placement": "intro|peak|outro", "tone": "hype|deadpan|earnest|snarky", "duration_estimate_s": 3.0}},
-  "interaction_shape": "monologue|reading-chat|dialog-with-on-screen-guest|dialog-with-off-screen-voice|gameplay-with-commentary|silent-gameplay|multi-speaker-stage",
+  "interaction_shape": "monologue|reading-chat|dialog-with-on-screen-guest|dialog-with-off-screen-voice|gameplay-with-commentary|silent-gameplay|multi-speaker-stage|media-pause-commentary",
   "pattern_match": "<pattern_id or null>",
   "pattern_match_strength": 0.0-1.0,
   "gaze_direction": "at-camera|at-chat|at-screen|at-guest|off-screen|down"{("," + chr(10) + "  " + chr(34) + "callback_confirmed" + chr(34) + ": 0-10 (Tier-3 A2 — does the visual continuity between setup frames 1-2 and payoff frames 3+ support the claimed callback? 0=different scene/person, 5=ambiguous, 10=same person/scene clearly drives both halves)") if a2_active else ""}
