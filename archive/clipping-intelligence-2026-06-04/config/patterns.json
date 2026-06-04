@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "_note": "Tier-4 Phase 4.3 — Pattern Catalog. Closed taxonomy of named clip-worthy interaction shapes the LLM evaluates against. User-editable; hot-reloaded each pipeline run. Each entry: id (lowercase_underscore), label (display), signature (one-paragraph definition the LLM reads), structural_signals (list of conversation_shape signals or audio/vision hints), example (illustrative — optional), category_hint (default category if pattern matches and the model doesn't override). Don't grow past ~12 patterns — the LLM needs to internalize them in one prompt; more patterns = vaguer matches.",
+  "patterns": [
+    {
+      "id": "setup_external_contradiction",
+      "label": "Setup → external contradiction",
+      "signature": "First-person assertive claim ('this is mine', 'I built this', 'trust me') followed within 30s by an off-screen voice or third party contradicting it; the original speaker concedes, laughs, or pivots. The contradiction is the moment.",
+      "structural_signals": ["claim_stake", "off_screen_intrusion", "concession"],
+      "example": "Streamer pitches a course while bragging the penthouse is theirs; off-screen voice exposes that the penthouse belongs to someone else; streamer admits.",
+      "category_hint": "controversial"
+    },
+    {
+      "id": "challenge_and_fold",
+      "label": "Challenge and fold",
+      "signature": "Speaker A escalates with a bold claim, name-call, or insult → speaker B challenges them on it ('say that again', 'are you serious') → A backs down, walks it back, or admits fear. Three or more turns; concession is the payoff.",
+      "structural_signals": ["pushback", "concession", "turn_changes>=3"],
+      "example": "Host insults a guest in jest; guest dares host to repeat it to their face; host admits they wouldn't.",
+      "category_hint": "controversial"
+    },
+    {
+      "id": "reading_chat_reaction",
+      "label": "Reading chat → reaction",
+      "signature": "Streamer pauses mid-flow to read or paraphrase a chat message, then reacts emotively — laughs, corrects, gets pissed, or deadpan-responds. The reaction is the moment, not the message.",
+      "structural_signals": ["monologue_run", "vision:gaze_at_chat"],
+      "example": "Streamer reads a chat troll mid-stream and snaps back with a one-liner.",
+      "category_hint": "reactive"
+    },
+    {
+      "id": "storytelling_arc",
+      "label": "Storytelling arc",
+      "signature": "Speaker opens with a story-marker ('let me tell you about', 'one time', 'so basically') → narrative buildup with concrete detail → punchline reveal or twist. The reveal is the moment.",
+      "structural_signals": ["story_opener", "monologue_run>=40s"],
+      "example": "Streamer tells a 90-second crashed-the-wrong-wedding story — clean setup, escalation, and payoff.",
+      "category_hint": "storytime"
+    },
+    {
+      "id": "hot_take_pushback",
+      "label": "Hot take with pushback",
+      "signature": "Controversial claim ('honestly, X is the only correct take') → audience or guest pushes back → speaker doubles down rather than backing off. Doubling down is the moment.",
+      "structural_signals": ["claim_stake", "pushback", "no concession"],
+      "example": "Streamer doubles down on a deliberately controversial pizza take, refuses to back off when chat pushes back.",
+      "category_hint": "hot_take"
+    },
+    {
+      "id": "informational_ramble",
+      "label": "Informational ramble",
+      "signature": "Sustained monologue (>=60s) on a coherent topic with concrete substance — financial advice, news analysis, backstory revelation, motivational reflection, social-dynamics commentary. The substance is the moment, not a single payoff line. Reject vague 'opinion drift' that has no concrete claims or anecdotes.",
+      "structural_signals": ["monologue_run>=60s", "low topic_boundary density", "info_ramble_marker"],
+      "example": "Streamer rants for two minutes about why streaming platforms are structurally broken, naming specific incidents and policy changes.",
+      "category_hint": "storytime"
+    },
+    {
+      "id": "interview_revelation",
+      "label": "Interview revelation",
+      "signature": "Host probes guest with a pointed question → guest reveals something unexpected, candid, or self-implicating. Two or more speakers. The revelation is the moment.",
+      "structural_signals": ["question dialog_act", "speakers>=2", "long answer turn"],
+      "example": "Guest reveals on stream that they once paid for a stunt that they now regret.",
+      "category_hint": "storytime"
+    },
+    {
+      "id": "rap_battle_freestyle",
+      "label": "Rap battle / freestyle",
+      "signature": "Rhythmic cadence with rhyme density over a beat. Turn-taking between two or more MCs, or one streamer freestyling solo. Audience or chat reaction at punchlines. Music dominance is high; speech feels metered.",
+      "structural_signals": ["audio:music_dominance>=0.6", "speakers>=2 OR sustained monologue", "rhyme_density"],
+      "category_hint": "hype"
+    },
+    {
+      "id": "social_callout",
+      "label": "Social callout",
+      "signature": "Speaker A makes a claim → speaker B exposes an inconsistency, names the lie, or roasts → social tension or laughter follows. Different from challenge_and_fold in that A doesn't necessarily fold — the call-out itself is the moment.",
+      "structural_signals": ["claim_stake", "pushback", "speakers>=2"],
+      "example": "Friend in the stream catches the streamer in a story they told differently last week.",
+      "category_hint": "controversial"
+    },
+    {
+      "id": "unexpected_topic_shift",
+      "label": "Unexpected topic shift",
+      "signature": "Abrupt topic pivot mid-flow that lands — audience reacts (chat catches up, guest laughs, streamer themselves notices) and the pivot itself becomes interesting. Pure tangents that don't land are NOT this pattern.",
+      "structural_signals": ["topic_boundary>=0.7", "topic_pivot marker"],
+      "category_hint": "funny"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "_note": "Tier-4 Phase 4.2 — discourse marker lexicon. Each value is a list of regex patterns (case-insensitive). Classes are consumed by config/patterns.json signature checks and Pass A boost-only signals. Edit freely; missing classes fall back to the built-in defaults in scripts/lib/conversation_shape.py.",
+  "story_opener": [
+    "\\blet me tell you\\b",
+    "\\bso (check|let me tell|listen to) this\\b",
+    "\\bhere'?s the thing\\b",
+    "\\byou ever (had|seen|heard|been)\\b",
+    "\\bi('m| am) gonna tell you\\b",
+    "\\bback when i\\b",
+    "\\bstory time\\b"
+  ],
+  "claim_stake": [
+    "\\bi('m| am) (telling|gonna tell|saying) you\\b",
+    "\\btrust me\\b",
+    "\\blisten\\b",
+    "\\bi (have|own|made|built|got)\\b",
+    "\\bthis is (my|mine)\\b",
+    "\\bi swear\\b",
+    "\\b(no|i'?m) (cap|capping|kidding)\\b"
+  ],
+  "pushback": [
+    "\\bnah\\b",
+    "\\bno way\\b",
+    "\\bwait wait( wait)?\\b",
+    "\\bhold on\\b",
+    "\\bare you serious\\b",
+    "\\bwhat\\?",
+    "\\bhuh\\?",
+    "\\byou'?re kidding\\b",
+    "\\bbro what\\b",
+    "\\bare you (kidding|joking)\\b"
+  ],
+  "concession": [
+    "\\bok(ay)? (you('re|'re) right|fine|fair)\\b",
+    "\\byou'?re right\\b",
+    "\\b(yeah|yea|alright) (you|that)('s| is)\\b",
+    "\\bmy bad\\b",
+    "\\bi'?ll admit\\b",
+    "\\bfair (point|enough)\\b",
+    "\\bok(ay)? i (was|am) wrong\\b"
+  ],
+  "topic_pivot": [
+    "\\banyway(s)?\\b",
+    "\\bactually\\b",
+    "\\bon a different note\\b",
+    "\\bside note\\b",
+    "\\bunrelated\\b",
+    "\\bspeaking of\\b",
+    "\\bbut yeah\\b"
+  ],
+  "info_ramble_marker": [
+    "\\bthe thing about\\b",
+    "\\bwhat people don'?t (realize|know)\\b",
+    "\\bthe reality is\\b",
+    "\\blet me explain\\b",
+    "\\bthe (problem|issue) (is|with)\\b",
+    "\\bif you (think|look) about it\\b",
+    "\\bhere'?s why\\b"
+  ],
+  "agreement": [
+    "\\bexactly\\b",
+    "\\bfacts\\b",
+    "\\bfor real\\b",
+    "\\bsame\\b",
+    "\\b(100|hundred)( percent| %)\\b"
+  ]
+}
