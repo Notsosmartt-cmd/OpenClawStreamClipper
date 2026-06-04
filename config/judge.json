@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "_note": "Stage 5.5 Vision Judge (Plan 1.a). A seeded Swiss tournament of pairwise multimodal 'which clip is more engaging sound-off?' comparisons re-ranks the Pass C shortlist; win-count -> vision_rank + a BOUNDED raw_score reweight (+/- reweight_span) that propagates through Stage 6's raw_score sort. Never deletes a clip. Failure-soft: disabled / too-few moments / LM Studio outage / too-few comparisons all leave the Pass C order untouched. See AIclippingPipelineVault/wiki/concepts/clipping-quality-overhaul.md (Phase 1.a).",
+  "enabled": true,
+  "shortlist_min": 3,
+  "shortlist_max": 12,
+  "frames_per_clip": 4,
+  "rounds_extra": 1,
+  "max_comparisons": 30,
+  "reweight_span": 0.25,
+  "per_pair_timeout_seconds": 60,
+  "max_tokens": 1200,
+  "stage_timeout_seconds": 600,
+  "fail_streak_limit": 3
+}

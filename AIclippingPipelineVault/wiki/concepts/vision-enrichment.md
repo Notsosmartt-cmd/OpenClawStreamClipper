@@ -12,6 +12,12 @@ The stage that uses a multimodal model to analyze extracted video frames, genera
 
 Key design: **non-gatekeeping**. Vision can only help, never eliminate.
 
+> [!note] New: a vision step that DOES select (Stage 5.5, 2026-06-04)
+> Stage 6 enrichment stays non-gatekeeping — but a new [[entities/vision-judge]] now runs **just before
+> it** and *does* reorder/reweight which moments win (a tournament re-rank of the Pass C shortlist). So
+> "vision never affects selection" is no longer true as of Plan 1.a — that was the goal. Enrichment here
+> (titles / hooks / boosts) remains advisory-only.
+
 > [!note] Model swap (April 2026)
 > Vision runs on the same multimodal model as text detection — Gemma 4 (`gemma-4-26b-a4b`) or Qwen 3.5 (`qwen3.5-9b` / `qwen3.5-35b-a3b`), both of which support image input and proper thinking-token budgeting. The previous single-purpose `qwen3-vl-8b` entry is retired; see [[entities/qwen3-vl]] for the historical record. When the text and vision model IDs match, Stage 5 → 6 skips the VRAM unload/reload cycle.
 

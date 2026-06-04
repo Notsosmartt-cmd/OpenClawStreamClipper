@@ -24,6 +24,14 @@ def run(ctx) -> None:
         log.log(f"Pass B text and Stage 6 vision models are the same "
                 f"('{ctx.text_model_passb}') — skipping VRAM swap")
 
+    # Stage 5.5 — Vision Judge (Plan 1.a): tournament re-rank of the Pass C
+    # shortlist using the multimodal model just loaded above. Failure-soft
+    # (check=False): on outage / too-few comparisons it leaves hype_moments.json
+    # in Pass C order and Stage 6 proceeds unchanged.
+    common.set_stage(log, "Stage 5.5/8 — Vision Judge (tournament re-rank)")
+    log.log("=== Stage 5.5/8 — Vision Judge ===")
+    common.run_module(log, "stages/stage5_5_judge.py", [], env=env, check=False)
+
     common.set_stage(log, "Stage 6/8 — Vision Enrichment")
     log.log("=== Stage 6/8 — Vision Enrichment ===")
     common.run_module(log, "stages/stage6_vision.py", [], env=env, check=True)
