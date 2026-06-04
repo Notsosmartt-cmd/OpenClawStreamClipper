@@ -55,6 +55,31 @@ def nvidia_bin_dirs() -> list[str]:
     return dirs
 
 
+def load_dotenv(path=None) -> int:
+    """Load KEY=VALUE lines from .env into os.environ (already-set vars win).
+
+    Keeps secrets (HF_TOKEN, DISCORD_BOT_TOKEN) in the gitignored .env rather
+    than committed config, and lets a cloner *without* a .env run normally —
+    missing keys just stay unset. No-op if the file is absent. Returns the
+    number of keys set.
+    """
+    f = Path(path) if path else (REPO_ROOT / ".env")
+    if not f.is_file():
+        return 0
+    n = 0
+    for raw in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+            n += 1
+    return n
+
+
 def _env_dir(var: str, default: Path) -> Path:
     """Resolve a directory from ``var`` (expanding ~ and env refs) or default."""
     val = os.environ.get(var)
