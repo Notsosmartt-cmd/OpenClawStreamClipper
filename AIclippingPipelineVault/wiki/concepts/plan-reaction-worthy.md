@@ -13,6 +13,41 @@ updated: 2026-06-04
 > page + [[concepts/clipping-intelligence]]. Axes chosen 2026-06-04. Global constraint: **virality weight
 > = light platform-awareness** (polish, not taste).
 
+> [!note] Implementation plan — approved 2026-06-04 (ready to build; not yet built)
+> The brief below is now backed by a concrete plan (full copy in the session plan file). Building is a
+> separate go-ahead.
+
+## Implementation plan (B-MVP)
+
+**Split:** reaction *intensity* = a cheap pre-signal; reaction *authenticity* = the [[entities/vision-judge]]
+criterion. *Cheap signals say a reaction happened; the multimodal judge says it's worth sharing.*
+
+- **B1 — `scripts/lib/reaction_signals.py`** (new, mirrors `arc_completeness.py`):
+  `evaluate(moment, segments, *, audio_events, chat_features, shape_module, markers, cfg)` →
+  `{reaction_score 0-1, multiplier, signals}`. Components over `[clip_start, clip_end]` + peak `T`: audio
+  `crowd_response` (+ small `rhythmic_speech`); chat `z_score`/`burst_factor` at `T..T+12` + a small
+  subs/bits legitimacy floor; diarized `interruptions`/overlap. **Boost-only** category-aware multiplier
+  `1 + gain·score` ∈ `[1.0, ~1.20]` (absence never penalizes — calm clips are A/E territory).
+  Failure-soft; `--selftest`.
+- **B2 — Pass C** (`scripts/lib/stages/stage4_moments.py`): import + apply `styled_score *= reaction_mult`
+  right after the arc-completeness block; stamp `reaction_score`/`reaction_multiplier`/`reaction_signals`
+  on the moment and the output entry (diagnostics + `[PASS C]` log).
+- **B3 — Judge** (`scripts/lib/vlm_judge.py` + `scripts/lib/stages/stage5_5_judge.py`): add a "GENUINE,
+  EARNED reaction — avoid forced/overacted hype" priority to the shared `_INSTRUCTION`; compute the
+  pre-signal per shortlisted clip in `run_judge()` and append a compact `[reaction: 0.NN]` hint in
+  `_clip_text_block`.
+- **B4 — config**: a `reaction` block in `config/selection_axes.json` (weights/thresholds/gain/ceil/
+  category lists), same robust env→repo→defaults fallback Plan A uses.
+
+**Decisions:** authenticity = the judge's job (signals only measure intensity); **boost-only**; one shared
+`selection_axes.json` + one accruing judge prompt; facial-expression detector **deferred** (the judge
+already sees faces in the Stage-5 frames). **Double-count:** weight audio modestly (Pass A already gates
+`crowd_response≥0.5` for keyword moments); lean on the novel chat-spike + co-laughter signals + the judge.
+
+**Verify:** `reaction_signals.py --selftest` + `py_compile`; `stage5_5_judge.py --selftest` still passes;
+live run shows `reaction=` in the Pass C log + `reaction_score` in `clips/.diagnostics/`; degrades cleanly
+without librosa/chat.
+
 ## The metric
 A good clip has a **genuine, earned emotional or comedic peak** — funny / shocking / moving enough that a
 fan would actually send it to a friend. **Authentic, not manufactured hype or keyword density.**
