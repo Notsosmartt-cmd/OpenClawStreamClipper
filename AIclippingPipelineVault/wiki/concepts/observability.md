@@ -40,13 +40,30 @@ snapshot is the **only durable record**. The 2026-06-04 update added:
 
 ## The log lines (in `pipeline.log` / the persistent run log)
 
-- **`[PASS C]`** per-moment line — now carries `arc= rx= bc= eng= ax=` (the per-axis scores + the applied
+- **Per-line timestamp** — *every* log line is prefixed `[HH:MM:SS +<elapsed>s]` by `common.Logger`
+  (`_stamp_lines`, applied in `write()` so it covers streamed child-stage output too — e.g. each Pass B
+  chunk). Wall-clock lets you correlate with system events; the elapsed-since-start lets you time any two
+  outputs by subtraction, and the **last line's elapsed == the VOD session time**. The stamp is added only
+  to the log copies — `run_module` collects the *raw* child output first, so captured `$(...)` output is
+  untouched, and logtool's error regexes/SSE are mid-line so nothing breaks.
+- **`VOD session time [<vod>]: Xm Ys`** — logged per VOD by `run_pipeline._execute_stages` (works in
+  `--all` too, where cleanup's single total wouldn't separate VODs).
+- **`[PASS C]`** per-moment line — carries `arc= rx= bc= eng= ax=` (the per-axis scores + the applied
   clamped axis multiplier) alongside `score/raw/dur/lp/pw`.
 - **`[AXES]`** block — the axis report, printed at the end of Pass C (dependency readiness + per-axis
   coverage + clamp activity).
-- **`Per-stage timing:`** block — at cleanup.
+- **`Per-stage timing:`** block — at cleanup (also persisted to `stage_timings.json`).
 - **`[JUDGE]`** lines — the re-rank order + per-clip rationale; plus a `tournament bracket (...) ->
   judge_tournament.json` line.
+
+> [!note] First measured run (`last_run_20260605_005657`, plaqueboymax, 9 clips, **135.8 min**)
+> The per-stage timing immediately localized the cost: **Stage 4 Moment Detection = 67.1 min (49%)**,
+> Stage 2 Transcription = 29.3 min, Stage 6 Vision = 13.0, Stage 7 Edit = 11.0, Stage 5.5 Judge = 10.0.
+> Stage 4 is LLM-bound (Pass A→D) and exploded because the run used the **35B *thinking* model**
+> (`qwen3.6-35b-a3b`) for the per-chunk Pass B + Pass D calls. Levers, biggest first: a **Pass-B model
+> split** (`text_model_passb` → a smaller non-thinking text model — see [[concepts/model-split]]) or
+> disabling thinking for Pass B; transcription is already addressed by the [[entities/faster-whisper]]
+> `large-v3-turbo` default (~2.5x). Vision stages (6 + 5.5 = 23 min) similarly benefit from a vision split.
 
 ## `logtool axes [RUN]`
 

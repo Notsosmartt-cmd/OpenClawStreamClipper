@@ -65,13 +65,41 @@ class Logger:
         self._eph = open(ephemeral, "a", encoding="utf-8", buffering=1)
         self._per = open(persistent, "a", encoding="utf-8", buffering=1)
         self._lock = threading.Lock()
+        self._start = time.time()      # for per-line elapsed + running session time
+        self._at_line_start = True     # so each line gets exactly one stamp
+
+    def _stamp_lines(self, text: str) -> str:
+        """Prefix each line with a wall-clock + elapsed-since-start timestamp so
+        every log output can be timed (and the last line's elapsed == the VOD
+        session time). Tracks continuation across calls — the child-process
+        streamer writes one line per `write()` — so a prefix lands exactly once
+        per line. Stamps only the log copies; `run_module` collects the *raw*
+        child output before this, so captured `$(...)` output is untouched."""
+        if not text:
+            return text
+        prefix = f"[{time.strftime('%H:%M:%S')} +{time.time() - self._start:.1f}s] "
+        out = []
+        i, n = 0, len(text)
+        while i < n:
+            if self._at_line_start:
+                out.append(prefix)
+            nl = text.find("\n", i)
+            if nl == -1:
+                out.append(text[i:])
+                self._at_line_start = False
+                break
+            out.append(text[i:nl + 1])
+            self._at_line_start = True
+            i = nl + 1
+        return "".join(out)
 
     def write(self, text: str) -> None:
         with self._lock:
-            sys.stdout.write(text)
+            stamped = self._stamp_lines(text)
+            sys.stdout.write(stamped)
             sys.stdout.flush()
-            self._eph.write(text)
-            self._per.write(text)
+            self._eph.write(stamped)
+            self._per.write(stamped)
 
     def line(self, text: str) -> None:
         self.write(text + "\n")
