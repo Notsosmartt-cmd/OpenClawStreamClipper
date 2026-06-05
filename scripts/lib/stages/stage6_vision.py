@@ -10,7 +10,8 @@ Vision is non-gatekeeping: it can only boost moment scores or annotate them,
 never eliminate them. See concepts/vision-enrichment for the score-blending
 formula. Behavior is byte-identical to the pre-extraction heredoc.
 """
-import json, re, base64, os, sys, time
+import json, re, base64, os, sys, time, threading
+from concurrent.futures import ThreadPoolExecutor
 try:
     import urllib.request
 except:
@@ -102,8 +103,16 @@ VISION_PER_MOMENT_TIMEOUT = 300  # 5 min per moment — 35B models need ~200s pe
 # When it hits the limit we abandon vision enrichment for the remaining moments
 # — every moment still renders with its transcript-based defaults, the pipeline
 # just skips the title/description AI step.
+#
+# 2026-06-04: counter is now thread-safe under the parallel-dispatch path
+# (``STAGE6_WORKERS`` env var; default 2 — see ``_resolve_stage6_workers``).
+# Without a lock, two concurrent workers seeing streak<LIMIT each fail and
+# leave streak=2 instead of 2 (read-modify-write race); semantically the
+# "3 consecutive failures" loosens to "3 since last success" but is still
+# the right circuit-breaker for the LM-Studio-down case.
 _VISION_NET_FAIL_STREAK = 0
 _VISION_NET_FAIL_LIMIT = 3
+_VISION_NET_FAIL_LOCK = threading.Lock()
 _VISION_NET_PATTERNS = (
     "Network is unreachable",
     "Errno 101",
@@ -113,6 +122,28 @@ _VISION_NET_PATTERNS = (
     "timed out",
     "Read timed out",
 )
+
+# Stage 6 parallel dispatch (2026-06-04). VLM calls are per-moment and
+# fully independent — no cross-moment state to coordinate beyond the
+# net-fail counter above. Concurrent HTTP to LM Studio is allowed but
+# the VLM image-encoder pipeline may serialize internally; cap at 2
+# workers (conservative) and measure before increasing. Tunable via
+# ``STAGE6_WORKERS`` env var; set to 1 to force the original serial loop.
+_STAGE6_WORKERS_DEFAULT = 2
+
+
+def _resolve_stage6_workers():
+    """``STAGE6_WORKERS`` env override → ``_STAGE6_WORKERS_DEFAULT``.
+    0 or 1 disables parallelism (forces the original serial loop)."""
+    _env = os.environ.get("STAGE6_WORKERS", "").strip()
+    if _env:
+        try:
+            _v = int(_env)
+            if _v > 0:
+                return _v
+        except ValueError:
+            pass
+    return _STAGE6_WORKERS_DEFAULT
 
 def _vision_looks_like_outage(err_msg):
     s = str(err_msg)
@@ -151,7 +182,20 @@ def _derive_baseline_title(why, category, T):
     return f"{cat_pretty} at {mm}:{ss:02d}"
 
 
-for moment in moments:
+def _process_moment(moment):
+    """Per-moment vision enrichment (2026-06-04 refactor for parallel dispatch).
+
+    Body is the original moment loop's iteration body verbatim — same
+    prompt construction, same VLM call (via the nested ``_vision_call``
+    closure), same grounding cascade, same score-blending. The only
+    behavioural change is the global ``_VISION_NET_FAIL_STREAK`` counter
+    now updates under ``_VISION_NET_FAIL_LOCK`` so concurrent workers
+    can't race on the read-modify-write.
+
+    Returns the per-moment ``entry`` dict that the caller appends to the
+    module-level ``enriched`` list. Never returns ``None`` — even when
+    vision skips/fails, a baseline transcript-derived entry is produced.
+    """
     T = moment["timestamp"]
     # BUG 37 ripple: Stage 4 writes BOTH `score` (clamped to [0,1] for the
     # UI) and `raw_score` (uncapped, for internal ranking). Stage 6 used to
@@ -455,14 +499,23 @@ Respond ONLY with JSON: {{
                         _result = json.loads(_resp.read().decode())
                 except Exception as _ve:
                     print(f"  T={T} vision call failed: {_ve}", file=sys.stderr)
-                    if _vision_looks_like_outage(_ve):
-                        _VISION_NET_FAIL_STREAK += 1
-                    else:
-                        _VISION_NET_FAIL_STREAK = 0
+                    # Thread-safe streak update for the parallel path. Reads
+                    # of the counter elsewhere (skip-vision check at the top
+                    # of _process_moment) tolerate stale-by-one values — the
+                    # circuit-breaker just trips slightly later under parallel
+                    # dispatch, which is the right behaviour when LM Studio
+                    # is genuinely down (we'd rather skip a few moments than
+                    # block on retries).
+                    with _VISION_NET_FAIL_LOCK:
+                        if _vision_looks_like_outage(_ve):
+                            _VISION_NET_FAIL_STREAK += 1
+                        else:
+                            _VISION_NET_FAIL_STREAK = 0
                     return None, 0
                 # A successful response — even if we end up failing to parse
                 # the JSON below — proves the network is up and resets streak.
-                _VISION_NET_FAIL_STREAK = 0
+                with _VISION_NET_FAIL_LOCK:
+                    _VISION_NET_FAIL_STREAK = 0
 
                 _msg = _result["choices"][0]["message"]
                 _raw = _msg.get("content") or ""
@@ -792,7 +845,11 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         # Vision failed — that's OK, use transcript data as-is
         print(f"  T={T} vision failed/no-parse — using transcript score={transcript_score:.3f}", file=sys.stderr)
 
-    enriched.append(entry)
+    # 2026-06-04: append moved to the caller (parallel dispatch). Each
+    # worker returns its ``entry`` and the dispatcher collects them into
+    # the module-level ``enriched`` list — preserves the input order on
+    # the serial path and on ``Pool.map`` (which yields in submission
+    # order); the final sort by raw_score doesn't care either way.
     # Surface raw_score next to the clamped score so the operator can
     # actually tell clips apart when several land at score=1.000.
     _raw = entry.get("raw_score", entry["score"])
@@ -802,6 +859,31 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         f"[{entry['category']}]",
         file=sys.stderr,
     )
+    return entry
+
+
+# Dispatch the per-moment work. Serial path is unchanged; parallel path
+# uses ``ThreadPoolExecutor`` with ``STAGE6_WORKERS`` workers. ``map``
+# preserves submission order so log lines stay readable when threads
+# finish out-of-order (each worker prints its full per-moment block as
+# a single contiguous run since stderr is line-buffered).
+_stage6_workers = _resolve_stage6_workers()
+if _stage6_workers <= 1 or len(moments) <= 1:
+    print(f"[STAGE6] serial: processing {len(moments)} moments", file=sys.stderr)
+    for moment in moments:
+        _entry = _process_moment(moment)
+        if _entry is not None:
+            enriched.append(_entry)
+else:
+    print(
+        f"[STAGE6] parallel: dispatching {len(moments)} VLM calls across "
+        f"{_stage6_workers} workers",
+        file=sys.stderr,
+    )
+    with ThreadPoolExecutor(max_workers=_stage6_workers) as _stage6_pool:
+        for _entry in _stage6_pool.map(_process_moment, moments):
+            if _entry is not None:
+                enriched.append(_entry)
 
 # NO FILTERING HERE — every moment goes to rendering.
 # Sort by raw_score (uncapped) descending so A2-boosted callbacks above 1.0

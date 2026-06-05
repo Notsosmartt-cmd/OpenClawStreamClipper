@@ -58,6 +58,18 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 
 ---
 
+## Implemented this round (continued — round 3, 2026-06-04)
+
+### 5. Stage 6 vision parallel HTTP (round 3)
+**File**: `scripts/lib/stages/stage6_vision.py`
+**Mechanism**: Refactored the 600-line `for moment in moments:` loop body into a `_process_moment(moment) -> entry` function defined at module scope. Dispatch via `ThreadPoolExecutor(max_workers=STAGE6_WORKERS)` with `pool.map(_process_moment, moments)` so input order is preserved. Each moment's VLM call (~30-90 s) runs concurrently; the nested `_vision_call` closure now updates `_VISION_NET_FAIL_STREAK` under a `threading.Lock` to avoid read-modify-write races on the circuit-breaker counter.
+**Knobs**: `STAGE6_WORKERS` env var; default 2 (conservative for VLM); set to 1 to force serial.
+**Expected lift**: 2-3× on the per-moment phase (13 min → ~5 min). Real lift depends on whether LM Studio internally serializes VLM calls — measure on a real VOD.
+**Risk**: Low — selection-neutral by construction (each moment's enrichment is fully independent; no cross-moment state beyond the failure counter). The "3 consecutive failures" semantic loosens to "3 since last success" under concurrency, which is the right behaviour when LM Studio is down (skip remaining moments faster, not block on retries).
+**Verification**: AST parse OK (901 lines, +82 from 819); `_process_moment` at module scope; 1 nested closure (`_vision_call`); 6 return statements; dispatch at line 870 (after function def, after `moments` + `enriched` initialization at lines 90/94).
+
+---
+
 ## Deferred (high impact, higher risk — needs careful follow-up)
 
 These are tracked here so the next implementation session can pick them up
@@ -73,9 +85,7 @@ with the full context.
 **Pattern**: `ThreadPoolExecutor(max_workers=3)` over chunks. LM Studio handles concurrent HTTP — 3 concurrent should give ~2-3× without saturating the LLM queue.
 **Test plan**: A/B on a real VOD with `logtool axes`; compare `axis_report` rank churn — should be near-identical if order is preserved.
 
-### B. Stage 6 vision parallel HTTP (13 → ~5 min)
-**File**: `scripts/lib/stages/stage6_vision.py` (819 lines)
-**Why deferred**: VLM payloads are bigger (6 frames × ~50 KB each) and LM Studio may serialize VLM calls more aggressively than text. The grounding cascade + regenerate-once policy adds per-moment state. Same `ThreadPoolExecutor` pattern as Pass B, but cap workers at 2-3 and measure LM Studio queue behavior first.
+### ~~B. Stage 6 vision parallel HTTP~~ — **IMPLEMENTED** (round 3, see §5 above)
 
 ### C. Stage 5.5 Vision Judge concurrent pairs (10 → ~4 min)
 **File**: `scripts/lib/vlm_judge.py` — modify `swiss_tournament` to accept an `executor` arg, run pairs within a single Swiss round concurrently.
@@ -102,11 +112,12 @@ with the full context.
 | Audio events | ~25 min | ~3-4 min × 1.5-3× silence gate = **~2 min** | round 1 mp + this round RMS gate |
 | Stage 5 frame extraction | ~1 min | **~10-15 s** | parallel dispatch |
 | Stage 7 render + audio extract | 11 min | **~3-4 min** | parallel ffmpegs |
+| Stage 6 vision enrichment | 13 min | **~5 min** | parallel VLM HTTP (round 3) |
 | Pass B (Stage 4) | 67 min | **~50-55 min** | dead-chunk pre-filter only (parallel HTTP deferred) |
-| Other stages unchanged | ~22 min | ~22 min | — |
-| **TOTAL** | **135 min** | **~80-85 min (~1.6× speedup)** | combined |
+| Other stages unchanged | ~14 min | ~14 min | — |
+| **TOTAL** | **135 min** | **~75-80 min (~1.7× speedup)** | combined |
 
-Pass B parallel HTTP (deferred item A) is the path to a further ~30-min reduction → ~50 min total run.
+Pass B parallel HTTP (deferred item A) is the path to a further ~30-min reduction → ~45-50 min total run.
 
 ---
 
@@ -131,6 +142,7 @@ Real-world wall-clock verification requires a full VOD run.
 | `AUDIO_EVENTS_RMS_GATE` | `0.01` | Silent-window RMS threshold; set to `0` to disable |
 | `STAGE5_WORKERS` | `8` | Stage 5 ffmpeg frame-extract concurrency |
 | `STAGE7_WORKERS` | `4` | Stage 7 ffmpeg render + audio-extract concurrency |
+| `STAGE6_WORKERS` | `2` | Stage 6 VLM HTTP concurrency (conservative for vision-encoder serialization) |
 | `CLIP_PASSB_KEEP_DEAD_CHUNKS` | unset | Set to `1` to disable Pass B dead-chunk pre-filter |
 
 ---
