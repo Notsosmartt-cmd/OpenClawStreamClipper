@@ -77,6 +77,15 @@
                             <option value="2.0">2×</option>
                         </select>
                     </div>
+                    <div class="control-group" title="Pass B dead-chunk gate. Higher modes save time by skipping LLM calls on quiet chunks but risk false negatives. See logtool dead and the rakai Delaware case study.">
+                        <label>Pass B gate</label>
+                        <select id="sel-passb-gate">
+                            <option value="off" selected>Off — safest (no skips)</option>
+                            <option value="multi">Multi — 6-signal (very low FN risk)</option>
+                            <option value="sample">Sample — multi + 1-in-3 (low FN risk)</option>
+                            <option value="strict">Strict — 2-signal (legacy, FN-prone)</option>
+                        </select>
+                    </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="chk-hook-caption" checked>
                         <label for="chk-hook-caption">Hook caption</label>

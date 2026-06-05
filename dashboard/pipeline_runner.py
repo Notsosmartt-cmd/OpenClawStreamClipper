@@ -120,8 +120,16 @@ def query_lm_studio_models() -> list[dict]:
 # --- Pipeline-env helpers -----------------------------------------------------
 
 def pipeline_env(captions: bool = True, speed: str = "1.0",
-                 hook_caption: bool = True, originality: dict | None = None) -> dict:
-    """Build environment dict for direct pipeline subprocess (inside Docker)."""
+                 hook_caption: bool = True, originality: dict | None = None,
+                 passb_dead_gate: str | None = None) -> dict:
+    """Build environment dict for direct pipeline subprocess (inside Docker).
+
+    ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
+    gate via ``CLIP_PASSB_DEAD_GATE``. One of ``off`` (default, selection-
+    safe), ``multi`` (6-signal), ``sample`` (multi + 1-in-N pass-through),
+    ``strict`` (legacy 2-signal). When None, the env var is left unset so
+    `stage4_moments.py`'s own default kicks in (``off``).
+    """
     env = os.environ.copy()
     env["CLIP_VODS_DIR"] = str(_state.VODS_DIR)
     env["CLIP_CLIPS_DIR"] = str(_state.CLIPS_DIR)
@@ -138,6 +146,8 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     env["CLIP_CAPTIONS"] = "true" if captions else "false"
     env["CLIP_SPEED"] = str(speed)
     env["CLIP_HOOK_CAPTION"] = "true" if hook_caption else "false"
+    if passb_dead_gate and passb_dead_gate in ("off", "multi", "sample", "strict"):
+        env["CLIP_PASSB_DEAD_GATE"] = passb_dead_gate
     for k, v in originality_to_env(originality or load_originality_config()).items():
         env[k] = v
     return env
@@ -314,11 +324,17 @@ def _poll_container_stages(container: str, proc) -> None:
 
 
 def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
-                   hook_caption: bool = True, originality: dict | None = None):
+                   hook_caption: bool = True, originality: dict | None = None,
+                   passb_dead_gate: str | None = None):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.
     Inside Docker:  runs bash directly.
+
+    ``passb_dead_gate`` (2026-06-04) forwards the dashboard's Pass-B gate
+    dropdown into the pipeline as ``CLIP_PASSB_DEAD_GATE``. One of
+    ``off`` / ``multi`` / ``sample`` / ``strict``. See
+    concepts/pipeline-optimizations-2026-06.md §4.
     """
     orig_env = originality_to_env(originality or load_originality_config())
 
@@ -353,6 +369,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
             env_flags += ["-e", f"CLIP_TEXT_MODEL_PASSB={config['text_model_passb']}"]
         if config.get("vision_model_stage6"):
             env_flags += ["-e", f"CLIP_VISION_MODEL_STAGE6={config['vision_model_stage6']}"]
+        if passb_dead_gate and passb_dead_gate in ("off", "multi", "sample", "strict"):
+            env_flags += ["-e", f"CLIP_PASSB_DEAD_GATE={passb_dead_gate}"]
         for k, v in orig_env.items():
             env_flags += ["-e", f"{k}={v}"]
 
@@ -399,7 +417,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=pipeline_env(captions=captions, speed=speed,
-                         hook_caption=hook_caption, originality=originality),
+                         hook_caption=hook_caption, originality=originality,
+                         passb_dead_gate=passb_dead_gate),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP

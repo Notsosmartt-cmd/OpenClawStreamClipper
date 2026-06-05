@@ -67,6 +67,12 @@ def api_clip():
     captions = data.get("captions", True)
     speed = str(data.get("speed", "1.0"))
     hook_caption = data.get("hook_caption", True)
+    # Pass B dead-chunk gate mode — UI dropdown sends one of
+    # {off, multi, sample, strict}. Default "off" preserves selection
+    # fidelity (no LLM calls skipped). See pipeline_runner.spawn_pipeline.
+    passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
+    if passb_dead_gate not in ("off", "multi", "sample", "strict"):
+        passb_dead_gate = "off"
     orig_override = extract_originality_fields(data)
 
     if not vod:
@@ -93,6 +99,7 @@ def api_clip():
             _state.pipeline_process = spawn_pipeline(
                 cmd, captions=captions, speed=speed,
                 hook_caption=hook_caption, originality=orig_override,
+                passb_dead_gate=passb_dead_gate,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -111,6 +118,9 @@ def api_clip_all():
     captions = data.get("captions", True)
     speed = str(data.get("speed", "1.0"))
     hook_caption = data.get("hook_caption", True)
+    passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
+    if passb_dead_gate not in ("off", "multi", "sample", "strict"):
+        passb_dead_gate = "off"
     orig_override = extract_originality_fields(data)
 
     with _state.pipeline_lock:
@@ -142,6 +152,7 @@ def api_clip_all():
                 cmd, captions=captions,
                 speed=speed, hook_caption=hook_caption,
                 originality=orig_override,
+                passb_dead_gate=passb_dead_gate,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
