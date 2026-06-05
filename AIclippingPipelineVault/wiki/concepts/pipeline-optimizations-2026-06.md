@@ -154,6 +154,22 @@ Real-world wall-clock verification requires a full VOD run.
 
 ---
 
+## Dashboard UI (added round 4, 2026-06-04)
+
+The Pass B dead-chunk gate mode is exposed as a dropdown in the dashboard's clip control panel — `Pass B gate` next to the Speed dropdown. Options match the env var values: `Off` (default — no skips, safest), `Multi` (6-signal), `Sample` (multi + 1-in-3 pass-through), `Strict` (legacy 2-signal). The selected mode is forwarded to the pipeline as `CLIP_PASSB_DEAD_GATE` in both Docker (`docker exec -e`) and bare-metal (`Popen env=`) paths. The other knobs in the env-var table below remain env-only — they're tuner knobs more than user-facing modes.
+
+## Prior performance work (pre-round-2 context)
+
+Round 2 was *not* the first performance pass on this pipeline. Earlier rounds existed but weren't catalogued as numbered rounds:
+
+| Date | Commit | Lever | Impact |
+|---|---|---|---|
+| 2026-04-20 | `e285a72` "speed and caption update" | speed-control dropdown (1×–1.5× setpts + rubberband), bash pipeline trims | ~10-15 % render-side |
+| 2026-04-28 | (in-file, pre-modularization) audio_events per-window-load → load-once-and-slice | `scripts/lib/audio_events.py` | Hung "scanning audio events..." for minutes → minutes total (still serial; round 1 made it parallel) |
+| 2026-06-03 | `51dfedb` "Whisper large-v3-turbo as default" | `config/models.json::whisper_model` | ~2.5× transcription speedup for <1 % WER loss |
+
+So the round numbering started with round 1 = audio_events multiprocessing because that was the first sweep where the team explicitly thought of performance as a tracked workstream. The prior wins were one-shot improvements driven by specific symptoms (slow renders, scan hangs, slow transcription) rather than a sweep.
+
 ## Env-var summary (operator quick-reference)
 
 | Variable | Default | Effect |
