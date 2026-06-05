@@ -3,7 +3,7 @@ title: "Clipping Pipeline"
 type: concept
 tags: [pipeline, architecture, workflow, stages, hub, stage-1, stage-2, stage-3, stage-4, stage-5, stage-6, stage-7, stage-8]
 sources: 2
-updated: 2026-05-01
+updated: 2026-06-04
 ---
 
 <!-- updated 2026-04-27d for Tier-1 moment-discovery upgrades (Q1-Q5) -->
@@ -28,11 +28,13 @@ Discord / Dashboard trigger
 3. Segment Detection    — classify stream type per 10-min window, build stream profile
          ↓
 4. Moment Detection     — Pass A: keywords | Pass B: LLM | Pass C: merge + time-bucket
-                          | Pass D: rubric judge (Tier-4) | MMR diversity rank (Tier-4)
+                          + selection axes A/B/C/E (bounded, clamped) | Pass D: rubric judge
          ↓
 4.5 Moment Groups       — (wave C) narrative arcs + stitch bundles (optional)
          ↓
 5. Frame Extraction     — 6 JPEGs per candidate (960×540)
+         ↓
+5.5 Vision Judge        — pairwise multimodal tournament re-rank: vision SELECTS the winners
          ↓
 6. Vision Enrichment    — score boosts, titles, descriptions, originality hints
          ↓
@@ -152,6 +154,7 @@ See [[concepts/highlight-detection]] for full detail.
 - **Time-bucket distribution**: VOD divided into equal buckets (2/hour, 3-10 range); Phase 1 guaranteed picks from each bucket; Phase 2 fills overflow slots; Phase 3 style re-ranking
 - Enforces minimum 45-second gap between final selected clips
 - Selects up to `MAX_CANDIDATES` (2× target clip count)
+- **Selection axes (2026-06-04)**: after the boosts above, Pass C folds in per-axis signals — **A** arc-completeness, **B** reaction-worthy, **C** baseline-contrast, **E** engagement (D batch-diversity deferred) — each a bounded, failure-soft multiplier on `raw_score`, accumulated into one **globally-clamped** product `[0.80, 1.35]` (never gates, only re-ranks). Config in `config/selection_axes.json`; per-run coverage in `axis_report.json`. See [[concepts/clipping-quality-overhaul]] + [[concepts/observability]]
 
 ---
 
@@ -203,6 +206,12 @@ Implementation: one `ffmpeg -ss <absolute>` call per offset — fast seek, singl
 ## ~~Phase 4.1 — UI chrome masking + overlay OCR~~ (REMOVED 2026-05-01)
 
 Phase 4.1 was deleted from the pipeline on 2026-05-01 after [[concepts/bugs-and-fixes#BUG 49]] (PaddleOCR wedging the pipeline mid-frame) and [[concepts/bugs-and-fixes#BUG 50]] (MOG2 frame-spacing mismatch made the detector dead code). Stage 5 frames now flow directly to Stage 6 unmodified. The grounding cascade still hard-fails sub/bit/raid/donation claims when chat shows zero events — that channel was always the load-bearing piece, not OCR. See [[concepts/chrome-masking]] (tombstoned) for the historical design.
+
+---
+
+## Stage 5.5 — Vision Judge (tournament re-rank)
+
+New 2026-06-04. Between frame extraction and enrichment, the multimodal model runs a **seeded Swiss tournament** of pairwise "which clip is more engaging sound-off?" comparisons over the top-N candidates (4 reused Stage-5 frames + a transcript window per clip), then applies a **bounded ±25% `raw_score` reweight** from the win-counts — so vision finally *selects* the delivered order, not just titles it. Failure-soft (any outage / too-few moments → Pass C order preserved). The pairwise bracket is persisted to `judge_tournament.json` (read via `logtool axes`). Full detail: [[entities/vision-judge]].
 
 ---
 

@@ -3,7 +3,7 @@ title: "OpenClaw Stream Clipper — Overview"
 type: overview
 tags: [overview, architecture, pipeline, originality, hub]
 sources: 3
-updated: 2026-05-01
+updated: 2026-06-04
 ---
 
 # OpenClaw Stream Clipper
@@ -44,16 +44,16 @@ The pipeline calls LM Studio at `http://host.docker.internal:1234` — Docker's 
 
 ## AI models
 
-| Model | LM Studio ID | Role | Hardware |
-|---|---|---|---|
-| [[entities/qwen35]] | `qwen/qwen3.5-35b-a3b` or `qwen/qwen3.5-9b` (or Gemma 4 `google/gemma-4-26b-a4b`) | **Unified multimodal model** — text detection (Stages 3–4) + vision enrichment (Stage 6). Setting text and vision to the same ID skips the Stage 5→6 VRAM swap. | GPU (LM Studio manages) |
-| ~~[[entities/qwen3-vl]]~~ | *retired — pipeline now uses the multimodal model above* | — | — |
-| [[entities/faster-whisper]] | `large-v3` | Speech-to-text transcription (Stages 2 and 7) | GPU via CUDA → CPU (int8) fallback |
+| Role (config key) | Current ID | Stages |
+|---|---|---|
+| `text_model` | `qwen/qwen3.5-9b` (non-thinking, fast) | Stage 3 + Pass B/D |
+| `vision_model` | `google/gemma-4-12b` (multimodal) | Stage 6 + Vision Judge |
+| [[entities/faster-whisper]] | `large-v3-turbo` (~2.5× faster) | Stages 2 + 7 |
 
-Model IDs are set via `config/models.json` (managed through the dashboard Models panel). LM Studio handles GPU assignment. The pipeline unloads models between stages via `POST /api/v1/models/unload`. See [[concepts/vram-budget]] and [[entities/lm-studio]] for 9B vs 35B behavior differences.
+Model IDs are set via `config/models.json` (dashboard Models panel). Per-stage overrides (`text_model_passb`, `vision_model_stage6`) inherit the above when null. The pipeline unloads/swaps models between stages.
 
-> [!note] 35B vs 9B tradeoffs
-> The 35B model (`qwen3.5-35b-a3b`) produces better moment detection but has permanently-enabled thinking mode in LM Studio (cannot be disabled). Pipeline is designed for this — generous `max_tokens` lets it finish reasoning + answer. 9B is much faster and works correctly with `chat_template_kwargs` suppressing thinking. Both are supported.
+> [!note] Choosing models (2026-06-04 — see [[concepts/model-split]])
+> **Thinking off almost everywhere** — research + BUG 20/57 show reasoning gives no benefit (and can exhaust `max_tokens`) for the pipeline's extraction/classification/generation work; the only candidate is the Vision Judge. The 35B-A3B's mandatory thinking made one run **135 min (Stage 4 = 49%)**. **Two model tiers:** *speed* = small dense (above) on CUDA/NVIDIA-only; *quality* = a big **MoE with thinking off** (`gemma-4-26b-a4b` ~4B active / `qwen3.6-35b-a3b` ~3B active) — better clips at near-small-model compute, fits the **~28 GB** dual-GPU Vulkan pool (RTX 5060 Ti 16 GB + AMD RX 6700 XT 12 GB). A Qwen3-VL would win OCR but PaddleOCR softens that. See [[concepts/vram-budget]].
 
 ---
 
@@ -61,18 +61,22 @@ Model IDs are set via `config/models.json` (managed through the dashboard Models
 
 ```
 Stage 1: Discovery            — find new/named VOD files
-Stage 2: Transcription        — chunked GPU Whisper, cached
+Stage 2: Transcription        — WhisperX (large-v3-turbo), cached
 Stage 3: Segment Detection    — classify stream type, build profile
-Stage 4: Moment Detection     — Pass A keywords + Pass B LLM + Pass C merge/select
+Stage 4: Moment Detection     — Pass A keywords + Pass B LLM + Pass C re-rank (selection axes A/B/C/E) + Pass D rubric
 Stage 4.5 Moment Groups       — (optional) narrative arcs + stitch bundles
 Stage 5: Frame Extraction     — 6 JPEGs per candidate moment
-Stage 6: Vision Enrichment    — score boosts, titles, hook, originality hints
+Stage 5.5 Vision Judge        — multimodal tournament re-rank: lets vision SELECT the winners ([[entities/vision-judge]])
+Stage 6: Vision Enrichment    — titles, hook, originality hints
 Stage 6.5 Camera Pan Prep     — (optional) OpenCV face tracking → crop path
 Stage 7: Editing & Export     — framing + originality + stitch render, batch captions
 Stage 8: Logging              — processed.log, diagnostics JSON, Discord report
 ```
 
 Full detail: [[concepts/clipping-pipeline]]. For the originality-stack sub-stages and render additions, see [[concepts/originality-stack]].
+
+> [!note] Selection-intelligence overhaul (2026-06-04)
+> Selection is no longer transcript-only. Stage 4 Pass C now folds in **per-axis selection signals** — A arc-completeness, B reaction-worthy, C baseline-contrast, E engagement (D batch-diversity deferred) — each a bounded, failure-soft multiplier accumulated under one global clamp. The new **Stage 5.5 Vision Judge** then runs a pairwise tournament so the multimodal model finally *selects* what gets clipped (not just titles it). All of it is instrumented — see [[concepts/clipping-quality-overhaul]] (roadmap), [[entities/vision-judge]], and [[concepts/observability]] (`logtool axes`).
 
 ---
 
@@ -119,6 +123,8 @@ Full detail: [[concepts/clipping-pipeline]]. For the originality-stack sub-stage
 - **One model in VRAM at a time**: explicit unloading between stages prevents OOM; pipeline calls `POST /api/v1/models/unload` at stage transitions
 - **Whisper runs on GPU when available**: runs inside Docker with NVIDIA CUDA; unloads LLM model first; CPU int8 fallback
 - **Vision is non-gatekeeping**: vision enrichment can only boost scores, never eliminate clips; frame content is often visually boring even when audio is clip-worthy
+- **Vision now *selects*, not just titles** (2026-06-04): the Stage 5.5 [[entities/vision-judge]] runs a pairwise tournament to re-rank what gets clipped; Pass C folds in bounded, failure-soft per-axis signals (arc / reaction / baseline / engagement) under one global multiplier clamp — never gating, only re-ranking. See [[concepts/clipping-quality-overhaul]]
+- **Everything is measured** (2026-06-04): per-run `axis_report` + per-stage `stage_timings` + the judge bracket + per-line log timestamps, read back via `logtool axes` — the tune→run→diff loop. See [[concepts/observability]]
 - **Time-bucket distribution**: prevents early-VOD bias by guaranteeing clip selection from each time bucket
 - **Blur-fill rendering**: full 16:9 content visible on 9:16 canvas — no information loss from hard crop
 - **Two text models**: `qwen3.5-9b-instruct` for pipeline (better moment detection), `qwen2.5-7b-instruct` for Discord (reliable tool calling with small models)
