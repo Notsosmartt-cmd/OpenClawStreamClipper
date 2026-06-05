@@ -33,6 +33,20 @@ WINDOW_SIZE_DEFAULT = 30
 STEP_DEFAULT = 10
 SAMPLE_RATE = 22050  # matches scan_music.py for cache reuse opportunities
 
+# Multiprocessing tuning. Parallel scan loads ~975 MB of audio into a
+# shared-memory buffer and fans the per-window HPSS work out across N workers
+# on i9-13900K-class hardware. Each window is ~700 ms of single-thread HPSS;
+# 8 workers gives a sustained ~6-8x throughput lift over the serial path.
+PARALLEL_MIN_WINDOWS = 20      # below this, serial is faster (worker spawn cost dominates)
+PARALLEL_DEFAULT_CAP = 8       # cap workers so we don't starve the rest of the pipeline
+PARALLEL_CHUNKSIZE = 4         # imap chunksize — amortizes per-task IPC overhead
+
+# Per-worker module-global stash. Each Pool worker is a separate Python
+# process (spawn on Windows); it imports librosa once during _worker_init
+# and binds the shared audio buffer + sample rate here so _worker_run
+# can complete a window without re-importing or re-attaching.
+_WORKER_STATE: Dict[str, Any] = {}
+
 
 def _try_import_librosa():
     try:
@@ -133,16 +147,167 @@ _ZERO_RESULT = {
 }
 
 
-def _run_detectors(y, sr, librosa, np) -> Dict[str, float]:
+# RMS energy threshold below which a window is considered silent enough
+# that running the (expensive) HPSS-driven detectors is wasted work. The
+# value is conservative — a normal speech window sits around 0.05-0.15,
+# music around 0.10-0.30, and complete silence near 0.001. 0.01 catches
+# dead-air / fade-to-black / "music between segments" with no false
+# positives on real speech. Tuneable via ``AUDIO_EVENTS_RMS_GATE`` env var.
+_RMS_GATE_DEFAULT = 0.01
+
+
+def _rms_below_gate(y, np, gate: float) -> bool:
+    """Cheap energy check (one numpy reduction) used to early-exit before
+    invoking HPSS on a silent window. Returns True if the window is too
+    quiet to plausibly contain a clip-worthy signal."""
+    try:
+        rms = float(np.sqrt(np.mean(np.square(y, dtype=np.float64))))
+    except Exception:
+        return False
+    return rms < gate
+
+
+def _resolve_rms_gate() -> float:
+    """``AUDIO_EVENTS_RMS_GATE`` env override → default. Set to ``0`` to
+    disable the gate entirely (run HPSS on every window like before)."""
+    env = os.environ.get("AUDIO_EVENTS_RMS_GATE", "").strip()
+    if env:
+        try:
+            v = float(env)
+            if v >= 0:
+                return v
+        except ValueError:
+            pass
+    return _RMS_GATE_DEFAULT
+
+
+def _run_detectors(y, sr, librosa, np, rms_gate: Optional[float] = None) -> Dict[str, float]:
     """Run all three detectors on a pre-loaded waveform. Internal helper —
-    keeps the per-window cost to STFT/feature ops only (no file I/O)."""
+    keeps the per-window cost to STFT/feature ops only (no file I/O).
+
+    Early-exits to a zero result on silent windows (saves the ~700 ms HPSS
+    cost on dead-air / fade-to-black / between-segment silences). Pass
+    ``rms_gate=0`` to disable the gate; defaults to the module-level
+    ``_resolve_rms_gate()`` value (env-overridable).
+    """
     if y is None or len(y) < sr // 2:
+        return dict(_ZERO_RESULT)
+    if rms_gate is None:
+        rms_gate = _resolve_rms_gate()
+    if rms_gate > 0 and _rms_below_gate(y, np, rms_gate):
         return dict(_ZERO_RESULT)
     return {
         "rhythmic_speech": round(_detect_rhythmic_speech(y, sr, librosa, np), 3),
         "crowd_response": round(_detect_crowd_response(y, sr, librosa, np), 3),
         "music_dominance": round(_detect_music_dominance(y, sr, librosa, np), 3),
     }
+
+
+# ---------------------------------------------------------------------------
+# Multiprocessing worker plumbing (parallel scan path)
+# ---------------------------------------------------------------------------
+
+def _worker_init(shm_name: str, shm_shape, shm_dtype: str, sr: int) -> None:
+    """Pool initializer: each worker process imports librosa once, attaches
+    to the parent's shared audio buffer (no copy), and binds the result into
+    a module-global stash that ``_worker_run`` reads from.
+
+    On Windows (spawn), this runs inside a freshly-imported copy of this
+    module — so the librosa import cost (1-3 s) hits once per worker at pool
+    startup, not once per window. Amortized over hundreds of windows the
+    spawn cost is negligible vs the HPSS savings.
+    """
+    import numpy as np  # type: ignore
+    from multiprocessing import shared_memory as _shm_mod
+
+    librosa, _ = _try_import_librosa()
+    if librosa is None:
+        # If librosa isn't importable in the worker, mark the state empty;
+        # _worker_run will fall back to zero-result on every task.
+        _WORKER_STATE["librosa"] = None
+        _WORKER_STATE["np"] = np
+        return
+
+    shm = _shm_mod.SharedMemory(name=shm_name)
+    y_full = np.ndarray(shm_shape, dtype=np.dtype(shm_dtype), buffer=shm.buf)
+
+    _WORKER_STATE["librosa"] = librosa
+    _WORKER_STATE["np"] = np
+    _WORKER_STATE["y_full"] = y_full
+    _WORKER_STATE["sr"] = int(sr)
+    # MUST keep the SharedMemory handle alive — closing it while ``y_full``
+    # still references the buffer is a use-after-free at the C level.
+    _WORKER_STATE["shm"] = shm
+
+
+def _worker_run(task: Tuple[int, int, float, float]) -> Dict[str, Any]:
+    """Worker entry point: process one window and return the JSON-ready dict.
+
+    Identical schema to the serial path so the caller can splice results
+    back into the windows list unchanged.
+    """
+    s_idx, e_idx, t_start, t_end = task
+    librosa = _WORKER_STATE.get("librosa")
+    np = _WORKER_STATE["np"]
+    if librosa is None or "y_full" not in _WORKER_STATE:
+        return {
+            "start": round(t_start, 1),
+            "end": round(t_end, 1),
+            **_ZERO_RESULT,
+        }
+    y_full = _WORKER_STATE["y_full"]
+    sr = _WORKER_STATE["sr"]
+    y = y_full[s_idx:e_idx]
+    result = _run_detectors(y, sr, librosa, np)
+    return {
+        "start": round(t_start, 1),
+        "end": round(t_end, 1),
+        **result,
+    }
+
+
+def _resolve_worker_count(n_workers: Optional[int]) -> int:
+    """Decide how many workers to spin up. Priority order:
+
+    1. Explicit ``n_workers`` argument (CLI ``--workers`` or call site)
+    2. ``AUDIO_EVENTS_WORKERS`` env var
+    3. Auto: ``min(PARALLEL_DEFAULT_CAP, os.cpu_count() - 2)``, floored at 1
+    """
+    if n_workers is not None and n_workers > 0:
+        return int(n_workers)
+    env = os.environ.get("AUDIO_EVENTS_WORKERS", "").strip()
+    if env:
+        try:
+            v = int(env)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    cpu = os.cpu_count() or 4
+    return max(1, min(PARALLEL_DEFAULT_CAP, cpu - 2))
+
+
+def _build_window_tasks(
+    duration_hint: float,
+    window_size: int,
+    step: int,
+    sr: int,
+    n_samples: int,
+) -> List[Tuple[int, int, float, float]]:
+    """Pre-compute the (start_idx, end_idx, t_start, t_end) tuples that
+    define every window the scan will process. Shared between serial and
+    parallel code paths so they can't drift on window boundaries."""
+    tasks: List[Tuple[int, int, float, float]] = []
+    t = 0.0
+    while t < duration_hint:
+        end_t = min(duration_hint, t + window_size)
+        if end_t - t < 5.0:  # skip tiny tail windows
+            break
+        s_idx = int(t * sr)
+        e_idx = min(int(end_t * sr), n_samples)
+        tasks.append((s_idx, e_idx, t, end_t))
+        t += step
+    return tasks
 
 
 def detect_window(
@@ -171,6 +336,130 @@ def detect_window(
     return _run_detectors(y, sr, librosa, np)
 
 
+def _scan_parallel(
+    y_full,
+    sr: int,
+    tasks: List[Tuple[int, int, float, float]],
+    n_workers: int,
+    n_total_estimate: int,
+    progress_every: int,
+    t_scan: float,
+) -> Tuple[List[Dict[str, Any]], Tuple[int, int, int], bool]:
+    """Run the per-window detectors across a Pool of ``n_workers`` processes,
+    sharing the audio buffer through ``multiprocessing.shared_memory`` so no
+    975 MB pickle copies are made per worker.
+
+    Returns ``(windows, (rhythmic_fires, crowd_fires, music_fires), ok)``.
+    On any setup failure (shared-memory creation, pool spawn, librosa import
+    in workers, etc.) returns ``([], (0,0,0), False)`` — the caller falls
+    back to the serial loop with ``y_full`` still in scope.
+    """
+    try:
+        from multiprocessing import Pool
+        from multiprocessing import shared_memory
+        import numpy as np  # type: ignore
+    except Exception as e:
+        print(
+            f"[AUDIO_EVENTS] parallel scan unavailable ({e}); falling back to serial",
+            file=sys.stderr,
+        )
+        sys.stderr.flush()
+        return [], (0, 0, 0), False
+
+    shm = None
+    pool: Optional[Any] = None
+    try:
+        # Materialize the audio into a shared-memory buffer. Workers attach
+        # by name (cross-process) and view it as a numpy ndarray with zero
+        # extra allocations.
+        shm = shared_memory.SharedMemory(create=True, size=int(y_full.nbytes))
+        shm_view = np.ndarray(y_full.shape, dtype=y_full.dtype, buffer=shm.buf)
+        shm_view[:] = y_full[:]
+
+        print(
+            f"[AUDIO_EVENTS] parallel scan: {n_workers} workers, "
+            f"{len(tasks)} windows, {y_full.nbytes // (1024*1024)} MB shared "
+            f"memory ('{shm.name}')",
+            file=sys.stderr,
+        )
+        sys.stderr.flush()
+
+        windows: List[Dict[str, Any]] = []
+        n_fired_rhythmic = 0
+        n_fired_crowd = 0
+        n_fired_music = 0
+
+        pool = Pool(
+            processes=n_workers,
+            initializer=_worker_init,
+            initargs=(shm.name, tuple(shm_view.shape), str(shm_view.dtype), sr),
+        )
+        try:
+            # imap preserves submission order → windows come back in time
+            # order. chunksize amortizes per-task IPC overhead (a single
+            # task is ~700 ms of HPSS work; chunksize=4 batches ~2.8 s of
+            # work per dispatch which dwarfs the ~50 µs round-trip cost).
+            for i, result in enumerate(
+                pool.imap(_worker_run, tasks, chunksize=PARALLEL_CHUNKSIZE),
+                1,
+            ):
+                windows.append(result)
+                if result["rhythmic_speech"] >= 0.7:
+                    n_fired_rhythmic += 1
+                if result["crowd_response"] >= 0.5:
+                    n_fired_crowd += 1
+                if result["music_dominance"] >= 0.6:
+                    n_fired_music += 1
+                if progress_every > 0 and i % progress_every == 0:
+                    elapsed = time.time() - t_scan
+                    rate = i / elapsed if elapsed > 0 else 0.0
+                    remaining = max(0, n_total_estimate - i)
+                    eta = remaining / rate if rate > 0 else 0.0
+                    print(
+                        f"[AUDIO_EVENTS] {i}/~{n_total_estimate} windows "
+                        f"({elapsed:.0f}s elapsed, ~{eta:.0f}s remaining, "
+                        f"{rate:.1f} win/s) [parallel x{n_workers}]",
+                        file=sys.stderr,
+                    )
+                    sys.stderr.flush()
+        finally:
+            try:
+                pool.close()
+                pool.join()
+            except Exception:
+                # Pool teardown failure shouldn't poison the results we
+                # collected. Just log and move on.
+                pass
+
+        return windows, (n_fired_rhythmic, n_fired_crowd, n_fired_music), True
+
+    except Exception as e:
+        # Anything in the parallel path failed — clean up and signal the
+        # caller to fall back to serial. We don't write a partial result.
+        print(
+            f"[AUDIO_EVENTS] parallel scan failed ({type(e).__name__}: {e}); "
+            f"falling back to serial",
+            file=sys.stderr,
+        )
+        sys.stderr.flush()
+        if pool is not None:
+            try:
+                pool.terminate()
+                pool.join()
+            except Exception:
+                pass
+        return [], (0, 0, 0), False
+    finally:
+        # Always release the shared-memory buffer in the parent. Workers
+        # are gone by now (pool was closed/terminated above) so it's safe.
+        if shm is not None:
+            try:
+                shm.close()
+                shm.unlink()
+            except Exception:
+                pass
+
+
 def scan_audio_events(
     audio_path: str,
     out_path: str,
@@ -178,6 +467,7 @@ def scan_audio_events(
     step: int = STEP_DEFAULT,
     duration_hint: Optional[float] = None,
     progress_every: int = 100,
+    n_workers: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Slide ``window_size`` / ``step`` windows across ``audio_path`` and
     write per-window detector outputs to ``out_path`` as JSON.
@@ -194,6 +484,17 @@ def scan_audio_events(
     Progress is logged every ``progress_every`` windows with an explicit
     ``stderr.flush()`` so callers see updates in real time even when
     stderr is block-buffered through a pipe.
+
+    ``n_workers`` controls the parallel scan path (2026-06-04 fix):
+    - ``None`` (default): auto-resolve via :func:`_resolve_worker_count`
+      (``AUDIO_EVENTS_WORKERS`` env var → ``min(8, cpu-2)`` floor)
+    - ``1``: force serial path (the original loop)
+    - ``>=2``: spawn that many worker processes
+    Parallel is only used when ≥ ``PARALLEL_MIN_WINDOWS`` windows are
+    queued (below that the spawn/SHM overhead exceeds the savings). On
+    Windows (spawn semantics) the per-worker librosa import is paid
+    once at pool startup; amortized over hundreds of windows it's
+    invisible vs the HPSS cost.
     """
     librosa, np = _try_import_librosa()
     if librosa is None:
@@ -268,48 +569,77 @@ def scan_audio_events(
     )
     sys.stderr.flush()
 
+    # Pre-build the window task list — shared by serial + parallel paths so
+    # they can't drift on window boundaries.
+    tasks = _build_window_tasks(duration_hint, window_size, step, sr, len(y_full))
+
+    # Resolve worker count and decide which path to take. Parallel is only
+    # worth it when there are enough tasks to amortize pool startup.
+    resolved_workers = _resolve_worker_count(n_workers)
+    use_parallel = (
+        resolved_workers >= 2
+        and len(tasks) >= PARALLEL_MIN_WINDOWS
+    )
+
     windows: List[Dict[str, Any]] = []
     n_fired_rhythmic = 0
     n_fired_crowd = 0
     n_fired_music = 0
-    t = 0.0
     t_scan = time.time()
-    while t < duration_hint:
-        end_t = min(duration_hint, t + window_size)
-        if end_t - t < 5.0:  # avoid tiny tail windows
-            break
-        s_idx = int(t * sr)
-        e_idx = min(int(end_t * sr), len(y_full))
-        y = y_full[s_idx:e_idx]
-        result = _run_detectors(y, sr, librosa, np)
-        windows.append({
-            "start": round(t, 1),
-            "end": round(end_t, 1),
-            **result,
-        })
-        if result["rhythmic_speech"] >= 0.7:
-            n_fired_rhythmic += 1
-        if result["crowd_response"] >= 0.5:
-            n_fired_crowd += 1
-        if result["music_dominance"] >= 0.6:
-            n_fired_music += 1
-        if progress_every > 0 and len(windows) % progress_every == 0:
-            elapsed = time.time() - t_scan
-            rate = len(windows) / elapsed if elapsed > 0 else 0.0
-            remaining = max(0, n_total_estimate - len(windows))
-            eta = remaining / rate if rate > 0 else 0.0
-            print(
-                f"[AUDIO_EVENTS] {len(windows)}/~{n_total_estimate} windows "
-                f"({elapsed:.0f}s elapsed, ~{eta:.0f}s remaining, "
-                f"{rate:.1f} win/s)",
-                file=sys.stderr,
-            )
-            sys.stderr.flush()
-        t += step
+    backend_used = "librosa"
 
-    # Free the full waveform before writing — small but courteous on
-    # tight-RAM hosts where Stage 3+ are about to load the LLM.
-    del y_full
+    if use_parallel:
+        windows, fires, parallel_ok = _scan_parallel(
+            y_full=y_full, sr=sr, tasks=tasks,
+            n_workers=resolved_workers,
+            n_total_estimate=n_total_estimate,
+            progress_every=progress_every,
+            t_scan=t_scan,
+        )
+        if parallel_ok:
+            n_fired_rhythmic, n_fired_crowd, n_fired_music = fires
+            backend_used = f"librosa+mp{resolved_workers}"
+            del y_full
+        else:
+            # Parallel path bailed (shared-memory setup failure, librosa
+            # missing in workers, etc.) — fall through to the serial loop
+            # with y_full still in scope.
+            windows = []
+            use_parallel = False
+
+    if not use_parallel:
+        print(
+            f"[AUDIO_EVENTS] serial scan: {len(tasks)} windows",
+            file=sys.stderr,
+        )
+        sys.stderr.flush()
+        for i, (s_idx, e_idx, t_start, t_end) in enumerate(tasks, 1):
+            y = y_full[s_idx:e_idx]
+            result = _run_detectors(y, sr, librosa, np)
+            windows.append({
+                "start": round(t_start, 1),
+                "end": round(t_end, 1),
+                **result,
+            })
+            if result["rhythmic_speech"] >= 0.7:
+                n_fired_rhythmic += 1
+            if result["crowd_response"] >= 0.5:
+                n_fired_crowd += 1
+            if result["music_dominance"] >= 0.6:
+                n_fired_music += 1
+            if progress_every > 0 and i % progress_every == 0:
+                elapsed = time.time() - t_scan
+                rate = i / elapsed if elapsed > 0 else 0.0
+                remaining = max(0, n_total_estimate - i)
+                eta = remaining / rate if rate > 0 else 0.0
+                print(
+                    f"[AUDIO_EVENTS] {i}/~{n_total_estimate} windows "
+                    f"({elapsed:.0f}s elapsed, ~{eta:.0f}s remaining, "
+                    f"{rate:.1f} win/s) [serial]",
+                    file=sys.stderr,
+                )
+                sys.stderr.flush()
+        del y_full
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(json.dumps({
@@ -317,17 +647,20 @@ def scan_audio_events(
         "window_size": window_size,
         "step": step,
         "duration": round(duration_hint, 1),
-        "backend": "librosa",
+        "backend": backend_used,
     }), encoding="utf-8")
+    elapsed = time.time() - t_scan
+    rate = len(windows) / elapsed if elapsed > 0 else 0.0
     print(
         f"[AUDIO_EVENTS] scanned {len(windows)} windows of {window_size}s in "
-        f"{time.time()-t_scan:.1f}s (rhythmic_fires={n_fired_rhythmic} "
-        f"crowd_fires={n_fired_crowd} music_fires={n_fired_music})",
+        f"{elapsed:.1f}s ({rate:.1f} win/s, backend={backend_used}; "
+        f"rhythmic_fires={n_fired_rhythmic} crowd_fires={n_fired_crowd} "
+        f"music_fires={n_fired_music})",
         file=sys.stderr,
     )
     return {
         "windows": len(windows),
-        "backend": "librosa",
+        "backend": backend_used,
         "rhythmic_fires": n_fired_rhythmic,
         "crowd_fires": n_fired_crowd,
         "music_fires": n_fired_music,
@@ -391,15 +724,25 @@ def _cli() -> None:
     ap.add_argument("--window", type=int, default=WINDOW_SIZE_DEFAULT, help="Window size (sec)")
     ap.add_argument("--step", type=int, default=STEP_DEFAULT, help="Slide step (sec)")
     ap.add_argument("--duration", type=float, default=None, help="Audio duration hint (sec)")
+    ap.add_argument(
+        "--workers", type=int, default=0,
+        help="Parallel worker count for the per-window scan. 0=auto "
+             "(env AUDIO_EVENTS_WORKERS, else min(8, cpu-2)); 1=force serial; "
+             "N>=2=that many workers (default: 0)",
+    )
     args = ap.parse_args()
     summary = scan_audio_events(
         args.audio, args.out,
         window_size=args.window, step=args.step,
         duration_hint=args.duration,
+        n_workers=(args.workers if args.workers > 0 else None),
     )
     json.dump(summary, sys.stdout)
     sys.stdout.write("\n")
 
 
 if __name__ == "__main__":
+    # Multiprocessing spawn on Windows imports this module fresh in each
+    # worker. Keeping the Pool setup inside scan_audio_events (not at
+    # module top level) plus this __main__ guard makes the import safe.
     _cli()

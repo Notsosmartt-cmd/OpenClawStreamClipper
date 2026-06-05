@@ -1,102 +1,119 @@
 ---
-title: "qwen3.5:9b"
+title: "Qwen 3.5 / 3.6 (pipeline text family)"
 type: entity
-tags: [model, llm, alibaba, qwen, reasoning, pipeline, infrastructure, stage-3, stage-4, stage-6, text, vision, hub]
-sources: 2
-updated: 2026-04-07
+tags: [model, llm, alibaba, qwen, pipeline, infrastructure, stage-3, stage-4, text, vision-claim, hub]
+sources: 3
+updated: 2026-06-04
 ---
 
-# qwen3.5:9b
+# Qwen 3.5 / 3.6 (pipeline text family)
 
-Alibaba's Qwen 3.5 9B parameter model. Used as the **pipeline text model** in the stream clipper — handles segment classification (Stage 3) and LLM moment detection (Stage 4 Pass B).
+Alibaba's Qwen text family. The current pipeline `text_model` is **`qwen/qwen3.5-9b`** (Stage 3 + Pass B + Pass D) — see `config/models.json`.
 
-Not the same as the Discord agent model. See [[entities/qwen25]] for the Discord bot model.
+Other family members the user has installed locally (LM Studio, see [hardware-specs](C:\Users\user\.claude\projects\G--OpenClawStreamClipper\memory\hardware-specs.md)):
 
-Quantization: default Ollama GGUF. VRAM: ~11.2GB at 32K context. Served by [[entities/ollama]].
+| Variant | Q4_K_M VRAM | Notes |
+|---|---|---|
+| `qwen/qwen3.5-9b` | 6.5 GB | **current `text_model`** — non-thinking by default; fits 16 GB CUDA |
+| `qwen/qwen3.6-27b` | 17.5 GB | dense; quality candidate but needs Vulkan pool at Q4_K_M (UD-Q3_K_XL ~14.5 GB fits CUDA) |
+| `qwen/qwen3.6-35b-a3b` | 22.1 GB | MoE ~3B active; needs Vulkan pool; **thinking can be disabled** via LM Studio Custom Fields toggle (verified 2026-06-04 — see narrowed [[concepts/bugs-and-fixes]] BUG 57) |
 
----
+Served by [[entities/lm-studio]] at `localhost:1234`.
 
-## Role: Pipeline text analysis
-
-**Stage 3 — Segment classification:**
-- Classifies each 10-minute transcript chunk into one type: `gaming`, `irl`, `just_chatting`, `reaction`, or `debate`
-- Uses a cheap prompt with `num_predict=10` — outputs a single word
-- Very fast (~1 second per chunk)
-
-**Stage 4 Pass B — LLM moment analysis:**
-- Analyzes 5-minute transcript chunks with 30-second overlap
-- Segment-specific prompts tailored to the classified stream type
-- Looks for: setup+payoff, storytelling, situational irony, social dynamics, quotable moments
-- Returns JSON: `[{time: "MM:SS", score: 1-10, category, why}]`
-- Lower detection threshold (score 3–5 included) — the selection algorithm makes the final call
-
-> [!note] think=false required
-> Must be called with `think=false`. When thinking mode is enabled, the 9B model exhausts its token budget on internal reasoning and never produces output. This is a known issue with the current Ollama build for this model.
+> [!note] This page replaces the older Ollama-era qwen35 doc (2026-04)
+> Previous text mentioned ~11.2 GB at 32K context and Ollama-served calls. Both are stale — LM Studio replaced Ollama 2026-04-18 ([[entities/ollama]] retired), and the active model is the 6.5 GB Qwen 3.5 9B at Q4_K_M.
 
 ---
 
-## Why not use qwen3.5:9b for the Discord bot?
+## Role: pipeline text analysis (current)
 
-The Discord agent uses [[entities/qwen25]] (qwen2.5:7b) instead of qwen3.5:9b because:
-- Small models (7B) with minimal system prompts produce more **consistent structured tool calls** (JSON)
-- qwen3.5:9b, despite being more capable for analysis, tends to describe what it wants to do instead of making the tool call
-- For the pipeline's analysis tasks (not tool calling), qwen3.5:9b's superior reasoning matters; for Discord dispatch, reliability matters more
+**Stage 3 — Segment classification** (`text_model`):
+- Classifies each ~10-min transcript chunk into one of: `gaming`, `irl`, `just_chatting`, `reaction`, `debate`.
+- Tiny prompt + JSON output. Fast.
 
-qwen3.5:9b found 3 contextual moments in benchmark tests where qwen2.5:7b found 0 — making it significantly better for moment detection. But it's ~2x slower per call.
+**Stage 4 Pass B — LLM moment detection** (`text_model_passb` ?? `text_model`):
+- Walks the transcript in chunks; emits JSON array of `{time, score, category, why, ...}` candidates.
+- The **dominant** LLM stage by wall-clock — ~80-120 calls on a 4 h VOD, ~4-8K context each.
+- Segment-aware prompts tailored to the Stage 3 classification.
+
+**Stage 4 Pass D — Rubric judge** (same model):
+- Per-candidate single-JSON-object scoring on a fixed rubric. ~30-80 calls per run.
+- The only text stage where reasoning could plausibly help — currently kept thinking-OFF for safety (see [[concepts/model-split]] thinking policy).
 
 ---
 
-## Segment-aware prompting
+## Qwen 3.6 multimodal — confirmed across the family (2026-06-04 third-pass research)
 
-Different system prompts are used depending on the classified segment type:
+**Both Qwen 3.6 27B dense AND Qwen 3.6 35B-A3B MoE are natively multimodal.** No separate `Qwen3.6-VL` line exists — vision is baked into the base 3.6 weights. Confirmed via:
+- HF model cards list `image-text-to-text` task class with vision encoder weights packaged
+- vLLM Qwen3.5/3.6 recipes doc references the vision tower (~333 keys, ~100 MB), with `--language-model-only` flag to skip the encoder
+- The QwenLM/Qwen3.6 GitHub README is **misleading** (it omits vision), but the deployed artifacts include it
 
-| Segment type | Detection focus |
+**Vision benchmarks for `qwen/qwen3.6-35b-a3b`** (thinking-on, Alibaba's HF card):
+
+| Benchmark | Score |
 |---|---|
-| `gaming` | Clutch plays, epic wins/losses, rage quits, skill moments |
-| `irl` | Funny stories, emotional moments, surprising encounters |
-| `just_chatting` | Hot takes, funny stories, emotional vulnerability, audience interaction |
-| `reaction` | Strong reactions, controversial takes, emotional responses |
-| `debate` | Persuasive arguments, heated exchanges, mic-drop moments |
+| MMMU | **81.7** |
+| MMMU-Pro | **75.3** |
+| MMBench EN-DEV-v1.1 | **92.8** |
+| MathVista-mini | 86.4 |
+| RealWorldQA | 85.3 |
+| OmniDocBench 1.5 | 89.9 |
+| VideoMME w/sub | 86.6 |
+| VideoMMMU | 83.7 |
 
-Style-aware hints from the `--style` flag are appended to the prompt to bias detection.
+These are top-of-leaderboard numbers — competitive with or ahead of Qwen3-VL-30B-A3B on most general visual benches (Qwen3-VL still wins specifically on ScreenSpot 94.7% UI grounding and OCRBench 903).
 
----
+**Implication**: `qwen/qwen3.6-35b-a3b` is plausibly the **single best model for the entire pipeline** — top-tier text AND vision in one ~22 GB MoE (~3B active = fast on Vulkan pool), with the [[concepts/bugs-and-fixes]] BUG 57 toggle workaround verified. See [[concepts/vlm-comparison-2026-06]] and [[concepts/model-split]] for the consolidation strategy.
 
-## Context window management
+## Qwen 3.5-9B multimodal — verified by LM Studio (2026-06-04, second-pass correction)
 
-- Full context: 262,144 tokens (Qwen 3.5 architecture)
-- Pipeline caps to: **32K tokens** via `OLLAMA_CONTEXT_LENGTH=32768`
-- VRAM at 32K context: ~11.2GB
+**Confirmed working.** LM Studio's Hub tags `qwen/qwen3.5-9b` with **Capabilities: Vision, Tool Use, Reasoning** and a **Staff Pick** badge (1.99M downloads, last updated 1 day before 2026-06-04). LM Studio's team explicitly verifies multimodal support before applying the Vision tag — this is the ground-truth signal, not the bare HuggingFace repo's mmproj packaging state.
 
-The 32K cap is deliberate — transcript chunks are well within this limit, and a larger context would push VRAM past 16GB.
+- **Architecture**: early-fusion multimodal (Alibaba HF card claims MMMU 78.4, OCRBench 89.2 — single-source; not third-party verified).
+- **LM Studio install**: bundled mmproj, works out of the box. Vision support is **NOT "Partial"** as an earlier note here claimed.
+- **Quick verification test**: load `qwen/qwen3.5-9b` in LM Studio, drag an image into the chat, ask "describe this image." A coherent description = vision works. If a user reports otherwise, that flips the recommendation.
 
----
+> [!warning] Earlier first-pass eval was wrong
+> The first version of this section (2026-06-04 morning) claimed "text-only in production" based on stale HF repo state. The user surfaced LM Studio's Staff Pick + Vision tag screenshot the same day, refuting that. Treat the multimodal capability as **verified in LM Studio**; treat the MMMU 78.4 number as **single-source pending independent reproduction**.
 
-## VRAM orchestration
-
-qwen3.5:9b stays loaded from Stage 3 through Stage 4:
-```
-Stage 3: Load qwen3.5:9b (~11.2GB) → Classify segments → Keep loaded
-Stage 4: qwen3.5:9b still loaded → LLM moment analysis
-Stage 6 prep: Unload qwen3.5:9b → Load qwen3-vl:8b
-```
-
-See [[concepts/vram-budget]].
+→ **Consolidation opportunity**: with vision working, `qwen3.5-9b` could fill BOTH slots (`text_model` AND `vision_model`) — single 6.5 GB model, zero text↔vision swap, fits CUDA single-card with 10 GB of headroom. The trade-off is Gemma 4 12B's documented **IFEval 88.9** (best JSON-extraction reliability at this size class) — quantifiable in head-to-head testing. See [[concepts/text-comparison-2026-06]] for the call.
 
 ---
 
-## Known issues
+## Thinking policy
 
-> [!warning] Vision inference broken in Ollama (2026)
-> Despite qwen3.5:9b's architecture supporting vision via early fusion, its GGUF multimodal projector is not handled correctly by Ollama. All vision tasks are routed to [[entities/qwen3-vl]] instead.
+- `qwen3.5-9b` is **non-thinking by default** — no special flag needed. Stage 3, Pass B, and Pass D all run fast.
+- `qwen3.6-35b-a3b` has thinking ON by default but the **LM Studio app-side toggle disables it** (verified 2026-06-04). The OpenAI-compat API param `enable_thinking:false` is still ignored (BUG 57).
+- Per-stage policy in [[concepts/model-split]] §Thinking: OFF for Stage 3, Pass B, Pass D, Stage 6; only candidate for ON is the [[entities/vision-judge]] (Stage 5.5) and that's still untested.
+
+---
+
+## VRAM choreography
+
+`qwen3.5-9b` at 6.5 GB Q4_K_M + 32K context KV cache fits comfortably on the RTX 5060 Ti 16 GB CUDA. Paired with the 7.6 GB `gemma-4-12b` vision model (14.1 GB combined) the two may even co-reside, eliminating the text↔vision swap entirely. See [[concepts/vram-budget]].
+
+---
+
+## Why not 3.6 dense / MoE for `text_model`?
+
+Per [[concepts/model-split]] tier table:
+
+- **Speed pick** — `qwen3.5-9b` (current). Best throughput for the heavy Pass B workload.
+- **Balanced** — `openai/gpt-oss-20b` (installed, 12.1 GB MXFP4 CUDA-fit, runtime-tunable `reasoning_effort` Low/Med/High that actually works).
+- **Quality** — `qwen3.6-35b-a3b` with **Enable Thinking OFF** (Vulkan pool, MoE 3B active keeps it fast). Newly viable post-BUG-57-narrowing.
 
 ---
 
 ## Related
-- [[entities/qwen25]] — the Discord agent model (qwen2.5:7b)
-- [[entities/qwen3-vl]] — the vision model used in Stage 6
-- [[entities/ollama]] — serves this model
+
+- [[concepts/model-split]] — text-slot tier table and thinking policy
+- [[concepts/vlm-comparison-2026-06]] — verifies the qwen3.5-9b vision claim is practically fragile
+- [[concepts/bugs-and-fixes]] — BUG 57 (narrowed); BUG 20 (token exhaustion)
+- [[entities/gemma4]] — current vision slot
+- [[entities/qwen3-vl]] — recommended migration target for vision
+- [[entities/lm-studio]] — serves the GGUF
 - [[concepts/clipping-pipeline]] — Stages 3 and 4
-- [[concepts/segment-detection]] — Stage 3 in detail
-- [[concepts/highlight-detection]] — Stage 4 in detail
+- [[concepts/segment-detection]] — Stage 3
+- [[concepts/highlight-detection]] — Stage 4 detail
 - [[concepts/vram-budget]] — memory orchestration

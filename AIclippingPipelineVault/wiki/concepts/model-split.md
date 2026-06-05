@@ -67,14 +67,57 @@ External evidence (a study of thinking mode in local agent workflows + extractio
 
 ### Evaluation notes (2026-06-04 — calibrating the picks)
 
-- **Qwen3-VL's edge is OCR-specific, not blanket.** Benchmarks: Qwen3-VL-8B ~96% DocVQA / ~90% OCRBench ("Qwen wins at every OCR tier"), but **Gemma 4 31B leads general visual reasoning (MMMU-Pro ~77)**. For the Judge's holistic "which clip is better," Gemma is competitive. **And the pipeline already runs PaddleOCR** (BUG 40/41) for hard on-screen text → the VLM's OCR edge is *partly redundant*. So Qwen3-VL is a reasonable grounding **test, not a must-do**; installed gemma-4-12b / qwen3.5-9b are fine.
-- **MoE = quality of total params at compute of active params.** `gemma-4-26b-a4b` (~4B active) / `qwen3.6-35b-a3b` (~3B active) are **higher-quality than 9–12B dense** at near-small-model compute — the right *quality* lever (the user's actual complaint), and they fit the ~28 GB pool. Caveats: a MoE is slightly below a same-total *dense* model ("dense 27B > 35B-A3B"), and a multi-GPU split adds memory-access overhead. **The 35B-A3B's 67-min Stage 4 was the *thinking*, not the MoE** — with thinking OFF it's cheap. → **Quality tier = a big MoE with thinking off.**
-- **CUDA beats Vulkan on *prompt processing* (~ties on generation).** The pipeline is prompt-heavy (long Pass B chunks, image inputs), so CUDA/NVIDIA-only helps where it matters — for models that fit 16 GB. Verify CUDA runs cleanly on the Blackwell sm_120 card.
+> [!note] Updated 2026-06-04 — the earlier "Qwen3-VL OCR-specific, not blanket" note was too dismissive
+> Full head-to-head benchmark data and architectural analysis now lives in [[concepts/vlm-comparison-2026-06]]. Highlights below; read that page for the table + sources.
 
-### Best per-role picks (research-grounded)
+- **Qwen3-VL is a defensible upgrade for the vision slot.** Earlier framing called it OCR-only-redundant because PaddleOCR already handles overlay text. That missed two facts: (a) Qwen3-VL's published **ScreenSpot 94%+** UI grounding directly serves the `chrome_regions` job (chat/logo/cam bbox detection in [[concepts/vision-enrichment]] §What the model outputs), and (b) Stage 5.5 ([[entities/vision-judge]]) is a multi-frame video-temporal task that Qwen3-VL's native multi-image + Text-Timestamp Alignment is purpose-built for. Gemma 4 has **no published ScreenSpot / MVBench / OCRBench** in primary sources, so picking it for this workload trusts a general multimodal claim without the workload-specific bench. **`Qwen3-VL-8B-Instruct` is the recommended migration target** (~5.7 GB Q4 fits CUDA, multi-image native, ScreenSpot 94%). Status quo `gemma-4-12b` is still defensible but watches several open llama.cpp CUDA bugs ([[entities/gemma4]] §Known issues).
+- **MoE = quality of total params at compute of active params.** `gemma-4-26b-a4b` (~4B active) / `qwen3.6-35b-a3b` (~3B active) are higher-quality than 9–12B dense at near-small-model compute, and fit the ~28 GB Vulkan pool. Caveats: a MoE is slightly below a same-total *dense* model ("dense 27B > 35B-A3B"), and a multi-GPU split adds memory-access overhead (~30-40% throughput loss per [llama.cpp #16767](https://github.com/ggml-org/llama.cpp/issues/16767)). **The 35B-A3B's 67-min Stage 4 was the *thinking*, not the MoE** — with thinking OFF it's cheap.
+- **BUG 57 narrowed 2026-06-04** — the LM Studio app-side Custom Fields → Enable Thinking toggle DOES work on `qwen3.6-35b-a3b` (verified `reasoning_tokens=0`). Only the API param is broken. So the 35B-A3B is **back on the menu as a quality text candidate** via the app-side toggle. → **Quality tier (text) = a big MoE with app-side thinking off.**
+- **CUDA beats Vulkan on prompt processing (~ties on generation).** The pipeline is prompt-heavy (long Pass B chunks, image inputs), so CUDA/NVIDIA-only helps where it matters — for models that fit 16 GB. NVIDIA Vulkan is ~2× slower than CUDA single-card per [llama.cpp #10879](https://github.com/ggml-org/llama.cpp/discussions/10879).
+- **Qwen3.5-9B's "multimodal" claim is text-only in practice.** Mainline LM Studio GGUF ships text-only (no mmproj); community VLM build is marked "Partial" support. Treat as text-only in production. See [[entities/qwen35]] §The multimodal claim.
 
-- **Text role** (`text_model`: Stage 3 + Pass B + Pass D) — non-thinking, fits the NVIDIA card: `qwen3.5-9b` (6.5, fastest) or `gpt-oss-20b` at low effort (12.1, strongest extraction that still fits 16 GB).
-- **Vision role** (`vision_model`: Stage 6 + Judge) — a **Qwen3-VL** vision specialist is the research winner for OCR/UI grounding (reads Twitch chrome → better titles + less hallucination, BUG 26): **`Qwen3-VL-8B`** (~10 GB, the model this note already recommends) or **`Qwen3-VL-30B-A3B`** (MoE ~2.4 B active; Q3_K 14 GB fits NVIDIA alone, Q4 18 GB needs the pool). `gemma-4-12b` (7.6, installed) is the no-download fallback. Both need a download for Qwen3-VL.
+### Best per-role picks (research-grounded, 2026-06-04)
+
+**Text role** (`text_model`: Stage 3 + Pass B + Pass D), descending by tier — see [[concepts/text-comparison-2026-06]] for full benchmark table:
+
+| Tier | Pick | VRAM | Backend | Notes |
+|---|---|---|---|---|
+| Speed | **`google/gemma-4-12b`** | 7.6 GB Q4 | CUDA single-card | **IFEval 88.9** = best small JSON emitter; no thinking mode = zero leak risk |
+| Speed (consolidation) | `qwen/qwen3.5-9b` (current) | 6.5 GB Q4 | CUDA single-card | Non-thinking by default. **Vision also verified working in LM Studio** ([[entities/qwen35]]) — sets up the dual-slot consolidation play |
+| Balanced | `openai/gpt-oss-20b` @ `Reasoning: low` | 12.1 GB MXFP4 | CUDA single-card | Runtime-tunable `reasoning_effort` Low/Med/High (works); flip to Medium for Pass D |
+| Quality | **`Qwen3-30B-A3B-Instruct-2507`** (download) | ~16.8 GB Q4 | Vulkan pool | Structurally **no thinking** — sidesteps the upstream Qwen3 hybrid chat-template bug. MoE 3B active = fast even on pool |
+| Quality (workaround) | `qwen/qwen3.6-35b-a3b` w/ **app-side Enable Thinking OFF** | 22.1 GB | Vulkan pool | Works via LM Studio toggle (verified, [[concepts/bugs-and-fixes]] BUG 57) — but the structurally cleaner option is the 2507 Instruct variant above |
+
+> [!warning] Avoid hybrid Qwen3.x for Pass B
+> `enable_thinking=false` is broken upstream in llama.cpp's chat-template path across the entire Qwen3 hybrid family (5+ open issues). Use `-Instruct-2507` variants OR Gemma 4 OR gpt-oss — see [[concepts/text-comparison-2026-06]] Hard rule.
+
+**Vision role** (`vision_model`: Stage 6 + Vision Judge), descending by tier — see [[concepts/vlm-comparison-2026-06]] for full benchmark table:
+
+| Tier | Pick | VRAM | Backend | Notes |
+|---|---|---|---|---|
+| Speed / status quo | `google/gemma-4-12b` (current) | 7.6 GB Q4 | CUDA single-card | Works today; best general visual reasoning (MMMU-Pro 69.1); watch llama.cpp Gemma 4 vision bugs |
+| Speed (consolidation) | `qwen/qwen3.5-9b` | 6.5 GB Q4 | CUDA single-card | **Multimodal verified by LM Studio Staff Pick**; Alibaba claims MMMU 78.4 (single-source); same model as Speed-consolidation text → zero text↔vision swap |
+| Balanced (recommended) | **`Qwen3-VL-8B-Instruct`** (download) | ~5.7 GB Q4 | CUDA single-card | Multi-image + video native; ScreenSpot 94% (UI grounding for chrome_regions); cleanest llama.cpp packaging |
+| Quality | `Qwen3-VL-30B-A3B-Instruct` (download) | ~19.6 GB Q4 | Vulkan pool or `--cpu-moe` | Best workload-specific benches (ScreenSpot 94.7%, OCRBench 903); MoE 3B active |
+
+See [[concepts/vlm-comparison-2026-06]] for vision; [[concepts/text-comparison-2026-06]] for text.
+
+---
+
+## Unified "best models" table (2026-06-04 third pass — Qwen 3.6 multimodal discovery)
+
+| Strategy | Text slot | Vision slot | Total VRAM | Backend | Trade-off |
+|---|---|---|---|---|---|
+| **🆕 Max-quality single-model consolidation (recommended)** | `qwen3.6-35b-a3b` w/ Enable Thinking OFF | same | 22 GB | Vulkan pool | **One model, zero swap, top-tier both modalities.** MMMU 81.7 / MMBench 92.8 / OmniDocBench 89.9. MoE 3B active offsets ~half the pool tax. BUG 57 toggle verified. |
+| **CUDA-only consolidation (smallest)** | `qwen3.5-9b` | `qwen3.5-9b` | 6.5 GB | CUDA single-card | Smallest VRAM, fastest per-token. Lower quality ceiling; vision benches single-source (Alibaba MMMU 78.4). |
+| **Status quo (currently running)** | `qwen3.5-9b` | `gemma-4-12b` | 14.1 GB | CUDA single-card | Defensible; both fit CUDA. Gemma 4 has llama.cpp vision bug surface. |
+| **IFEval-max for Pass B (small)** | `gemma-4-12b` | `gemma-4-12b` | 7.6 GB | CUDA single-card | Best JSON adherence in small class (anchored to Gemma 3 27B IFEval 90.4; Gemma 4 unpublished). Lower vision benches than Qwen 3.6 35B-A3B. |
+| **IFEval-max for Pass B (big)** | `gemma-4-26b-a4b` | `gemma-4-26b-a4b` | 18 GB | Vulkan pool | MoE 4B active. Lower vision benches than Qwen 3.6 35B-A3B. |
+| **Best-per-slot specialists (with downloads)** | `gemma-4-26b-a4b` | `Qwen3-VL-30B-A3B-Instruct` (download) | swap | Both Vulkan pool | ScreenSpot 94.7% UI grounding for chrome_regions. Requires download. |
+| **Reasoning-tunable CUDA-only** | `gpt-oss-20b` @ Low/Med/High | `qwen3.5-9b` | 13.6 + 6.5 GB | Both CUDA | Runtime reasoning_effort knob. No Vulkan pool penalty. |
+
+> [!note] Why qwen3.6-35b-a3b is the new top recommendation
+> Discovered 2026-06-04 ([[concepts/vlm-comparison-2026-06]]): **Qwen 3.6 27B and 35B-A3B are both natively multimodal** — no separate VL line, vision is baked in. The 35B-A3B's vision benches (MMMU 81.7, MMBench 92.8, MathVista 86.4, OmniDocBench 89.9, VideoMME w/sub 86.6) are top-of-leaderboard. Combined with the verified [[concepts/bugs-and-fixes]] BUG 57 LM Studio app-side thinking toggle, it becomes the single best installed model for the entire pipeline. The only Qwen3-VL edge is for `chrome_regions` UI grounding specifically (ScreenSpot 94.7% documented vs Qwen 3.6 unpublished). MoE 3B active keeps per-token speed competitive even with the ~30-40% Vulkan dual-GPU pool tax.
 
 ---
 

@@ -1107,6 +1107,38 @@ while chunk_start < max_time:
         chunk_start += cur_chunk_dur
         continue
 
+    # 2026-06-04 optimization: Pass B dead-chunk pre-filter.
+    # If the chunk has ZERO Pass A keyword hits AND ZERO Tier-2 audio
+    # events fired, the LLM almost never finds anything — the streamer
+    # was likely silent or in pure-gameplay-no-chat mode for these 5
+    # minutes. Skip the ~30-45 s LLM call entirely. Conservative gate:
+    # both signals must be zero (any single hit re-enables the call).
+    # Opt out via ``CLIP_PASSB_KEEP_DEAD_CHUNKS=1`` (or set to ``true``).
+    _passb_keep_dead = os.environ.get("CLIP_PASSB_KEEP_DEAD_CHUNKS", "").strip().lower()
+    if _passb_keep_dead not in ("1", "true", "yes"):
+        _kw_hits = sum(
+            1 for _m in keyword_moments
+            if chunk_start <= float(_m.get("timestamp", -1) or -1) < chunk_end
+        )
+        _audio_fires = 0
+        if AUDIO_EVENTS:
+            for (_ws, _we), _ev in AUDIO_EVENTS.items():
+                if _we <= chunk_start or _ws >= chunk_end:
+                    continue
+                if (_ev.get("rhythmic_speech", 0) >= 0.7
+                        or _ev.get("crowd_response", 0) >= 0.5
+                        or _ev.get("music_dominance", 0) >= 0.6):
+                    _audio_fires += 1
+        if _kw_hits == 0 and _audio_fires == 0:
+            print(
+                f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): "
+                f"no Pass A signal (0 keywords, 0 audio events), skipping LLM call "
+                f"[set CLIP_PASSB_KEEP_DEAD_CHUNKS=1 to disable]",
+                file=sys.stderr,
+            )
+            chunk_start += cur_chunk_dur
+            continue
+
     seg_instructions = SEGMENT_PROMPTS.get(seg_type, SEGMENT_PROMPTS["just_chatting"])
 
     # Tier-4 Phase 4.2 — compute conversation shape for THIS chunk and

@@ -9,15 +9,41 @@ fallback ladder. Stitch groups render last via stitch_render.py.
 Windows specifics handled here:
   * hook font resolves to a Windows TTF (no /usr/share/fonts path)
   * in-filter paths (subtitles / textfile / fontfile) get colon-escaped
+
+2026-06-04: 7b clip-audio extraction and 7d render loop are now parallel-
+dispatched via ``ThreadPoolExecutor`` — each clip's ffmpeg invocation is
+independent and CPU-bound (blur-fill + subtitle burn), so running 4
+concurrently on the i9-13900K saturates the cores without oversubscription.
+Tune via ``STAGE7_WORKERS`` env var (default 4, 1 = force serial).
 """
 from __future__ import annotations
 
 import json
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from pipeline import common
+
+
+# Default render-worker count. 4 × ~6 threads per ffmpeg ≈ 24 cores on the
+# i9-13900K (24c/32t). Higher counts oversubscribe and cause contention.
+_DEFAULT_RENDER_WORKERS = 4
+
+
+def _resolve_render_workers() -> int:
+    """``STAGE7_WORKERS`` env override → ``_DEFAULT_RENDER_WORKERS``.
+    Set to 1 to force the original serial render loop."""
+    env = os.environ.get("STAGE7_WORKERS", "").strip()
+    if env:
+        try:
+            v = int(env)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return _DEFAULT_RENDER_WORKERS
 
 
 # ---------------------------------------------------------------------------
@@ -336,14 +362,26 @@ def run(ctx) -> None:
     rows = _generate_manifest(ctx)
     log.log(f"  Manifest: {len(rows)} clips to process")
 
-    # 7b — extract clip audio
+    # 7b — extract clip audio (parallel, 2026-06-04). One ffmpeg per clip,
+    # each is fast (seek + 16k mono PCM rip ≈ 0.5-1 s) but invocation
+    # overhead adds up across 10 clips. Same ThreadPool pattern as 7d.
     log.log("  Extracting audio for all clips...")
-    for row in rows:
+    audio_workers = _resolve_render_workers()  # share the env knob
+
+    def _extract_clip_audio(row):
         start = max(0, int(float(row["clip_start"]))) if row["clip_start"] != "" else max(0, int(row["t"]) - 22)
         length = int(float(row["clip_duration"])) if row["clip_duration"] != "" else 45
         common.run_ffmpeg(["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length),
                            "-i", str(ctx.vod_path), "-vn", "-acodec", "pcm_s16le", "-ar", "16000",
                            "-ac", "1", str(p.work(f"clip_audio_{row['t']}.wav"))])
+
+    if audio_workers <= 1 or len(rows) <= 1:
+        for row in rows:
+            _extract_clip_audio(row)
+    else:
+        with ThreadPoolExecutor(max_workers=audio_workers) as pool:
+            for fut in as_completed({pool.submit(_extract_clip_audio, row): row for row in rows}):
+                fut.result()
 
     # 7c — batch caption transcription (single Whisper load)
     log.log("  Batch transcribing all clips (single Whisper load)...")
@@ -351,16 +389,39 @@ def run(ctx) -> None:
     cap_env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
     common.run_module(log, "stages/stage7_transcribe.py", [], env=cap_env, check=False)
 
-    # 7d — render
+    # 7d — render. Parallelized 2026-06-04: each clip's render is an
+    # independent ffmpeg invocation (blur-fill + subtitle burn + audio mix).
+    # On a 24-core i9-13900K, 4 concurrent ffmpegs each using ~6 threads
+    # saturate CPU without oversubscription. ThreadPool (not Process) because
+    # ``ctx`` and ``log`` aren't pickle-friendly; subprocess work releases
+    # the GIL so threads parallelise fine. Tune via ``STAGE7_WORKERS``;
+    # set to 1 to force the original serial path.
     log.log(f"  Rendering all clips (framing={ctx.framing}, originality={ctx.originality})...")
     speed_vf = f"setpts=PTS/{ctx.clip_speed}" if ctx.clip_speed != "1.0" else "null"
     speed_audio_filter = (f"rubberband=tempo={ctx.clip_speed}:pitch={ctx.clip_speed}"
                           if ctx.clip_speed != "1.0" else "")
-    for row in rows:
-        try:
-            _render_clip(ctx, row, speed_vf, speed_audio_filter)
-        except Exception as e:  # noqa: BLE001
-            log.warn(f"render error for T={row['t']}: {e}")
+
+    render_workers = _resolve_render_workers()
+    if render_workers <= 1 or len(rows) <= 1:
+        for row in rows:
+            try:
+                _render_clip(ctx, row, speed_vf, speed_audio_filter)
+            except Exception as e:  # noqa: BLE001
+                log.warn(f"render error for T={row['t']}: {e}")
+    else:
+        log.log(f"  [parallel] dispatching {len(rows)} renders across "
+                f"{render_workers} workers...")
+        with ThreadPoolExecutor(max_workers=render_workers) as pool:
+            futs = {
+                pool.submit(_render_clip, ctx, row, speed_vf, speed_audio_filter): row
+                for row in rows
+            }
+            for fut in as_completed(futs):
+                row = futs[fut]
+                try:
+                    fut.result()
+                except Exception as e:  # noqa: BLE001
+                    log.warn(f"render error for T={row['t']}: {e}")
 
     # 7e — stitch groups
     groups_file = p.work("moment_groups.json")

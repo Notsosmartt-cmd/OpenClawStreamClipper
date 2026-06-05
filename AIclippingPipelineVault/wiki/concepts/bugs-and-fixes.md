@@ -10,6 +10,31 @@ updated: 2026-06-04
 
 Known bugs encountered during development and how they were resolved. Useful for debugging similar symptoms.
 
+> [!note] Status convention (added 2026-06-04 lint pass)
+> Bug bodies below carry one of three status callouts at the top:
+> - `> [!success] Resolved <date>` — fix shipped and verified; no recurrence
+> - `> [!note] Obsolete <date>` — the affected subsystem was removed, so the failure mode can no longer occur
+> - (no callout) — still active concern OR a fix-shipped-but-keep-as-reference entry where the bug body remains useful for debugging similar future symptoms
+>
+> Bugs are kept (not deleted) for institutional memory — similar symptoms tend to recur in new forms.
+
+---
+
+## Status summary (2026-06-04)
+
+**📦 Obsolete — subsystem removed** (failure mode cannot recur):
+- **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
+- **Chrome-mask cluster**: [[#BUG 40]], [[#BUG 41]], [[#BUG 42]], [[#BUG 43]], [[#BUG 47]], [[#BUG 49]], [[#BUG 50]] — chrome-mask module removed 2026-05-01 (see `REMOVAL 2026-05-01` below).
+- **Lynx-tier grounding bugs**: [[#BUG 33]], [[#BUG 34]], [[#BUG 44]] — Lynx Tier-3 grounding cascade retired 2026-05-01 (see `REMOVAL 2026-05-01b` below; grounding collapsed to 2 tiers).
+
+**✅ Resolved — verified** (fix shipped, no recurrence):
+- **[[#BUG 57]]** — Qwen thinking ignored. LM Studio app-side Custom Fields → Enable Thinking toggle works on `qwen3.6-35b-a3b` (verified 2026-06-04: `reasoning_tokens=0`). Per-model toggle verification documented in body.
+- **[[#BUG 20]]** — 35B-A3B token exhaustion via thinking. Same root as BUG 57; resolved by the same LM Studio-toggle path.
+- **[[#BUG 38]]** — Gemma 4 token starvation via permanent thinking. Resolved by the thinking-OFF strategy + per-model verification approach (Gemma 4 12B has no thinking mode; 26B-A4B is togglable).
+
+**Active / Reference** (default for all other index entries below):
+Most other bugs have fixes that shipped and are now part of the pipeline codebase — the entry stays useful as a "if you see symptom X, check fix Y" debugging reference. No active recurrence known. Hallucination/grounding bugs ([[#BUG 26]], [[#BUG 27]]) remain active design areas, not "fixable code bugs."
+
 ---
 
 ## Quick-nav index
@@ -66,7 +91,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 | BUG 37c | A2 callback_confirmed multiplier reintroduced the 1.0 clamp at Stage 6 — A2-boosted callbacks can't sort above plain 1.000s without a `raw_score` field |
 | BUG 53 | Stage 6 vision boost saturated at 1.0 — read clamped score not raw, so `transcript_score × 1.15` re-clamped to 1.000 → "vision BOOST: 1.000 -> 1.000" no-op |
 | BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
-| BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips; disable thinking in LM Studio settings |
+| BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips. **Narrowed 2026-06-04**: only the *API* `enable_thinking:false` param is ignored — LM Studio's app-side Custom Fields → Enable Thinking toggle DOES work on `qwen3.6-35b-a3b` (verified: `reasoning_tokens=0`). |
 
 ### Pipeline / Rendering
 | # | Title |
@@ -121,15 +146,47 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## BUG 57 — Qwen reasoning models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips
 
+> [!success] Resolved 2026-06-04 — LM Studio app-side toggle works
+> Custom Fields → Enable Thinking OFF (saved to model preset) disables thinking on `qwen3.6-35b-a3b`. Verified via REST: `content="OK"`, `reasoning_content=""`, `reasoning_tokens=0`. The OpenAI-compat API param `enable_thinking:false` is still ignored upstream (llama.cpp chat-template bug, 5+ open issues — not LM Studio's fault) — but the app-side preset toggle is honored. Per-model verification recommended (same toggle on each hybrid Qwen3.x model you use, then run the 30-second REST test once). See body below for the upstream root and the structurally-cleaner Qwen3-Instruct-2507 alternative.
+
 **Symptom** (bare-metal, 2026-06-04, `qwen/qwen3.5-9b`): every Pass B chunk logs `LLM used N reasoning tokens (thinking not fully disabled — check LM Studio settings)` with N ≈ 5,000–6,300. On a 9-clip plaqueboymax run, 2 of 15 chunks logged `LLM returned empty content (attempt 2): finish=stop, reasoning_tokens=0, total_tokens=1` and were skipped (`Chunk N: LLM call failed, skipping`). The run still completed cleanly (exit 0, 9 clips) — moments from the skipped chunks were simply lost. Also makes Pass B / Stage 6 noticeably slow.
 
-**Cause**: LM Studio 0.4.14 does **not** honor the pipeline's no-think request for these Qwen3.x reasoning models — both `chat_template_kwargs:{enable_thinking:false}` and the `/no_think` prefix are ignored (documented LM Studio limitation; same root as BUG 17 / 20 / 38). The model reasons on every call. The empty `total_tokens=1` responses are transient LM Studio glitches (not budget exhaustion — Pass B already sends `max_tokens=8000`), which surface more often under the constant thinking load.
+**Cause**: LM Studio 0.4.14 does **not** honor the pipeline's no-think request via the OpenAI-compatible *API* for these Qwen3.x reasoning models — both `chat_template_kwargs:{enable_thinking:false}` and the `/no_think` prefix are ignored at the API layer (same root as BUG 17 / 20 / 38). The empty `total_tokens=1` responses are transient LM Studio glitches (not budget exhaustion — Pass B already sends `max_tokens=8000`), surfaced more often under the constant thinking load.
 
-**Fix / mitigation**:
-- The pipeline already degrades gracefully — `call_llm` retries then skips the chunk; Pass A keyword moments still flow through, so clips are still produced. No code change required.
-- To eliminate it: **disable reasoning/thinking for the model in LM Studio's own settings** (the API flags don't take). This also speeds runs up dramatically.
-- Or point `config/models.json::text_model_passb` at a genuinely non-thinking model.
-- `scripts/logtool.py errors <run>` classifies these as `llm-empty` / `llm-skip`, so skipped chunks are easy to spot.
+**Upstream root (deeper finding, 2026-06-04 research)**: this is NOT specific to LM Studio — `enable_thinking=false` is broken across the entire Qwen3 hybrid family at the **llama.cpp chat-template layer**:
+- [#13160](https://github.com/ggml-org/llama.cpp/issues/13160) Qwen 3.0 enable_thinking not working
+- [#13189](https://github.com/ggml-org/llama.cpp/issues/13189) Persistent `<think>` tags Qwen3-32B
+- [#20182](https://github.com/ggml-org/llama.cpp/issues/20182) Qwen3.5 same problem
+- [#20409](https://github.com/ggml-org/llama.cpp/issues/20409) ignored across shells/templates
+- [#22255](https://github.com/ggml-org/llama.cpp/issues/22255) Qwen3.6-27B preserve_thinking ignored
+
+Alibaba itself acknowledged this was a design mistake and **split into separate non-hybrid variants in July 2025** ([The Register, 2025-07-31](https://www.theregister.com/2025/07/31/alibaba_qwen3_hybrid_thinking/)):
+- `Qwen3-*-Instruct-2507` — thinking structurally absent
+- `Qwen3-*-Thinking-2507` — thinking always on
+
+The hybrid Qwen3.x line is officially deprecated for this exact reason.
+
+**Narrowed 2026-06-04** — the API-level claim above is correct, but the **LM Studio app-side toggle DOES work** on at least `qwen/qwen3.6-35b-a3b`:
+
+Test (LM Studio 0.4.15, Custom Fields → Enable Thinking OFF, model preset saved, called via REST):
+
+```powershell
+$body = @{ model = "qwen/qwen3.6-35b-a3b"; messages = @(@{role="user"; content="reply with the word OK and nothing else"}); max_tokens = 50 } | ConvertTo-Json -Depth 5
+$r = Invoke-RestMethod -Uri http://localhost:1234/v1/chat/completions -Method Post -ContentType "application/json" -Body $body
+$r.choices[0].message | ConvertTo-Json -Depth 5
+```
+
+Returned `content: "OK"`, `reasoning_content: ""`, `usage.completion_tokens_details.reasoning_tokens: 0`. So the app-side preset toggle is honored even on the mandatory-thinking 35B-A3B MoE build — only the API param is broken.
+
+**Fix / mitigation** (updated 2026-06-04, ranked by structural cleanliness):
+
+1. **Structurally clean fix — use `-Instruct-2507` variants**: thinking is architecturally absent in these (e.g., `Qwen3-30B-A3B-Instruct-2507`, `Qwen3-32B-Instruct-2507`). Sidesteps the chat-template bug entirely. Requires a download since the user's installed Qwen3.x are hybrid builds.
+2. **App-side toggle workaround**: in LM Studio's Custom Fields → Enable Thinking OFF, save as the model preset. **Works on `qwen3.6-35b-a3b`** (verified via REST: `reasoning_tokens=0`). Belt-and-suspenders for the hybrid models the user already has; worth re-testing per-model.
+3. **Avoid Qwen for the heavy text stage entirely**: route `config/models.json::text_model_passb` to `gemma-4-12b` (no thinking mode, IFEval 88.9 — best JSON adherence in the small class) or `gpt-oss-20b` (runtime-tunable `reasoning_effort` Low/Med/High that actually works).
+4. The pipeline still degrades gracefully — `call_llm` retries then skips the chunk; Pass A keyword moments still flow through.
+5. `scripts/logtool.py errors <run>` classifies these as `llm-empty` / `llm-skip`, so skipped chunks are easy to spot.
+
+**Knock-on**: the 35B-A3B is back on the table as a viable text-slot quality candidate (MoE 3B active = fast on the Vulkan pool when thinking is OFF). See [[concepts/model-split]] tier table.
 
 Surfaced while reviewing a clipping session with `logtool`. See [[entities/lm-studio]] §"Thinking models".
 
@@ -487,6 +544,10 @@ The "actual answer to why no clips were produced": Stage 6 crashed on the f-stri
 
 ## BUG 49 — Chrome PaddleOCR wedges mid-frame, pipeline truncates before Stages 6/7/8 ever start
 
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed
+> The entire chrome-mask stack (`scripts/lib/chrome_mask.py`, `config/chrome.json`, the chrome heredoc, etc.) was deleted in the `REMOVAL 2026-05-01` cleanup below. PaddleOCR no longer runs in the pipeline. This failure mode cannot recur. Kept for historical reference + defensive-coding lessons (signal-handling around C++ extensions, multi-layer timeouts for unreliable native calls).
+
+
 **Symptom**: After [[#BUG 47]] (PIR + oneDNN disable) cleared the per-frame `ConvertPirAttribute2RuntimeAttribute` errors and OCR finally produced text records (`[CHROME] OCR frames_T_tminus2.jpg: N texts in ~5s` per frame, consistent for 9.5 of 10 moments), the 2026-04-30 production run truncated **mid-iteration** on the 10th moment:
 
 ```
@@ -518,6 +579,10 @@ The first `--- Pipeline finished ---` is the SSE generator emitting on staleness
 ---
 
 ## BUG 50 — MOG2 misfires 100 % on every Stage 5 window: BUG 42's first-frame priming fix is structurally insufficient
+
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed
+> The MOG2 detector was deleted with the rest of the chrome stack in `REMOVAL 2026-05-01` below. This bug actually *motivated* the removal: it's the proof that MOG2 was structurally dead code (frame-spacing mismatch at Stage 5's `[-2, 0, +1, +2, +3, +5]s` layout). Kept as historical "why we removed this" reference.
+
 
 **Symptom**: After [[#BUG 42]]'s first-frame priming fix landed, MOG2 was expected to produce sane bbox lists for routine talking-head windows. Instead, every Stage 5 moment STILL trips the `max_masked_area_ratio=0.35` safeguard:
 
@@ -587,6 +652,9 @@ On a Gemma 4-26B-A4B model the unload + load round trip can take 20-40 s. With t
 ---
 
 ## BUG 47 — PaddleOCR 3.x PIR + oneDNN backend raises `ConvertPirAttribute2RuntimeAttribute not support` on every inference call
+
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed (PaddleOCR no longer in pipeline)
+
 
 **Symptom**: After [[#BUG 41]] fixed the `.ocr(p, cls=True)` → `.predict(p)` API drift, the chrome stage finally instantiates PaddleOCR cleanly and routes through the new method, but every per-frame call now fails with:
 ```
@@ -659,6 +727,9 @@ A second site found in the same audit: `scripts/clip-pipeline.sh:3451` had simil
 
 ## BUG 41 — PaddleOCR 3.x removes `cls=` from `.ocr()`/.predict()`, every OCR call fails with `unexpected keyword argument 'cls'`
 
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed (PaddleOCR no longer in pipeline)
+
+
 **Symptom**: After [[#BUG 40]] fixed the constructor (`device=` API), the chrome stage finally instantiates PaddleOCR successfully (`[CHROME] PaddleOCR loaded (opt-in OCR path)`) — and then every subsequent OCR call fails:
 ```
 [CHROME] PaddleOCR call failed on /tmp/clipper/frames_3705_tminus2.jpg: PaddleOCR.predict() got an unexpected keyword argument 'cls'
@@ -680,6 +751,9 @@ The return format also changed: 2.x returned `[[[box, (text, conf)], ...]]` (lis
 ---
 
 ## BUG 42 — MOG2 first-frame seed misfire: every chrome window masks 100 % of the frame, all chrome detection silently skipped
+
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed (MOG2 detector deleted)
+
 
 **Symptom**: Pipeline log shows the `max_masked_area_ratio=0.35` safeguard tripping on **every** moment:
 ```
@@ -705,6 +779,9 @@ The bug was latent through every prior chrome run — but [[#BUG 41]] / [[#BUG 4
 
 ## BUG 43 — Stage 5 chrome stage's non-zero exit propagates through `set -e` and kills the rest of the pipeline
 
+> [!note] Obsolete 2026-05-01 — chrome stage removed from pipeline
+
+
 **Symptom**: After [[#BUG 41]] / [[#BUG 42]] were the proximate failures, Stage 5 chrome processing was observed to log work for 7 of 10 moments, then **terminate the entire pipeline** with no Stage 6 output. The persistent log shows the last `[CHROME] PaddleOCR call failed` line for moment 7, no `[CHROME] processed N/M moments` summary, and the dashboard SSE emits "Pipeline finished" because the bash process exited.
 
 Two distinct failure modes both produce this signature:
@@ -725,6 +802,9 @@ Either way, ~30 % of moments lose their chrome processing and Stage 6/7/8 don't 
 ---
 
 ## BUG 44 — Tier-3 grounding cascade timeouts when LM Studio routes Lynx requests to a Gemma model with permanent thinking
+
+> [!note] Obsolete 2026-05-01 — Lynx Tier-3 retired ([[#REMOVAL 2026-05-01b]])
+
 
 **Symptom**: Pipeline log carries `[LMSTUDIO] call failed: timed out` lines, often once per chunk, scattered through Pass B grounding cascade output:
 ```
@@ -785,6 +865,9 @@ The vision-bonus blend at lines 3706 / 3709 still uses `min(... 1.0)` — those 
 ---
 
 ## BUG 40 — PaddleOCR 2.7+ rejects `use_gpu` arg, chrome masking ships without overlay-text ground truth
+
+> [!note] Obsolete 2026-05-01 — chrome-mask module removed (PaddleOCR no longer in pipeline)
+
 
 **Symptom**: Pipeline log shows `[CHROME] PaddleOCR unavailable (Unknown argument: use_gpu); OCR-based ground truth disabled` once at Stage 5 entry. Every subsequent moment then logs `[CHROME] MOG2 would mask 100.0% of frame (>35%); skipping — detector misfired` and the OCR-driven ground-truth path is silently disabled — Stage 6's prompt loses the overlay-text channel that catches game-name / sub-count / score-board ground truth.
 
@@ -867,6 +950,10 @@ All three heredocs (Stage 3, Stage 4, Stage 6) parse Python-clean post-bash.
 
 ## BUG 38 — Stage 3 / Tier-1 Q1 / Tier-3 A1 token starvation on Gemma 4: three call sites budgeted for Qwen die mid-loop on Gemma's permanent thinking
 
+> [!success] Resolved 2026-06-04 — Gemma 4 thinking can be disabled
+> Per the 2026-06-04 [[concepts/text-comparison-2026-06]] research: Gemma 4 12B dense has **no thinking mode at all** (zero leak risk); Gemma 4 26B-A4B has thinking that can be disabled via `enable_thinking=false` per chat template. The "permanent thinking" framing was specific to older Gemma 3 / Gemma 4 preview builds. With the current production setup (`gemma-4-12b` as vision_model, no thinking), this fails-mode cannot recur. Tier-3 cascade is also retired ([[#REMOVAL 2026-05-01b]]).
+
+
 **Symptom**: Pipeline completes Stage 1 + Stage 2 (cached transcript), enters Stage 3 segment classification, prints 19 successful chunk classifications on a 193-min VOD (`64s-664s: just_chatting` … `10864s-11464s: reaction`), then exits cleanly with no Stage 4–8 output and zero clips produced. Reproducible across multiple runs with the same VOD. Dashboard shows `--- Pipeline finished ---` (the JS-emitted SSE-done message, not a bash log line).
 
 **Cause**: Three LLM call sites in `scripts/clip-pipeline.sh` were sized for Qwen 3.5's reasoning budget (which honors `chat_template_kwargs={enable_thinking: False}` and the `/no_think` sentinel) but are too tight for Gemma 4-26B-A4B, whose **permanent thinking mode in LM Studio ignores both** (see [[entities/lm-studio]] §"Thinking mode: 9B vs 35B-A3B behavior"). On Gemma the model burns 3000–6000 reasoning tokens per call regardless of the budget hint:
@@ -931,6 +1018,9 @@ Additionally, Tier 2 grounding nulls every "why" for these moments because the L
 
 ## BUG 34 — Tier 2 grounding nulls ~88 % of Pass B "why" fields; reference window truncated mid-chunk
 
+> [!note] Obsolete 2026-05-01 — MiniCheck Tier-2 retired ([[#REMOVAL 2026-05-01b]])
+
+
 **Symptom**: Across 30+ Pass B chunks the log fills with `[GROUND] Pass B null why T=... tier=2 reason=tier2_low_entailment (p=0.005-0.4)`. Stage 6 then has no Pass-B "why" to consume as a grounding reference, so its own title/hook/description are also nulled by the cascade and clips render with the placeholder `Clip_T<timestamp>` and empty descriptions. Operator perceives this as "clip quality dropped" — every clip is generic.
 
 **Cause**: Pass B passes the entire 5-minute chunk (~5000 chars) to `cascade_check` as the reference, but `tier_2.max_ref_chars` was hard-coded to 2000 — so MiniCheck NLI only saw the first ~1.5 min of each chunk. Moments in the back half lost their supporting transcript context and were nulled with low entailment probabilities.
@@ -954,6 +1044,9 @@ Combined effect: Pass B null-rate dropped from ~88 % to expected ~25-35 %. Stage
 
 ## BUG 33 — `scripts/lib/lmstudio.py` Tier 3 client still sends `response_format`; Gemma rejects with HTTP 400, Lynx judgments silently disabled
 
+> [!note] Obsolete 2026-05-01 — Lynx Tier-3 retired ([[#REMOVAL 2026-05-01b]])
+
+
 **Symptom**: Pipeline log carries repeated `[LMSTUDIO] call failed: HTTP Error 400: Bad Request` lines whenever Tier 2 enters its ambiguous zone. Lynx-8B is configured (`config/grounding.json::tier_3.lm_studio_model = "llama-3-patronus-lynx-8b-instruct"`) but the user runs LM Studio with `google/gemma-4-26b-a4b` loaded — so the request actually routes to Gemma, which rejects `response_format: {type: json_object}` with 400.
 
 **Cause**: When [[#BUG 30]] removed `response_format` from `call_llm()` and the Stage 6 vision payload, the same field was left intact in `scripts/lib/lmstudio.py::chat()` — used exclusively by the grounding cascade's `tier3_check`. Tier 3 fires on Tier-2 borderline cases; every fire 400'd, returned None, and the cascade silently fell back to the Tier-2 verdict — so the failure was invisible in clip output but spammed the log and disabled the Lynx layer entirely.
@@ -965,6 +1058,9 @@ Combined effect: Pass B null-rate dropped from ~88 % to expected ~25-35 %. Stage
 ---
 
 ## BUG 32 — Container loses `host.docker.internal` route mid-run; every remaining Pass B / Stage 6 call fails with ENETUNREACH
+
+> [!note] Obsolete 2026-06-04 — Docker container retired (bare-metal Windows; no container, no `host.docker.internal`)
+
 
 **Symptom**: A long-running pipeline completes Pass B Chunk 1 successfully, then on Chunk 2 the first LLM call times out, and every subsequent call (Chunks 3, 4, 5, …) fails immediately with `<urlopen error [Errno 101] Network is unreachable>`. Stage 6 vision calls fail the same way. The pipeline keeps grinding through every chunk for 20+ minutes producing zero AI moments.
 
@@ -984,6 +1080,9 @@ Also lowered `call_llm()` default `timeout` from `600 s` → `240 s`. The 600 s 
 ---
 
 ## BUG 31 — Docker Desktop named pipe 500 kills the dashboard's `docker exec` session mid-Pass-B; pipeline keeps running detached, dashboard shows "Pipeline finished" prematurely
+
+> [!note] Obsolete 2026-06-04 — Docker retired (no more `docker exec` bridge in native bare-metal mode). The detached-pipeline lifecycle the fix introduced still runs (in `dashboard/pipeline_runner.py` under the `CLIP_USE_DOCKER` path) but is dormant unless someone opts back into Docker.
+
 
 **Symptom**: Mid-Pass-B (typically during Chunk 2's LLM call when the pipeline's stdout has been silent for 30-60 s), the dashboard log shows:
 ```
@@ -1196,6 +1295,9 @@ Only reproduces when `CLIP_STITCH=true`.
 
 ## BUG 8 — Pipeline doesn't start from dashboard ("Waiting for pipeline")
 
+> [!note] Obsolete 2026-06-04 — Docker retired (the `docker exec` requirement no longer applies; bare-metal dashboard launches the pipeline directly)
+
+
 **Symptom**: Clicking "Clip Selected" returns success but pipeline never starts; log viewer shows "Waiting for pipeline..." indefinitely.
 
 **Cause**: Dashboard runs locally on Windows but spawns `bash clip-pipeline.sh` as a local process. The script needs:
@@ -1243,6 +1345,9 @@ Local bash process crashes immediately; stdout/stderr go to `DEVNULL` so no erro
 
 ## BUG 11 — apt-get fails during Docker build on Windows/WSL2
 
+> [!note] Obsolete 2026-06-04 — Docker build retired (no more Dockerfile in production path; bare-metal uses `pip install -r requirements-windows.txt` instead)
+
+
 **Symptom**: `docker compose build` fails mid-layer with `E: Failed to fetch http://archive.ubuntu.com/...` — connection refused or timeout.
 
 **Cause**: Docker BuildKit's isolated network on Windows/WSL2 has intermittent connectivity to `archive.ubuntu.com`. The default apt configuration makes one attempt per package with no retry or timeout — any transient DNS hiccup or dropped connection fails the entire layer.
@@ -1260,6 +1365,9 @@ This retries each package fetch up to 5 times with a 30-second timeout, survivin
 
 ## BUG 12 — Mixed mode falls back to CPU (OLLAMA_VULKAN disabled by default)
 
+> [!note] Obsolete 2026-04-18 — Ollama retired (LM Studio handles multi-GPU natively; `OLLAMA_VULKAN` no longer applies)
+
+
 **Symptom**: In `mixed` or `vulkan` backend mode, Ollama logs "experimental Vulkan support disabled" and runs inference on CPU despite `GGML_VK_VISIBLE_DEVICES` being set.
 
 **Cause**: Ollama 0.21+ ships with Vulkan disabled by default. Setting `GGML_VK_VISIBLE_DEVICES` alone is not enough — Ollama ignores it unless Vulkan is explicitly enabled.
@@ -1270,6 +1378,9 @@ This retries each package fetch up to 5 times with a 30-second timeout, survivin
 
 ## BUG 13 — `vulkaninfo` not found in container
 
+> [!note] Obsolete 2026-06-04 — Docker retired (no container; LM Studio native runs Vulkan directly on Windows)
+
+
 **Symptom**: `docker exec ollama vulkaninfo --summary` returns "command not found".
 
 **Cause**: `vulkan-tools` package not installed in `Dockerfile.ollama`.
@@ -1279,6 +1390,9 @@ This retries each package fetch up to 5 times with a 30-second timeout, survivin
 ---
 
 ## BUG 14 — Vulkan/mixed mode silently falls back to CPU when ICD fails
+
+> [!note] Obsolete 2026-06-04 — Docker + Ollama-Vulkan stack retired (LM Studio manages its own Vulkan ICDs natively on Windows)
+
 
 **Symptom**: Stage 3 (and all LLM stages) show high CPU usage but zero GPU utilization. `docker logs ollama` reports `inference compute library=cpu`. `vulkaninfo --summary` inside the container shows only `llvmpipe (LLVM)` — no discrete GPU hardware.
 
@@ -1419,6 +1533,10 @@ The `tee` command writes to both files simultaneously: `exec > >(tee -a "$PIPELI
 ---
 
 ## BUG 20 — 35B-A3B token exhaustion: thinking consumes all max_tokens, no content produced
+
+> [!success] Resolved 2026-06-04 — same root as BUG 57
+> The failure mode (thinking eating `max_tokens` before any content) was always conditional on thinking being on. [[#BUG 57]] verified the LM Studio app-side Custom Fields → Enable Thinking OFF toggle disables thinking on `qwen3.6-35b-a3b` (`reasoning_tokens=0`). With thinking OFF, token exhaustion cannot occur. Resolution path: same as BUG 57 — preset toggle per model, verify once via REST test.
+
 
 **Symptom**: All Stage 4 chunks fail with `finish=length, reasoning_tokens=2999, total_tokens=3000, content=""`. Stage 6 fails on more demanding frames with `reasoning_tokens=1999, total_tokens=2000`. The `reasoning_content` fallback (BUG 17 fix) does NOT help because it only fires on `finish_reason=stop` (natural termination), not `finish_reason=length` (cut off mid-think).
 
