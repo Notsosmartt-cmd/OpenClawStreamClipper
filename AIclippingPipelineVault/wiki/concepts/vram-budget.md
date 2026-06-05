@@ -3,7 +3,7 @@ title: "VRAM Budget and Model Orchestration"
 type: concept
 tags: [vram, gpu, memory, performance, models, orchestration, infrastructure]
 sources: 2
-updated: 2026-04-25
+updated: 2026-06-04
 ---
 
 # VRAM Budget and Model Orchestration
@@ -18,14 +18,15 @@ Models are configured in `config/models.json` — the specific model ID and its 
 
 | Model | VRAM | Context |
 |---|---|---|
-| `google/gemma-4-26b-a4b` (current default) | ~14–16 GB | 32K tokens |
-| `qwen3.5-9b-instruct` (text-only option) | ~11.2 GB | 32K tokens (capped) |
-| `qwen2.5-vl-7b-instruct` (vision option) | ~8.8 GB | 32K tokens |
+| `qwen/qwen3.5-9b` — **current `text_model`** (Stage 3 + Pass B/D), non-thinking | ~6.5 GB (Q4) | 32K tokens |
+| `google/gemma-4-12b` — **current `vision_model`** (Stage 6 + Judge), multimodal | ~7.6 GB (Q4) | 32K tokens |
+| `openai/gpt-oss-20b` — fits; reasoning, dialable effort | ~12.1 GB (MXFP4) | — |
+| ⚠️ **exceed 16 GB → CPU spill (slow)**: `qwen3.6-35b-a3b` 22.1 · `gemma-4-31b` 19.9 · `gemma-4-26b-a4b` 18.0 · `qwen3.6-27b` 17.5 GB | >16 GB | — |
 | [[entities/faster-whisper]] `large-v3-turbo` (default) / `large-v3` | ~3–4 GB / ~6–7 GB | N/A (audio model) |
 
 Whisper never co-resides with the LLM (the pipeline unloads LM Studio before Stage 2), so turbo's smaller footprint doesn't add LLM headroom — but it loads faster and transcribes ~2.5x quicker. See [[entities/faster-whisper]].
 
-Peak VRAM usage: determined by the configured LLM. Gemma-4 26B on a 16GB GPU is tight — check LM Studio's VRAM meter after loading.
+Peak VRAM usage: determined by the configured LLM. On the **16 GB RTX 5060 Ti**, keep the LLM **under ~14 GB** so the KV cache + desktop fit; the installed 27B/26B/31B/35B (≥17.5 GB at Q4) offload layers to **CPU** and run *much* slower — this was ~half the 135-min slow run ([[concepts/model-split]] §Active config). The current `qwen3.5-9b` + `gemma-4-12b` split (6.5 + 7.6 GB) fits with room to co-reside.
 
 ---
 

@@ -3,7 +3,7 @@ title: "Stage-Specific Model Split — Phase 5.1"
 type: concept
 tags: [models, vram, phase-5, configuration, stage-4, stage-6, infrastructure]
 sources: 2
-updated: 2026-04-24
+updated: 2026-06-04
 ---
 
 # Stage-Specific Model Split (Phase 5.1)
@@ -40,6 +40,23 @@ Phase 5.1 adds **optional** per-stage model overrides in `config/models.json`. B
 | Stage 2 / 7 Whisper | `WHISPER_MODEL` | always `whisper_model` |
 
 **Dashboard** (`dashboard/app.py`) forwards the overrides as env vars when set, both for `docker exec` and direct-subprocess launches. No UI changes — edit `config/models.json` directly to opt in.
+
+---
+
+## Active config — 16 GB rig (2026-06-04)
+
+On the real deployment GPU (**RTX 5060 Ti, 16 GB** — see [[concepts/vram-budget]]), running the unified `qwen3.6-35b-a3b` for every LLM stage was doubly slow: at **22.1 GB (Q4_K_M) it does not fit 16 GB** (spills ~6 GB to CPU), and as a Qwen *thinking* build it burns ~3–6k reasoning tokens per Pass B call — the pipeline's API `enable_thinking:false` is **ignored** ([[concepts/bugs-and-fixes]] BUG 57; LM Studio's per-model toggle is the only lever, and even that is uncertain on dedicated thinking builds). One VOD took **135.8 min, Stage 4 alone = 67 min / 49%** ([[concepts/observability]]).
+
+Switched to models that **fully fit 16 GB** (GPU-resident = fast, no CPU spill):
+
+| Role (config key) | Model | Q4 size | Notes |
+|---|---|---|---|
+| `text_model` (Stage 3 + Pass B + Pass D) | **`qwen/qwen3.5-9b`** | 6.5 GB | non-thinking by default; kills the Stage-4 thinking tax |
+| `vision_model` (Stage 6 + Vision Judge) | **`google/gemma-4-12b`** | 7.6 GB | multimodal; strong OCR. (`qwen3.5-9b` is also vision-capable → unified-both is the zero-swap alt) |
+
+`text_model_passb` / `vision_model_stage6` left null → inherit the above. The two total **14.1 GB**, so LM Studio may hold both **co-resident** in 16 GB → no swap between the text and vision stages either.
+
+**Which installed models fit 16 GB:** ✅ gpt-oss-20b 12.1 (reasoning, dialable effort), gemma-4-12b 7.6, qwen3.5-9b 6.5, nemotron-4b 4.2 · ❌ spill to CPU: qwen3.6-27b 17.5, gemma-4-26b-a4b 18.0, gemma-4-31b 19.9, qwen3.6-35b-a3b 22.1. Rationale for the picks: thinking only pays off at the Vision Judge (pairwise) + lightly at Pass D; Pass B / Stage 3 / Stage 6 are extraction/classification/perception where a fast non-thinking model that *fits VRAM* wins. Reserve `gpt-oss-20b` for a reasoning-leaning role if wanted.
 
 ---
 
