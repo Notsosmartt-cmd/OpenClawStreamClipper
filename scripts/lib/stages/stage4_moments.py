@@ -1084,6 +1084,65 @@ chunk_summaries = []
 # (1-indexed) as strings.
 CONVO_SHAPE_INDEX = {}
 
+# 2026-06-04 Pass B dead-chunk gate — multi-signal version with audit log.
+# State accumulated across the chunk loop; written to
+# {TEMP_DIR}/pass_b_skipped_chunks.json after the loop so `logtool dead`
+# can show what was skipped + why. See
+# concepts/pipeline-optimizations-2026-06.md §5/§D.
+_PASSB_SKIPPED_CHUNKS = []          # records: {chunk_index, time_range, signals, mode}
+_PASSB_DEAD_STREAK = [0]            # list so nested writes can mutate (closure friendly)
+
+
+def _passb_resolve_gate_mode():
+    """Decide which dead-chunk gate mode to apply this run.
+
+    Priority:
+      1. ``CLIP_PASSB_DEAD_GATE`` env (off | strict | multi | sample)
+      2. Legacy ``CLIP_PASSB_KEEP_DEAD_CHUNKS=1`` → ``off``
+      3. Default → ``off`` (selection-safe; was ``strict`` 2026-06-04 morning)
+
+    The default changed from ``strict`` to ``off`` after the rakai Delaware
+    case showed the strict 2-signal gate has a ~5-10% false-negative rate
+    and a missed clip displaces a worse clip in its time-bucket slot.
+    See concepts/case-rap-battle-missed.md.
+    """
+    mode = os.environ.get("CLIP_PASSB_DEAD_GATE", "").strip().lower()
+    if mode in ("off", "strict", "multi", "sample"):
+        return mode
+    legacy = os.environ.get("CLIP_PASSB_KEEP_DEAD_CHUNKS", "").strip().lower()
+    if legacy in ("1", "true", "yes"):
+        return "off"
+    return "off"
+
+
+def _passb_dead_sample_rate():
+    """``CLIP_PASSB_DEAD_SAMPLE_RATE`` env → default 3.
+    Every Nth dead chunk passes through to the LLM even in ``sample`` mode
+    so the gate can't silently drop N+ consecutive moments.
+    """
+    raw = os.environ.get("CLIP_PASSB_DEAD_SAMPLE_RATE", "").strip()
+    if raw:
+        try:
+            v = int(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return 3
+
+
+_PASSB_GATE_MODE = _passb_resolve_gate_mode()
+_PASSB_DEAD_SAMPLE_RATE = _passb_dead_sample_rate()
+print(
+    f"[PASS B] dead-chunk gate mode = {_PASSB_GATE_MODE}"
+    + (f" (sample rate 1-in-{_PASSB_DEAD_SAMPLE_RATE})"
+       if _PASSB_GATE_MODE == "sample" else "")
+    + " — CLIP_PASSB_DEAD_GATE env to change "
+      "(off | strict | multi | sample)",
+    file=sys.stderr,
+)
+
+
 while chunk_start < max_time:
     # Tier-1 Q4: pick the chunk window from the segment type at the +150s peek.
     # cur_chunk_dur/cur_chunk_overlap stand in for the old CHUNK_DURATION/
@@ -1107,19 +1166,22 @@ while chunk_start < max_time:
         chunk_start += cur_chunk_dur
         continue
 
-    # 2026-06-04 optimization: Pass B dead-chunk pre-filter.
-    # If the chunk has ZERO Pass A keyword hits AND ZERO Tier-2 audio
-    # events fired, the LLM almost never finds anything — the streamer
-    # was likely silent or in pure-gameplay-no-chat mode for these 5
-    # minutes. Skip the ~30-45 s LLM call entirely. Conservative gate:
-    # both signals must be zero (any single hit re-enables the call).
-    # Opt out via ``CLIP_PASSB_KEEP_DEAD_CHUNKS=1`` (or set to ``true``).
-    _passb_keep_dead = os.environ.get("CLIP_PASSB_KEEP_DEAD_CHUNKS", "").strip().lower()
-    if _passb_keep_dead not in ("1", "true", "yes"):
+    # 2026-06-04 Pass B dead-chunk gate (round 4 — multi-signal + sampling
+    # + audit log). Original "strict" 2-signal gate (keywords + audio events)
+    # had a ~5-10% false-negative rate per the rakai Delaware case study.
+    # Default is now ``off`` (no filtering); operators opt into ``multi``
+    # (6 signals, conservative) or ``sample`` (multi + 1-in-N pass-through
+    # of dead chunks so no more than N-1 consecutive skips can ever happen).
+    # See concepts/pipeline-optimizations-2026-06.md §5/§D and
+    # concepts/case-rap-battle-missed.md.
+    if _PASSB_GATE_MODE != "off":
+        # Signal 1: Pass A keyword hits in this chunk's time range.
         _kw_hits = sum(
             1 for _m in keyword_moments
             if chunk_start <= float(_m.get("timestamp", -1) or -1) < chunk_end
         )
+        # Signal 2: Tier-2 M2 audio_events fires (rhythmic / crowd / music)
+        # overlapping this chunk's time range.
         _audio_fires = 0
         if AUDIO_EVENTS:
             for (_ws, _we), _ev in AUDIO_EVENTS.items():
@@ -1129,15 +1191,108 @@ while chunk_start < max_time:
                         or _ev.get("crowd_response", 0) >= 0.5
                         or _ev.get("music_dominance", 0) >= 0.6):
                     _audio_fires += 1
-        if _kw_hits == 0 and _audio_fires == 0:
-            print(
-                f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): "
-                f"no Pass A signal (0 keywords, 0 audio events), skipping LLM call "
-                f"[set CLIP_PASSB_KEEP_DEAD_CHUNKS=1 to disable]",
-                file=sys.stderr,
+        # Signal 3: chat hard-events (sub/bit/raid/donation) — strong
+        # clip-worthy signal regardless of speech content. Only available
+        # in ``multi`` / ``sample`` modes; ``strict`` skips this.
+        _chat_events = 0
+        _speaker_count = 0
+        _word_density = 0.0
+        _subjective_segment = False
+        if _PASSB_GATE_MODE in ("multi", "sample"):
+            if CHAT_FEATURES is not None and not CHAT_FEATURES.is_empty():
+                try:
+                    _cw = CHAT_FEATURES.window(chunk_start, chunk_end)
+                    _chat_events = sum(
+                        int(_cw.get(_k, 0) or 0)
+                        for _k in ("sub_count", "bit_count",
+                                   "raid_count", "donation_count")
+                    )
+                except Exception:
+                    _chat_events = 0
+            # Signal 4: diarization speaker count — multi-speaker chunks
+            # are often clip-worthy (interviews, guest banter, verbal duels
+            # like the Delaware rap battle). Speakers are embedded in the
+            # transcript segments by the Tier-2 M1 diarization stage; when
+            # diarization didn't run, every speaker is None → count = 0
+            # and this signal is a no-op (rest of the gate still fires).
+            _speakers = {_s.get("speaker") for _s in chunk_segs
+                         if _s.get("speaker")}
+            _speakers.discard(None)
+            _speaker_count = len(_speakers)
+            # Signal 5: word density (engaged-talking proxy). A streamer
+            # mid-story or mid-rant hits 2-4 words/sec; silent gameplay
+            # drops below 1.0. Threshold 1.5 sits in the engaged band.
+            _chunk_dur_s = max(1.0, float(chunk_end) - float(chunk_start))
+            _word_density = float(word_count) / _chunk_dur_s
+            # Signal 6: subjective-content segment types — these need LLM
+            # judgement by default regardless of other signals.
+            _subjective_segment = seg_type in (
+                "reaction", "hot_take", "just_chatting"
             )
-            chunk_start += cur_chunk_dur
-            continue
+
+        if _PASSB_GATE_MODE == "strict":
+            _alive = (_kw_hits > 0) or (_audio_fires > 0)
+        else:  # multi or sample
+            _alive = (
+                _kw_hits > 0
+                or _audio_fires > 0
+                or _chat_events > 0
+                or _speaker_count >= 2
+                or _word_density >= 1.5
+                or _subjective_segment
+            )
+
+        if not _alive:
+            # Sampling pass-through: even when all signals are zero, run
+            # the LLM every Nth dead chunk so a sustained quiet stretch
+            # can't silently swallow N+ consecutive moments. The streak
+            # resets every time a chunk passes the gate AND every time
+            # we sample-pass-through.
+            _force_sample = False
+            if _PASSB_GATE_MODE == "sample":
+                _PASSB_DEAD_STREAK[0] += 1
+                if _PASSB_DEAD_STREAK[0] >= _PASSB_DEAD_SAMPLE_RATE:
+                    _force_sample = True
+                    _PASSB_DEAD_STREAK[0] = 0
+
+            _signals_block = {
+                "keywords": _kw_hits,
+                "audio_events": _audio_fires,
+                "chat_events": _chat_events,
+                "diar_speakers": _speaker_count,
+                "word_density": round(_word_density, 2),
+                "segment_type": seg_type,
+            }
+            if _force_sample:
+                print(
+                    f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): "
+                    f"gate={_PASSB_GATE_MODE} dead but SAMPLED "
+                    f"(streak hit 1-in-{_PASSB_DEAD_SAMPLE_RATE}) — "
+                    f"running LLM anyway. signals={_signals_block}",
+                    file=sys.stderr,
+                )
+            else:
+                _skip_record = {
+                    "chunk_index": chunk_count,
+                    "time_range": [int(chunk_start), int(chunk_end)],
+                    "signals": _signals_block,
+                    "mode": _PASSB_GATE_MODE,
+                }
+                _PASSB_SKIPPED_CHUNKS.append(_skip_record)
+                print(
+                    f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): "
+                    f"gate={_PASSB_GATE_MODE} SKIPPED — "
+                    f"kw={_kw_hits} audio={_audio_fires} chat={_chat_events} "
+                    f"spk={_speaker_count} wd={_word_density:.1f} seg={seg_type} "
+                    f"[CLIP_PASSB_DEAD_GATE=off to disable]",
+                    file=sys.stderr,
+                )
+                chunk_start += cur_chunk_dur
+                continue
+        else:
+            # Chunk passed the gate — reset the dead streak so the next
+            # quiet patch starts a fresh sampling cycle.
+            _PASSB_DEAD_STREAK[0] = 0
 
     seg_instructions = SEGMENT_PROMPTS.get(seg_type, SEGMENT_PROMPTS["just_chatting"])
 
@@ -1466,6 +1621,34 @@ If nothing stands out at all, respond: {{"moments": []}}"""
 print(f"[PASS B] LLM found {len(llm_moments)} moments across {chunk_count} chunks", file=sys.stderr)
 with open(f"{TEMP_DIR}/llm_moments.json", "w") as f:
     json.dump(llm_moments, f, indent=2)
+
+# Persist the dead-chunk skip audit log so `logtool dead` can show what was
+# skipped + why. Written even when no chunks were skipped (an empty list
+# is a positive signal that the gate didn't drop anything this run).
+try:
+    with open(f"{TEMP_DIR}/pass_b_skipped_chunks.json", "w") as _sf:
+        json.dump({
+            "mode": _PASSB_GATE_MODE,
+            "sample_rate": _PASSB_DEAD_SAMPLE_RATE if _PASSB_GATE_MODE == "sample" else None,
+            "skipped_count": len(_PASSB_SKIPPED_CHUNKS),
+            "total_chunks": chunk_count,
+            "skipped": _PASSB_SKIPPED_CHUNKS,
+        }, _sf, indent=2)
+    if _PASSB_SKIPPED_CHUNKS:
+        print(
+            f"[PASS B] dead-chunk gate skipped {len(_PASSB_SKIPPED_CHUNKS)}/{chunk_count} "
+            f"chunks (mode={_PASSB_GATE_MODE}) → pass_b_skipped_chunks.json "
+            "(view with `logtool dead <run>`)",
+            file=sys.stderr,
+        )
+    elif _PASSB_GATE_MODE != "off":
+        print(
+            f"[PASS B] dead-chunk gate (mode={_PASSB_GATE_MODE}) passed every chunk through — "
+            "no false-negative risk this run",
+            file=sys.stderr,
+        )
+except OSError as _skip_err:
+    print(f"[PASS B] failed to persist skip log ({_skip_err}); continuing", file=sys.stderr)
 
 # Tier-4 Phase 4.2: persist per-chunk conversation_shape records so Pass D
 # (stage4_rubric.py) and Stage 6 (stage6_vision.py) can look them up by

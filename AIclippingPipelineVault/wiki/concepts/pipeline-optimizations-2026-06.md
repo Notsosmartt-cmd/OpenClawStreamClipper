@@ -49,12 +49,32 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 **Risk**: Medium — concurrent ffmpegs share the encoder cache and could thrash. The 4-worker default is chosen so total threads ≈ core count. Watch for memory pressure on very long clips.
 **Caveat**: stitch group rendering still runs serially after the parallel main loop (it's its own subprocess via `stitch_render.py`).
 
-### 4. Pass B dead-chunk pre-filter
+### 4. Pass B dead-chunk gate (rounds 2 + 4 — multi-signal with sampling + audit log)
 **File**: `scripts/lib/stages/stage4_moments.py`
-**Mechanism**: Skip LLM call on chunks with **zero Pass A keyword hits AND zero Tier-2 audio events** in the chunk's time range. The LLM almost never finds anything in pure-silence chunks; these are wasted ~30-45 s LLM calls.
-**Knobs**: `CLIP_PASSB_KEEP_DEAD_CHUNKS=1` to disable (default: filter ON).
-**Expected lift**: 10-30 % chunk-call reduction depending on stream type. Gaming-heavy streams with long no-chat stretches benefit most; talk-show / chatting streams have signal in nearly every chunk and see ~0 effect.
-**Risk**: Low to medium — a chunk with zero Pass A signal but a genuinely clip-worthy moment WILL be missed. Mitigation: the gate requires BOTH sources to be zero (any keyword OR any audio fire re-enables the LLM call), and is opt-out by env.
+**Mechanism**: Configurable gate that decides whether to skip Pass B's LLM call on chunks with insufficient signal. Four modes via `CLIP_PASSB_DEAD_GATE`:
+
+| Mode | Behaviour | Speed vs Selection |
+|---|---|---|
+| **`off`** (default — round 4) | No filtering, every chunk LLM'd | 0% lift, **zero false negatives** |
+| `strict` | 2-signal gate (keywords + audio_events) — original round-2 behaviour | 25-30% lift, ~5-10% false-negative rate |
+| `multi` | 6-signal gate: keywords + audio_events + chat hard-events + diarization speakers ≥2 + word density ≥1.5/sec + segment type ∈ {reaction, hot_take, just_chatting} | 5-15% lift, very low false-negative risk |
+| `sample` | `multi` + every Nth dead chunk LLM'd anyway (`CLIP_PASSB_DEAD_SAMPLE_RATE`, default 3) — bounds consecutive-skip streak | 20-25% lift, low false-negative risk |
+
+**Round 4 changes from round 2** (2026-06-04 evening):
+- **Default flipped to `off`** after the rakai Delaware case study showed the strict 2-signal gate has a meaningful false-negative rate. A missed clip displaces a worse one in its time-bucket slot (Pass C is competitive), so false negatives cost ~5-10× a false positive (which downstream stages filter for free).
+- **6-signal gate** added (multi/sample modes). Five of six signals were already loaded at chunk-loop scope (only `chat_features.window()` call is new); no new module-level state.
+- **Sampling pass-through** (sample mode): guarantees no more than N-1 consecutive dead skips.
+- **Audit log** written to `{TEMP_DIR}/pass_b_skipped_chunks.json` even on zero skips (positive signal). View with `logtool dead`.
+- Legacy `CLIP_PASSB_KEEP_DEAD_CHUNKS=1` still honoured as alias for `off` (backwards compat).
+
+**Knobs**:
+- `CLIP_PASSB_DEAD_GATE` = `off` (default) | `strict` | `multi` | `sample`
+- `CLIP_PASSB_DEAD_SAMPLE_RATE` = N (default 3) — sample mode only
+- `CLIP_PASSB_KEEP_DEAD_CHUNKS=1` (legacy) — alias for `off`
+
+**Observability**: `python scripts/logtool.py dead` shows the skipped-chunk table with per-row signal breakdown (`kw aud cht spk wd seg`), tip on tuning, and `--json` for raw output.
+
+**Reference**: see `concepts/case-rap-battle-missed.md` for the worked example of why the strict 2-signal gate isn't safe by default.
 
 ---
 
@@ -143,7 +163,9 @@ Real-world wall-clock verification requires a full VOD run.
 | `STAGE5_WORKERS` | `8` | Stage 5 ffmpeg frame-extract concurrency |
 | `STAGE7_WORKERS` | `4` | Stage 7 ffmpeg render + audio-extract concurrency |
 | `STAGE6_WORKERS` | `2` | Stage 6 VLM HTTP concurrency (conservative for vision-encoder serialization) |
-| `CLIP_PASSB_KEEP_DEAD_CHUNKS` | unset | Set to `1` to disable Pass B dead-chunk pre-filter |
+| `CLIP_PASSB_DEAD_GATE` | `off` | Pass B dead-chunk gate mode (`off` = no filter, `strict` = 2-signal, `multi` = 6-signal, `sample` = multi + 1-in-N sampling) |
+| `CLIP_PASSB_DEAD_SAMPLE_RATE` | `3` | Sample mode only — every Nth dead chunk LLM'd anyway |
+| `CLIP_PASSB_KEEP_DEAD_CHUNKS` | unset | (legacy) `=1` aliases `CLIP_PASSB_DEAD_GATE=off` |
 
 ---
 
