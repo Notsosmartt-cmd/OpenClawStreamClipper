@@ -1,96 +1,110 @@
 ---
-title: "qwen3-vl:8b (retired)"
+title: "Qwen3-VL (vision-language family)"
 type: entity
-tags: [model, vision, retired, qwen, historical, infrastructure, stage-6]
-sources: 2
-updated: 2026-04-22
+tags: [model, vision, qwen, multimodal, alibaba, stage-6, vision-judge, hub]
+sources: 3
+updated: 2026-06-04
 ---
 
-# qwen3-vl:8b — retired
+# Qwen3-VL
 
-> [!warning] Retired April 2026
-> This dedicated vision model is no longer used by the pipeline. Stage 6 now calls the same multimodal model used for Stages 3–4 (Gemma 4 `gemma-4-26b-a4b` or Qwen 3.5 `qwen3.5-9b` / `qwen3.5-35b-a3b`, both of which ship with built-in vision and proper thinking-token budgeting). The unified-model design skips the Stage 5→6 VRAM swap entirely.
->
-> This page is kept as historical context for debugging older diagnostics and for anyone running a custom config where the vision model is still dedicated. The dashboard still allows selecting `qwen/qwen3-vl-8b` or `qwen/qwen2.5-vl-7b` as the vision model if you prefer a dedicated one.
+Alibaba's dedicated vision-language model family, released **Dec 2025** ([arXiv 2511.21631](https://arxiv.org/abs/2511.21631v2)). The recommended migration target for the pipeline's vision slot per [[concepts/vlm-comparison-2026-06]] — purpose-built for the multi-frame video-temporal workload that Stage 5.5 and Stage 6 actually run.
 
-Alibaba's third-generation vision-language model. Previously used in Stage 6 (Vision Enrichment) to analyze video frames, generate clip titles/descriptions, and boost scores for visually interesting moments.
-
-Quantization: default Ollama GGUF. VRAM: ~11.1GB. Previously served by [[entities/ollama]] (itself retired — see [[entities/lm-studio]]).
+> [!note] Un-retired 2026-06-04
+> An earlier note marked this entity as retired in favor of unified multimodal LLMs (Gemma 4, Qwen3.5). That framing has been reversed — [[concepts/vlm-comparison-2026-06]] confirms Qwen3-VL is the stronger architectural fit for this pipeline's specific jobs (multi-image preference judgment in Stage 5.5, frame-grounded copy + UI-element localization in Stage 6).
 
 ---
 
-## Role: Vision Enrichment (Non-Gatekeeping)
+## Family
 
-> [!warning] Critical design decision: vision can only help, never hurt
-> Vision enrichment is **non-gatekeeping**. Every moment that survived Stage 4 detection **will be rendered**, regardless of vision score. The vision model can only boost scores upward — it cannot eliminate candidates.
->
-> **Why**: Livestream frames are often visually uninteresting (a face at a desk, a chat overlay, a dark room) even when the *audio* content is genuinely clip-worthy. Making vision a gatekeeper eliminated 90%+ of valid moments in early testing.
+Released as a family with explicit latency-quality trade-offs:
 
-Score blending (vision is additive):
-- Vision score ≥ 7: transcript score + 2 (capped at 10)
-- Vision score ≥ 5: transcript score + 1
-- Vision score < 5: transcript score unchanged
-- If vision fails entirely (bad JSON, timeout, model error): transcript data used as-is
+| Variant | Type | Total params | Active params | Native context | LM Studio Q4_K_M VRAM |
+|---|---|---|---|---|---|
+| Qwen3-VL-2B-Instruct | dense | 2B | 2B | 256K | ~2 GB |
+| Qwen3-VL-4B-Instruct | dense | 4B | 4B | 256K | ~3 GB |
+| **Qwen3-VL-8B-Instruct** | **dense** | **8B** | **8B** | **256K (→1M)** | **~5.7 GB** ← **rec for this pipeline** |
+| Qwen3-VL-32B-Instruct | dense | 32B | 32B | 256K | ~20 GB (needs pool) |
+| **Qwen3-VL-30B-A3B-Instruct** | **MoE** | **30B** | **~3B** | **256K** | **~19.6 GB** (pool / `--cpu-moe`) |
+| Qwen3-VL-235B-A22B-Instruct | MoE | 235B | ~22B | 256K | far too big |
 
----
-
-## What the model receives
-
-- The **middle 2 frames** of the 6 extracted for each moment (most representative)
-- Stream context from Stage 3 profile: dominant type, current segment type, detection reason
-- A prompt asking for: `{score: 1-10, category, title: "viral clip title", description: "one sentence"}`
-
-The stream context makes vision prompts more accurate — the model knows whether it's analyzing a gaming clip vs. an IRL moment vs. a reaction.
+A separate **Thinking** edition exists per family member (`-Thinking` suffix) — thinking mode is selected by **model variant**, not runtime toggle. For the pipeline's vision work, default to the **Instruct** variants.
 
 ---
 
-## Thinking model handling
+## Strengths for the clipper workload
 
-qwen3-vl:8b is a **thinking model** that requires special handling:
-
-- Must be called with `think: true` and `num_predict >= 600`
-- Internal reasoning consumes ~300–500 tokens before producing output (~100–200 content tokens)
-- The pipeline's `call_ollama()` function detects when a model exhausts `num_predict` on thinking tokens (returns empty content) and **automatically retries with a larger budget**
-
-If called without `think: true` or with insufficient `num_predict`, the model produces degraded output.
-
----
-
-## Timeout protection
-
-Stage 6 has two timeout layers:
-- **20-minute total stage timeout**: if the entire vision enrichment takes more than 20 minutes, the stage aborts and clips proceed with transcript-only scores
-- **90-second per-moment timeout**: each individual frame analysis is bounded
-
-This prevents the pipeline from hanging indefinitely if Ollama is slow or unresponsive.
+- **Native multi-image** input — Stage 5.5 cards (4-6 frames) and Stage 6 enrichment (6 frames) are first-class, not stitched.
+- **Native video** with explicit **Text-Timestamp Alignment** — temporal indexing across the T−2s → T+5s payoff window.
+- **256K native context** (extendable to 1M) — multi-card tournament rounds and long-form prompts without re-encoding.
+- **ScreenSpot 94% (8B) / 94.7% (30B-A3B)** — first-class UI-element grounding for `chrome_regions` (chat / logo / cam bbox detection).
+- **2D/3D grounding** is a first-class capability.
+- **OCRBench 896 (8B) / 903 (30B-A3B)** — Qwen wins the OCR tier even though PaddleOCR already handles overlay text.
+- **Officially packaged** by `lmstudio-community` at llama.cpp b6890+ — clean install, no community-mmproj fragility.
 
 ---
 
-## VRAM usage
+## Benchmarks (vs the alternatives)
 
-~11.1GB. The pipeline unloads `qwen3.5:9b` before Stage 6 and loads `qwen3-vl:8b`. After Stage 6, it unloads the vision model to make room for Whisper in Stage 7.
+See [[concepts/vlm-comparison-2026-06]] for the full side-by-side. Highlights:
 
-```
-Stage 6: Unload qwen3.5:9b → Load qwen3-vl:8b (~11.1GB) → Vision enrichment
-Stage 7: Unload qwen3-vl:8b → Load Whisper (~6-7GB) → Batch captions
-```
+| | Qwen3-VL-8B | Qwen3-VL-30B-A3B | Gemma-4-12B (current) | Gemma-4-26B-A4B |
+|---|---|---|---|---|
+| MMMU-Pro | ~ | ~ | 69.1 | **73.8** |
+| OCRBench | 896 | **903** | unpublished | unpublished |
+| DocVQA | ~96% | **95.0%** | trails | 94.9 |
+| ScreenSpot | ~94% | **94.7%** | **unpublished** | unpublished |
+| MVBench | ~ | higher | n/a | n/a |
+| Native context | 256K | 256K | smaller | smaller |
+
+---
+
+## Roles in the pipeline (when adopted)
+
+| Stage | Role | Output |
+|---|---|---|
+| Stage 5.5 ([[entities/vision-judge]]) | Pairwise tournament winner | `{winner: A\|B, confidence, reason}` over 4-6 frame cards |
+| Stage 6 ([[concepts/vision-enrichment]]) | Frame-grounded enrichment | `{score, category, title, description, hook, mirror_safe, chrome_regions, voiceover}` |
+
+Both stages benefit from the multi-image-native + video-temporal architecture. Stage 6's `chrome_regions` field in particular is the one where Qwen3-VL's documented ScreenSpot performance is most decisive.
+
+---
+
+## VRAM choreography (8B is the simplest)
+
+`Qwen3-VL-8B-Instruct` at Q4_K_M = **~5.7 GB** weights + mmproj on the RTX 5060 Ti 16 GB. Leaves ~10 GB for KV cache + 256K context.
+
+`Qwen3-VL-30B-A3B-Instruct` at Q4_K_M = **~19.6 GB** total → exceeds 16 GB CUDA; needs the dual-GPU Vulkan pool (~28 GB combined) or `llama.cpp --cpu-moe` to keep the experts in system RAM. MoE's 3B active params keep per-token throughput acceptable even with the Vulkan dual-GPU penalty (~30-40% throughput loss vs single-card per [llama.cpp #16767](https://github.com/ggml-org/llama.cpp/issues/16767)).
 
 See [[concepts/vram-budget]].
 
 ---
 
-## Why qwen3-vl over alternatives
+## Known issues
 
-It's the smallest Qwen vision model that produces usable frame analysis. Earlier models produced too many parsing errors or insufficient quality descriptions for clip titles.
+- **llama.cpp CUDA BF16 im2col** unsupported in older builds — vision encoder may CPU-fall-back. Requires llama.cpp **b6890 or newer**. The `lmstudio-community` GGUF was built at that version.
+- **mmproj file** required — installed alongside the weights GGUF in the LM Studio model dir.
+- **Instruct vs Thinking is a model-variant choice**, not a runtime toggle. Don't expect to flip thinking mode at request time on this family.
 
-> [!warning] Ollama vision inference works correctly for qwen3-vl
-> Note: `qwen3.5:9b` (the text model) also has vision capabilities, but its GGUF vision inference is **broken in Ollama** as of early 2026. The pipeline routes all vision tasks to `qwen3-vl:8b` exclusively.
+---
+
+## Adoption checklist
+
+1. Download `lmstudio-community/Qwen3-VL-8B-Instruct-GGUF` (Q4_K_M) via LM Studio.
+2. Verify mmproj file is co-located.
+3. Set `config/models.json::vision_model` to the new ID.
+4. Run one VOD with current Gemma vision; rerun with Qwen3-VL on the same input.
+5. Compare via [`logtool axes`](AIclippingPipelineVault/wiki/concepts/observability.md): `judge_tournament.json` rank churn, Stage 6 grounding-tier rates, title quality.
 
 ---
 
 ## Related
-- [[entities/ollama]] — serves this model
-- [[entities/qwen35]] — text model used alongside this one; vision broken in its Ollama GGUF
-- [[concepts/clipping-pipeline]] — Stage 6
-- [[concepts/vision-enrichment]] — full Stage 6 design and logic
-- [[concepts/vram-budget]] — memory orchestration
+
+- [[concepts/vlm-comparison-2026-06]] — the head-to-head research that motivates this pick
+- [[entities/gemma4]] — the incumbent it would replace
+- [[entities/qwen35]] — text model paired with it
+- [[entities/lm-studio]] — serves the GGUF + mmproj
+- [[entities/vision-judge]] — Stage 5.5 consumer
+- [[concepts/vision-enrichment]] — Stage 6 consumer
+- [[concepts/model-split]] — vision_model slot config
+- [[concepts/vram-budget]] — Q4 single-card fit

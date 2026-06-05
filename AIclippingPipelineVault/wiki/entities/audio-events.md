@@ -76,18 +76,50 @@ Prints summary `{"windows": N, "backend": "librosa", "rhythmic_fires": N, ...}` 
 
 ## Cost
 
-The scanner loads the audio file ONCE up-front and slices in-memory per window. Per-window cost is dominated by `librosa.effects.hpss()` (STFT + harmonic/percussive masking) at ~200-300 ms per 30 s window on CPU.
+The scanner loads the audio file ONCE up-front and slices in-memory per window. Per-window cost is dominated by `librosa.effects.hpss()` (STFT + harmonic/percussive masking).
 
-| VOD length | Load time | Scan time | Total |
+| VOD length | Load time | Serial scan (pre-2026-06-04) | Parallel scan (8 workers, post-2026-06-04) |
 |---|---|---|---|
-| 1 hour | ~3 s | ~1.5 min | ~1.5 min |
-| 3 hours | ~10 s | ~5 min | ~5 min |
-| 6 hours | ~20 s | ~10 min | ~10 min |
+| 1 hour | ~3 s | ~5-7 min | **~1 min** |
+| 3 hours | ~10 s | ~20-25 min | **~3-4 min** |
+| 6 hours | ~20 s | ~40-50 min | **~6-8 min** |
+
+> [!warning] Measured 2026-06-04 (pre-parallelization): ~0.8 win/s on i9-13900K
+> Despite the in-memory load, the per-window scan rate measured **~0.8 windows/sec** on the i9-13900K — `librosa.effects.hpss()` STFT + median-filter dominates. CPU usage looked invisibly low because the scanner was **single-threaded** (1 core out of 24 = ~4% of total, often unobservable in Task Manager); GPU usage is zero (librosa is pure NumPy/SciPy, no CUDA). A 3.2 h VOD took ~25 min for this stage alone.
+
+> [!success] RMS-gate early-exit implemented 2026-06-04 (round 2)
+> Added a cheap energy check (one numpy reduction, ~50 µs) before invoking the expensive HPSS detector. Silent windows (RMS < 0.01) early-exit with a zero result, skipping the ~700 ms HPSS cost entirely. **Knobs**: `AUDIO_EVENTS_RMS_GATE` env var; default 0.01; set to 0 to disable. **Expected**: 1.5-3× on top of multiprocessing, varying with the share of silence in the VOD. **Risk**: low — the gate is conservative (normal speech ≈ 0.05-0.15). Tunable if false negatives appear.
+
+> [!success] Multiprocessing implemented 2026-06-04 (round 1) — auto-scales to N workers
+> `scan_audio_events()` now spawns a `multiprocessing.Pool` with the audio array in `multiprocessing.shared_memory` (zero pickle copies). Each worker imports librosa once and processes windows via `pool.imap(chunksize=4)`. Tunables (module top of `scripts/lib/audio_events.py`):
+> - `PARALLEL_MIN_WINDOWS = 20` — below this, serial is faster (worker spawn cost dominates)
+> - `PARALLEL_DEFAULT_CAP = 8` — auto-resolved as `min(8, cpu_count - 2)`
+> - `PARALLEL_CHUNKSIZE = 4` — amortizes per-task IPC overhead
+>
+> Worker count resolution order: `n_workers=` argument → `AUDIO_EVENTS_WORKERS` env var → auto. CLI: `--workers N` (0=auto, 1=force serial, ≥2=that many).
+>
+> Backend field in the JSON output reflects the path actually used (`librosa` for serial, `librosa+mp<N>` for parallel) so downstream consumers can audit which run did what. Window output is byte-identical between paths — the same `_run_detectors` is called in both.
+>
+> Failure-soft: if shared-memory creation, pool spawn, or worker librosa import fails, the parallel path returns `(empty, fail-flag)` and the serial loop runs as fallback with `y_full` still in scope.
 
 > [!warning] Pre-2026-04-28: ``librosa.load()`` per window
 > The original implementation called ``librosa.load(audio_path, offset=t, duration=window_size)`` once per window, re-opening the audio file ~1160 times for a 3-hour VOD. This hung the pipeline at "Tier-2 M2: scanning audio events..." for many minutes with no visible progress. Fixed by loading the file once and slicing the in-memory waveform; the bash invocation also switched to ``python3 -u`` + ``2> >(tee ...)`` so progress logs flow in real time.
 
 Memory budget: a 4-hour 22050 Hz mono float32 buffer is ~1.3 GB. On VODs >~6 hours the loader catches `MemoryError` and writes an empty events file so the pipeline degrades cleanly.
+
+---
+
+## Skipped reasons (observed 2026-06-04)
+
+| `skipped_reason` | Trigger | Recovery |
+|---|---|---|
+| `librosa_missing` | librosa not importable (slim image build) | Install librosa or accept Pass A runs unboosted |
+| `zero_duration` | `librosa.get_duration()` returned 0 | Verify the audio file is valid |
+| `load_oom` | MemoryError loading full audio | VOD too long for in-memory scan (>~6 h); chunk into halves manually |
+| `load_failed` | Generic librosa load exception | Check audio codec / file integrity |
+| **`no_audio_source`** | **Audio file path missing or empty** — typical on cached-transcript re-runs where the audio.wav was deleted post-transcription | **Re-extract audio before audio_events when transcript is cached but events JSON is missing (see [[concepts/case-rap-battle-missed]] §Diagnosis 4)** |
+
+The `no_audio_source` case is a **silent miss**: cached transcription re-runs reach Pass A without any Tier-2 M2 boosts, and Pass A's freestyle/dance/crowd-reaction detection regresses to keyword-only. This was the rakai 2026-04-24 run's situation per [[concepts/case-rap-battle-missed]].
 
 ---
 

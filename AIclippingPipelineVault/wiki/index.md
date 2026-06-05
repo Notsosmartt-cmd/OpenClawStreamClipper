@@ -14,8 +14,9 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Models
 - [[entities/faster-whisper]] — Speech-to-text; WhisperX (VAD+align) + faster-whisper fallback; CTranslate2 + cuDNN on GPU; Stages 2 and 7
-- [[entities/qwen35]] — Qwen text/vision family; current split = `qwen3.5-9b` (text) + `gemma-4-12b` (vision); see [[concepts/model-split]] for tier + thinking guidance
-- [[entities/qwen3-vl]] — *retired* — previous dedicated vision model; kept for historical context
+- [[entities/qwen35]] — Qwen text family (3.5-9b current, 3.6-27b/35b-a3b available); **Qwen 3.6 is ALSO multimodal** (vision baked in, top-tier benches; new consolidation pick — 2026-06-04)
+- [[entities/qwen3-vl]] — **un-retired 2026-06-04** — dedicated VLM family (8B Instruct + 30B-A3B Instruct); recommended vision migration target
+- [[entities/gemma4]] — Google's unified multimodal family (12B current vision_model, 26B-A4B / 31B available); watch open llama.cpp vision bugs
 - [[entities/qwen25]] — Discord agent model (older reference; current setup uses same LM Studio model for agent and pipeline)
 - [[entities/piper]] — local CPU TTS for wave-D voiceover layer
 - [[entities/librosa]] — audio feature extraction for tier-C music matching
@@ -76,7 +77,11 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/speech-pipeline]] — Phase 3 Stage 2 architecture: WhisperX VAD + batched ASR + forced alignment, with faster-whisper fallback
 - [[concepts/chrome-masking]] — *removed 2026-05-01* — Phase 4.1 UI overlay masking + OCR; tombstoned with historical record; see BUG 49/50
 - [[concepts/boundary-snap]] — Phase 4.2 pragmatic variable-length windows via sentence + silence gap snapping
-- [[concepts/model-split]] — Phase 5.1 optional per-stage model overrides (Pass B text-only, Stage 6 vision-specialist)
+- [[concepts/model-split]] — Phase 5.1 optional per-stage model overrides (Pass B text-only, Stage 6 vision-specialist); updated 2026-06-04 tier tables
+- [[concepts/vlm-comparison-2026-06]] — Head-to-head: Qwen3-VL vs Gemma 4 vs Qwen3.5 for the clipper workload; recommends Qwen3-VL-8B
+- [[concepts/text-comparison-2026-06]] — Head-to-head: Qwen 3.6 hybrid (avoid) vs gpt-oss-20b vs Gemma 4 for the text slot; recommends Gemma 4 12B (IFEval 88.9)
+- [[concepts/case-rap-battle-missed]] — Case study: rakai 2026-04-24 Delaware freestyle missed by Pass A + Pass B + audio_events; concrete keyword/prompt/diarization tuning recommendations
+- [[concepts/pipeline-optimizations-2026-06]] — Parallelization + RMS-gate + dead-chunk pre-filter sweep; implemented Stage 5/7 ffmpeg parallel + Pass B pre-filter + audio events RMS gate; ~1.6× combined wall-clock lift expected
 - [[concepts/self-consistency]] — Phase 5.2 N-candidate ranking for hallucination suppression
 - [[concepts/callback-detection]] — Tier-2 M3 architecture: cosine search + LLM judgment for cross-chunk arcs
 - [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection
