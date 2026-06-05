@@ -14,7 +14,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Models
 - [[entities/faster-whisper]] — Speech-to-text; WhisperX (VAD+align) + faster-whisper fallback; CTranslate2 + cuDNN on GPU; Stages 2 and 7
-- [[entities/qwen35]] — Default multimodal model (`qwen/qwen3.5-9b` / `qwen3.5-35b-a3b` or Gemma 4 `gemma-4-26b-a4b`); text + vision; Stages 3–4 and 6
+- [[entities/qwen35]] — Qwen text/vision family; current split = `qwen3.5-9b` (text) + `gemma-4-12b` (vision); see [[concepts/model-split]] for tier + thinking guidance
 - [[entities/qwen3-vl]] — *retired* — previous dedicated vision model; kept for historical context
 - [[entities/qwen25]] — Discord agent model (older reference; current setup uses same LM Studio model for agent and pipeline)
 - [[entities/piper]] — local CPU TTS for wave-D voiceover layer
@@ -52,7 +52,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/observability]] — **Diagnostics & axis tuning**: `axis_report`/`stage_timings`/`judge_tournament` JSON, rank churn, and the `logtool axes` tune→run→diff view
 - [[concepts/clipping-pipeline]] — All stages (incl. optional 4.5 and 6.5) with detail, performance table, temp files
 - [[concepts/segment-detection]] — Stage 3: 5-type classification, stream profile, segment-aware weighting
-- [[concepts/highlight-detection]] — Stage 4: three-pass (keywords + LLM + merge/time-bucket/select)
+- [[concepts/highlight-detection]] — Stage 4: keywords + LLM + Pass C re-rank (selection axes A/B/C/E) + Pass D rubric → Stage 5.5 [[entities/vision-judge]]
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
 - [[concepts/captions]] — Subtitle style, hook card (top-of-video), per-clip palette/position randomization
@@ -70,7 +70,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/style-profiles]] — Per-category AI editing profiles (zoom punches, freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues, kinetic captions, fingerprint perturbation); dispatched by Stage 7 when `chk-style-profiles` is on
 
 ### Reference
-- [[concepts/bugs-and-fixes]] — 37 bugs documented; quick-nav table by category; symptoms, root causes, solutions
+- [[concepts/bugs-and-fixes]] — 59 bugs documented (latest: BUG 58 force-reprocess re-transcribe, BUG 59 HF symlink WinError); quick-nav by category
 - [[concepts/open-questions]] — Score normalization, variable clip length, model switcher UI, known gaps
 - [[concepts/chat-signal]] — Phase 2 Pass A' architecture: Twitch chat → burst / emote density / hard event counts
 - [[concepts/speech-pipeline]] — Phase 3 Stage 2 architecture: WhisperX VAD + batched ASR + forced alignment, with faster-whisper fallback
