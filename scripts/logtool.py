@@ -402,6 +402,82 @@ def _moments_list(data: dict, key: str) -> list:
     return []
 
 
+def cmd_dead(args) -> int:
+    """Pass B dead-chunk skip log (2026-06-04). Shows which transcript chunks
+    the dead-chunk gate skipped this run + why (signal breakdown). Useful
+    for auditing whether a missed clip was a gate false-negative.
+
+    The log lives at ``{work_dir}/pass_b_skipped_chunks.json`` and is
+    written even when zero chunks were skipped (an empty list confirms
+    the gate didn't drop anything). Only the most recent run's log is
+    available — re-run the pipeline to refresh.
+    """
+    p = PATHS.work_dir / "pass_b_skipped_chunks.json"
+    if not p.exists():
+        print(f"(no skip log at {p} — run the pipeline first)")
+        return 1
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"failed to read {p}: {e}")
+        return 1
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+
+    mode = data.get("mode", "?")
+    sample_rate = data.get("sample_rate")
+    skipped = data.get("skipped") or []
+    total = data.get("total_chunks") or 0
+    skipped_n = len(skipped)
+    pct = (skipped_n / total * 100.0) if total else 0.0
+
+    header = (
+        f"# Pass B dead-chunk skip log — mode={mode}, "
+        f"{skipped_n}/{total} chunks skipped ({pct:.0f}%)"
+    )
+    if sample_rate:
+        header += f", sample 1-in-{sample_rate}"
+    print(_c("36", header))
+
+    if not skipped:
+        print(_c("32", "  (no skipped chunks this run — no false-negative risk)"))
+        return 0
+
+    print()
+    print(f"  {'Chunk':>5}  {'Time range':>15}  {'kw':>3} {'aud':>3} {'cht':>3} "
+          f"{'spk':>3} {'wd':>5}  {'segment':<14}")
+    print(f"  {'-'*5}  {'-'*15}  {'-'*3} {'-'*3} {'-'*3} {'-'*3} {'-'*5}  {'-'*14}")
+    for rec in skipped[: args.n]:
+        ci = rec.get("chunk_index", "?")
+        tr = rec.get("time_range") or [0, 0]
+        sig = rec.get("signals") or {}
+        t_start = tr[0] if len(tr) > 0 else 0
+        t_end = tr[1] if len(tr) > 1 else 0
+        ts_str = f"{t_start//60:02d}:{t_start%60:02d}-{t_end//60:02d}:{t_end%60:02d}"
+        print(
+            f"  {ci:>5}  {ts_str:>15}  "
+            f"{sig.get('keywords', 0):>3} "
+            f"{sig.get('audio_events', 0):>3} "
+            f"{sig.get('chat_events', 0):>3} "
+            f"{sig.get('diar_speakers', 0):>3} "
+            f"{sig.get('word_density', 0.0):>5.1f}  "
+            f"{str(sig.get('segment_type', '?')):<14}"
+        )
+
+    if skipped_n > args.n:
+        print(_c("2", f"  ... ({skipped_n - args.n} more, use -n {skipped_n} to show all)"))
+
+    print()
+    print(_c("2",
+        "  Legend: kw=keywords, aud=audio_events, cht=chat_events, "
+        "spk=diar_speakers, wd=word_density (words/sec)"))
+    print(_c("2",
+        "  If a row shows a real clip you wanted, the gate had a false negative — "
+        "set CLIP_PASSB_DEAD_GATE=off (default) or lower the threshold."))
+    return 0
+
+
 def cmd_axes(args) -> int:
     """Selection-axis tuning view: axis report + rank churn + stage timing +
     Vision-Judge bracket, read back from a past run's diagnostics snapshot."""
@@ -500,6 +576,11 @@ def main(argv) -> int:
                      help="diagnostics run: index from newest, name substring, or path (default: latest)")
     pax.add_argument("--judge-limit", type=int, default=20, help="max judge comparisons to print")
 
+    pd = sub.add_parser("dead",
+        help="Show the Pass B dead-chunk skip log (most recent run)")
+    pd.add_argument("-n", type=int, default=40, help="max rows to print")
+    pd.add_argument("--json", action="store_true", help="raw JSON output")
+
     args = ap.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor(args)
@@ -513,6 +594,8 @@ def main(argv) -> int:
         return cmd_tail(args)
     if args.cmd == "axes":
         return cmd_axes(args)
+    if args.cmd == "dead":
+        return cmd_dead(args)
     ap.print_help()
     return 0
 
