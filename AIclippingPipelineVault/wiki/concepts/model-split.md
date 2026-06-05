@@ -56,7 +56,19 @@ Switched to models that **fully fit 16 GB** (GPU-resident = fast, no CPU spill):
 
 `text_model_passb` / `vision_model_stage6` left null → inherit the above. The two total **14.1 GB**, so LM Studio may hold both **co-resident** in 16 GB → no swap between the text and vision stages either.
 
-**Which installed models fit 16 GB:** ✅ gpt-oss-20b 12.1 (reasoning, dialable effort), gemma-4-12b 7.6, qwen3.5-9b 6.5, nemotron-4b 4.2 · ❌ spill to CPU: qwen3.6-27b 17.5, gemma-4-26b-a4b 18.0, gemma-4-31b 19.9, qwen3.6-35b-a3b 22.1. Rationale for the picks: thinking only pays off at the Vision Judge (pairwise) + lightly at Pass D; Pass B / Stage 3 / Stage 6 are extraction/classification/perception where a fast non-thinking model that *fits VRAM* wins. Reserve `gpt-oss-20b` for a reasoning-leaning role if wanted.
+**Which installed models fit 16 GB (5060 Ti alone, CUDA — fastest path):** ✅ gpt-oss-20b 12.1 (reasoning, dialable effort), gemma-4-12b 7.6, qwen3.5-9b 6.5, nemotron-4b 4.2 · the 27B/26B-A4B/31B/35B (17.5–22.1 GB) do NOT fit the NVIDIA card alone.
+
+> [!note] Correction — dual-GPU Vulkan changes the VRAM math (2026-06-04)
+> The box also has an **AMD RX 6700 XT (12 GB)**, and LM Studio runs the **Vulkan** backend across **both** GPUs → pooled budget **≈ 28 GB**. So the 35B (22 GB) was **not** spilling to CPU as first stated — it was split across the two cards (in VRAM). The slowness was instead: (1) the **thinking** tax (BUG 57 — can't disable via API; the token-exhaustion of BUG 20), and (2) the Vulkan/multi-GPU runtime being slower than CUDA-on-NVIDIA-alone (cross-vendor backend + inter-GPU PCIe transfer each forward pass). **Models load one at a time** (the choreography below swaps per stage), so each gets the *full* pooled budget — text+vision never need to co-reside, but each swap costs a reload. **For max speed prefer CUDA + NVIDIA-only with models ≤16 GB; use Vulkan/both only for capacity** (e.g. a Q4 Qwen3-VL-30B vision model or a big MoE on the Judge).
+
+### Thinking: off almost everywhere (research-backed, 2026-06-04)
+
+External evidence (a study of thinking mode in local agent workflows + extraction-model research) is unambiguous: reasoning/thinking gives **little benefit and should be OFF for JSON extraction, classification, summarization, and structured/tool output**, and the thinking block can eat the entire `max_tokens` before any answer — the exact failure of **BUG 20** (35B-A3B thinking consumed all tokens). Mapped to stages: **off** for Stage 3 (classify), Pass B (extract — the one that bit us), Pass D (evaluate), Stage 6 (generate). The **only** candidate for thinking-ON is the **Vision Judge** (pairwise judgment = a decision task), but it's bundled with Stage 6 and runs ×N comparisons, so keep it off and only experiment there. Because the API thinking-toggle is ignored (BUG 57), the reliable lever is **model choice** (non-thinking-by-default models), not the flag.
+
+### Best per-role picks (research-grounded)
+
+- **Text role** (`text_model`: Stage 3 + Pass B + Pass D) — non-thinking, fits the NVIDIA card: `qwen3.5-9b` (6.5, fastest) or `gpt-oss-20b` at low effort (12.1, strongest extraction that still fits 16 GB).
+- **Vision role** (`vision_model`: Stage 6 + Judge) — a **Qwen3-VL** vision specialist is the research winner for OCR/UI grounding (reads Twitch chrome → better titles + less hallucination, BUG 26): **`Qwen3-VL-8B`** (~10 GB, the model this note already recommends) or **`Qwen3-VL-30B-A3B`** (MoE ~2.4 B active; Q3_K 14 GB fits NVIDIA alone, Q4 18 GB needs the pool). `gemma-4-12b` (7.6, installed) is the no-download fallback. Both need a download for Qwen3-VL.
 
 ---
 
