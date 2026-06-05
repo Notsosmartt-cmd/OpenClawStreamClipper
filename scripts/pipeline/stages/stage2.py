@@ -50,6 +50,18 @@ def run(ctx) -> None:
         shutil.copyfile(cached_json, p.transcript_json)
         shutil.copyfile(cached_srt, p.transcript_srt)
         _print_cached_stats(ctx)
+        # 2026-06-04 (Delaware fix): even on the cached-transcript path we
+        # still need audio.wav for the Tier-2 M2 audio-events scan below.
+        # Before this fix, cached re-runs wrote `{"skipped_reason":
+        # "no_audio_source"}` because audio extraction only happened in the
+        # non-cached branch. That silently disabled rhythmic_speech /
+        # crowd_response / music_dominance signals on every re-run, which
+        # was one of the three failures stacked behind the rakai Delaware
+        # rap battle being missed. See case-rap-battle-missed §Diagnosis 4.
+        if not audio.exists():
+            log.log("Cached transcript path — extracting audio track for Tier-2 M2 audio events...")
+            common.run_ffmpeg(["ffmpeg", "-y", "-i", str(ctx.vod_path), "-vn",
+                               "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(audio)])
     else:
         if ctx.force and (cached_json.exists() or cached_srt.exists()):
             log.log(f"Force reprocess: discarding cached transcription for '{ctx.vod_basename}' and re-transcribing.")
@@ -81,6 +93,8 @@ def run(ctx) -> None:
     log.log(f"Transcription complete. Output: {p.transcript_json}")
 
     # Tier-2 M2 — audio events scan (boost-only signals for Pass A).
+    # The cached-transcript path above now also extracts audio.wav, so
+    # this branch fires on both fresh and cached runs (post-2026-06-04).
     events = p.work("audio_events.json")
     if audio.exists():
         log.log("Tier-2 M2: scanning audio events (rhythmic / crowd / music)...")
