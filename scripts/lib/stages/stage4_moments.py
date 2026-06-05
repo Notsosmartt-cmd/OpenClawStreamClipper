@@ -311,7 +311,15 @@ KEYWORD_SETS = {
         "what happened was", "the other day", "story time", "gather around",
         "you want to know", "let me explain", "so get this",
         "i gotta tell you", "the wildest thing", "not gonna lie",
-        "you're not gonna believe this", "so picture this", "fun fact"
+        "you're not gonna believe this", "so picture this", "fun fact",
+        # 2026-06-04 (Delaware case): interview_revelation pattern markers.
+        # Probe-and-reveal shape where someone is being asked or probed
+        # and reveals something — the catalog's "interview_revelation"
+        # pattern. Distinct from generic storytime but classed here
+        # because the resulting clip IS a story payoff.
+        "wait so tell me", "what really happened", "be honest with me",
+        "i want to know", "you can tell me", "off the record",
+        "between us", "the real story"
     ],
     "reactive": [
         "what is wrong with", "are you kidding", "i'm so done", "this is unacceptable",
@@ -327,14 +335,30 @@ KEYWORD_SETS = {
         "dance", "dancing", "twerk", "moves", "hit that", "do it",
         "go go go", "get it", "vibe", "vibing", "groove", "grooving",
         "bust a move", "let's dance", "song", "turn up", "body roll",
-        "choreo", "choreography", "performing", "the dance"
+        "choreo", "choreography", "performing", "the dance",
+        # 2026-06-04 (Delaware case): rap battle / freestyle / verbal-duel
+        # vocabulary. Maps to the `rap_battle_freestyle` pattern in the
+        # PATTERN_CATALOG; these chunks were invisible to Pass A before
+        # (the rakai 10:54 rap battle scored 0/12 chunks because none of
+        # the existing keyword sets had any signature for the pattern).
+        # Conservative selection — only 3-5+ word phrases or phrases that
+        # are unmistakeably rap-battle context. See case-rap-battle-missed.
+        "kill him with words", "kill him again", "drop a verse",
+        "with the gun talk", "let me cook", "rap battle",
+        "freestyle", "go in", "round 2", "go again",
+        "spit some bars", "bars on bars"
     ],
     "controversial": [
         "drama", "beef", "called out", "exposed", "receipts", "caught",
         "tea", "spill", "shade", "throwing shade", "shots fired",
         "that's cap", "lying", "fake", "two-faced", "snake",
         "banned", "canceled", "cancelled", "suspended", "kicked",
-        "he said she said", "clipped out of context", "oh hell no"
+        "he said she said", "clipped out of context", "oh hell no",
+        # 2026-06-04: social_callout pattern markers. These are framed as
+        # "look at this/him/her" callouts toward an off-screen party —
+        # the streamer pointing out someone else as the moment subject.
+        "look at this guy", "look at this dude", "this dude is",
+        "you see that", "did you see that", "watch this guy"
     ]
 }
 

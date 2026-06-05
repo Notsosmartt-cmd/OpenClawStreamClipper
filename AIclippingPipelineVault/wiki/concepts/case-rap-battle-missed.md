@@ -113,20 +113,20 @@ The Delaware case had **at least 5 of these 6 signals present simultaneously** �
 
 ## Concrete tuning recommendations (ranked by ROI)
 
+> [!success] Quick wins shipped 2026-06-04
+> Items 1, 2 and 3 below are now implemented (commit pending). Items 4-6 remain as documented future work.
+
 ### Quick wins (low effort, high impact)
 
-1. **Add rap-battle keywords to Pass A** (`config/keywords.json` or wherever the keyword categories live):
-   ```
-   funny / hype / dancing:
-     "kill him with words", "kill him again", "spit", "bars",
-     "freestyle", "rap battle", "rap me", "drop a verse",
-     "with the gun talk", "go in", "go again", "let me cook",
-     "round 2", "another one"
-   ```
+1. ✅ **SHIPPED — Pass A rap-battle keywords** added to `KEYWORD_SETS` in `scripts/lib/stages/stage4_moments.py`:
+   - **dancing** (+12 phrases): "kill him with words", "kill him again", "drop a verse", "with the gun talk", "let me cook", "rap battle", "freestyle", "go in", "round 2", "go again", "spit some bars", "bars on bars"
+   - **controversial** (+6 phrases for social_callout pattern): "look at this guy", "look at this dude", "this dude is", "you see that", "did you see that", "watch this guy"
+   - **storytime** (+8 phrases for interview_revelation pattern): "wait so tell me", "what really happened", "be honest with me", "i want to know", "you can tell me", "off the record", "between us", "the real story"
+   Conservative selection — only 3+ word phrases or unmistakeable context — to avoid false positives. Verified single dict, no duplicate keys, AST OK.
 
-2. **Add a "freestyle" / "rap_battle" pattern type to Pass B prompts** for IRL and just_chatting segments. Description: "two speakers in tight verbal duel with rhymed bars and crowd hype; call-and-response setup with punchline payoff."
+2. ✅ **SHIPPED — Pattern catalog enhancement** in `config/patterns.json`. The `rap_battle_freestyle` pattern existed but its signature was audio-centric ("music dominance is high"). Added **TRANSCRIPT MARKERS** the LLM can use when audio backend signal is unavailable (e.g. cached-transcript re-runs where audio_events was empty): (a) ≥3 consecutive end-rhymes in ~20s, (b) call-and-response setup + metered punchline, (c) hype-shout interjection loop, (d) clusters of short metered sentences. Also added `audio:rhythmic_speech>=0.7` and `end_rhyme_chain` to the structural signals, plus a worked example using the Delaware transcript itself.
 
-3. **Fix the cached-transcript audio-extraction gap** in [[entities/audio-events]] — when transcript is cached but `audio_events.json` doesn't exist or is empty, re-extract audio and run the scanner. Otherwise Tier-2 M2 silently no-ops on re-runs.
+3. ✅ **SHIPPED — Cached-transcript audio extraction** in `scripts/pipeline/stages/stage2.py`. The cached-transcript branch now also extracts `audio.wav` from the source VOD so the Tier-2 M2 audio_events scanner has its input. Pre-fix, cached re-runs wrote `{"skipped_reason": "no_audio_source"}` and silently disabled rhythmic_speech / crowd_response / music_dominance signals on every re-run — one of the three failures stacked behind the Delaware miss.
 
 ### Medium effort
 
