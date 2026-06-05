@@ -142,6 +142,7 @@ def _execute_stages(ctx, log) -> int:
     """Run model verification + the 8 stages for one VOD. Returns an exit code.
     Catches PipelineExit (an intentional early stop) and returns its code."""
     import importlib
+    t0 = time.time()
     try:
         if not ctx.list_mode:
             common.verify_models(log, ctx.llm_url, ctx.configured_models())
@@ -152,6 +153,11 @@ def _execute_stages(ctx, log) -> int:
         if pe.summary:
             log.line(pe.summary)
         return pe.code
+    finally:
+        if not ctx.list_mode:
+            el = int(time.time() - t0)
+            log.log(f"VOD session time [{ctx.vod_basename or ctx.target_vod or 'unknown'}]: "
+                    f"{el // 60}m {el % 60}s ({el}s)")
 
 
 def _discover_all(ctx) -> list[str]:
