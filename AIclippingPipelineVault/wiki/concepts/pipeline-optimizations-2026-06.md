@@ -90,6 +90,44 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 
 ---
 
+## Pass C selection observability (2026-06-05)
+
+A separate concern surfaced during the rakai verification run (see [[concepts/case-rap-battle-missed]] §2026-06-05): the structural FN fixes detected the Delaware rap battle perfectly (Pass A keyword hits → Pass B `rap_battle_freestyle` 0.878 with cross-val to 1.000), but **Pass C selection dropped it**. T=1828 with Pass B 0.433 won the bucket; T=654 with Pass B 0.878 didn't. Without per-candidate scoring traces, the cause was undiagnosable from the existing diagnostics (only the 10 winners get full `moment_<T>` records).
+
+### Phase 1 — Pass C candidate trace (shipped 2026-06-05)
+
+**File**: `scripts/lib/stages/stage4_moments.py` writes `{TEMP_DIR}/pass_c_candidates.json` after Pass C selection finalizes. One record per deduped moment with the FULL scoring chain: timestamp, source, primary_pattern/category, segment_type, Pass B score, normalized_score after ceiling, cross_validated flag, length_penalty, position_weight, all four axis multipliers (arc/reaction/baseline/engagement), combined axis_multiplier (post-clamp), final_score, base_rank, pass_c_rank, bucket_idx, bucket_rank, selected flag, and a 140-char `why` preview.
+
+**Viewer**: new `logtool selection [-n N] [--pattern <id>] [--bucket N] [--json]` subcommand renders the trace per bucket with row colouring (selected rows green) and per-row signal breakdown. Looks like:
+
+```
+## Bucket 1/6 (00:00-32:17) — 5 candidates, 1 selected
+  sel        T   rank  src   pattern                       cat        seg            cv     pB   norm   pos   len   axis   final
+  ---  -------  -----  ----  ----------------------------  ---------  -------------  --  -----  -----  ----  ----  -----  ------
+    ✓    30:28      1  llm   setup_external_contradiction  funny      irl             Y  0.433  0.433  0.95  1.00   1.55   0.952
+         10:54      3  llm   rap_battle_freestyle          hype       just_chatting   Y  0.878  1.000  0.88  1.00   1.05   0.815
+```
+
+The rakai diagnosis becomes a single glance: T=1828 selected with Pass B 0.433 + axis 1.55 → 0.952; T=654 rejected with Pass B 0.878 + cross-val to 1.000 but axis only 1.05 → 0.815. The axis-multiplier gap (1.55 vs 1.05) is the smoking gun.
+
+**Knobs**: none — this is pure observability. Write is unconditional (failure-soft via try/except).
+
+**Verification**: AST OK; smoke-tested cmd_selection with synthetic data modelling the rakai bucket 0 situation; pattern and bucket filters confirmed working; selected-row colour rendering confirmed.
+
+### Phase 2 — Rare-pattern bonus (deferred to next session)
+
+The Phase 1 trace confirms the hypothesis: rare patterns like `rap_battle_freestyle` lose to common patterns whose axis multipliers compound. The next fix is a per-pattern multiplier applied to `final_score` when a Pass B moment with a rare pattern is also cross-validated. Defer until at least one more run with `logtool selection` confirms the cross-pattern axis-multiplier gap is reproducible, not specific to the Delaware case.
+
+```python
+RARE_PATTERN_BONUS = {
+    "rap_battle_freestyle": 1.15,
+    "interview_revelation": 1.10,
+    "social_callout": 1.05,
+}
+```
+
+---
+
 ## Deferred (high impact, higher risk — needs careful follow-up)
 
 These are tracked here so the next implementation session can pick them up

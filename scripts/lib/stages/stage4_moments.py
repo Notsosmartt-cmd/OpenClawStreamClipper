@@ -2544,6 +2544,74 @@ final.sort(key=lambda x: x["final_score"], reverse=True)
 
 print(f"  Final selection: {len(final)} clips across {len(set(min(int(m['timestamp']/bucket_duration), NUM_BUCKETS-1) for m in final))} of {NUM_BUCKETS} time buckets", file=sys.stderr)
 
+# 2026-06-05 — Pass C candidate trace (observability fix). Dump every deduped
+# candidate's full scoring chain so post-run analysis can answer "why did the
+# Delaware rap battle lose to T=1828?" without re-deriving multipliers. Pairs
+# with `logtool selection <run>` for human-readable inspection.
+# See concepts/pipeline-optimizations-2026-06 and case-rap-battle-missed.
+try:
+    _selected_ids = {id(m) for m in final}
+    _trace_records = []
+    for _m in deduped:
+        _t = float(_m.get("timestamp", 0) or 0)
+        _bucket_idx = min(int(_t / bucket_duration), NUM_BUCKETS - 1) if bucket_duration else 0
+        _rec = {
+            "timestamp": _m.get("timestamp"),
+            "bucket_idx": _bucket_idx,
+            "selected": id(_m) in _selected_ids,
+            "source": _m.get("source"),
+            "primary_pattern": _m.get("primary_pattern"),
+            "primary_category": _m.get("primary_category"),
+            "segment_type": _m.get("segment_type") or get_segment_type(_t),
+            "score": _m.get("score"),
+            "normalized_score": _m.get("normalized_score"),
+            "cross_validated": bool(_m.get("cross_validated", False)),
+            "clip_duration": _m.get("clip_duration"),
+            "length_penalty": _m.get("length_penalty"),
+            "position_weight": _m.get("position_weight"),
+            "arc_multiplier": _m.get("arc_multiplier"),
+            "reaction_multiplier": _m.get("reaction_multiplier"),
+            "baseline_multiplier": _m.get("baseline_multiplier"),
+            "engagement_multiplier": _m.get("engagement_multiplier"),
+            "axis_multiplier": _m.get("axis_multiplier"),
+            "final_score": _m.get("final_score"),
+            "base_rank": _m.get("base_rank"),
+            "pass_c_rank": _m.get("pass_c_rank"),
+        }
+        # 1-line preview helps the human inspector identify the moment without
+        # cross-referencing the full transcript. Truncate aggressively.
+        _why = _m.get("why") or _m.get("preview") or ""
+        if _why:
+            _rec["why"] = str(_why)[:140]
+        _trace_records.append(_rec)
+    # Compute per-bucket rank within bucket (1-indexed by final_score desc).
+    _by_bucket = {}
+    for _r in _trace_records:
+        _by_bucket.setdefault(_r["bucket_idx"], []).append(_r)
+    for _bi, _rs in _by_bucket.items():
+        _rs.sort(key=lambda x: x.get("final_score") or 0.0, reverse=True)
+        for _idx, _r in enumerate(_rs, 1):
+            _r["bucket_rank"] = _idx
+
+    _trace_payload = {
+        "total_candidates": len(deduped),
+        "selected_count": len(final),
+        "num_buckets": NUM_BUCKETS,
+        "bucket_duration_s": round(bucket_duration, 1),
+        "clips_per_bucket": clips_per_bucket,
+        "overflow_slots": overflow_slots,
+        "style": CLIP_STYLE,
+        "max_time_s": round(max_time, 1),
+        "candidates": _trace_records,
+    }
+    with open(f"{TEMP_DIR}/pass_c_candidates.json", "w", encoding="utf-8") as _tf:
+        json.dump(_trace_payload, _tf, indent=2)
+    print(f"[PASS C] candidate trace ({len(deduped)} candidates, {len(final)} selected) -> "
+          f"pass_c_candidates.json (view with `logtool selection`)",
+          file=sys.stderr)
+except OSError as _trace_err:
+    print(f"[PASS C] failed to write candidate trace ({_trace_err}); continuing", file=sys.stderr)
+
 # Write output with clip boundaries and 0-1 scores.
 # BUG 37: final_score may exceed 1.0 because we soft-cap during ranking
 # (saturation at the cap destroyed Pass C's tie-breaking). Clip to [0, 1]

@@ -402,6 +402,144 @@ def _moments_list(data: dict, key: str) -> list:
     return []
 
 
+def cmd_selection(args) -> int:
+    """Pass C candidate trace — shows every deduped moment's full scoring
+    chain (Pass B score → multipliers → final_score → selection) per time
+    bucket, with the rejected candidates next to the winners. Useful for
+    answering "why did moment X lose to moment Y in this bucket?" without
+    re-deriving the multipliers manually.
+
+    The trace lives at ``{work_dir}/pass_c_candidates.json``, written by
+    stage4_moments.py at the end of Pass C selection. Only the most recent
+    run's trace is available — re-run the pipeline to refresh.
+    """
+    p = PATHS.work_dir / "pass_c_candidates.json"
+    if not p.exists():
+        print(f"(no candidate trace at {p} — run the pipeline first)")
+        return 1
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"failed to read {p}: {e}")
+        return 1
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+
+    candidates = data.get("candidates") or []
+    if not candidates:
+        print("(no candidates in trace)")
+        return 0
+
+    total = data.get("total_candidates", len(candidates))
+    selected = data.get("selected_count", 0)
+    nbuckets = data.get("num_buckets", 0)
+    bdur = float(data.get("bucket_duration_s", 0))
+    style = data.get("style", "?")
+    cpb = data.get("clips_per_bucket", 1)
+    overflow = data.get("overflow_slots", 0)
+    print(_c("36",
+        f"# Pass C candidate trace — {total} deduped candidates, "
+        f"{selected} selected, {nbuckets} buckets of {bdur/60:.0f}min "
+        f"(style={style}, {cpb}/bucket + {overflow} overflow)"))
+
+    # Optional filters
+    pattern_filter = getattr(args, "pattern", None)
+    bucket_filter = getattr(args, "bucket", None)
+
+    by_bucket = {}
+    for r in candidates:
+        by_bucket.setdefault(r.get("bucket_idx", -1), []).append(r)
+
+    for bi in sorted(by_bucket.keys()):
+        if bucket_filter is not None and bi != bucket_filter:
+            continue
+        recs = by_bucket[bi]
+        recs.sort(key=lambda x: x.get("bucket_rank") or 9999)
+        # Apply pattern filter at the bucket-level so empty buckets after
+        # filtering are dropped from the report.
+        if pattern_filter:
+            recs = [r for r in recs if (r.get("primary_pattern") or "") == pattern_filter]
+            if not recs:
+                continue
+        sel_count = sum(1 for r in recs if r.get("selected"))
+        b_start = bi * bdur
+        b_end = (bi + 1) * bdur
+        print()
+        print(_c("33",
+            f"## Bucket {bi+1}/{nbuckets} ({_mmss(b_start)}-{_mmss(b_end)}) — "
+            f"{len(recs)} candidates, {sel_count} selected"))
+        print(f"  {'sel':>3}  {'T':>7}  {'rank':>5}  {'src':<4}  "
+              f"{'pattern':<28}  {'cat':<14}  {'seg':<14}  {'cv':>2}  "
+              f"{'pB':>5}  {'norm':>5}  {'pos':>4}  {'len':>4}  "
+              f"{'axis':>5}  {'final':>6}")
+        print(f"  {'-'*3}  {'-'*7}  {'-'*5}  {'-'*4}  {'-'*28}  {'-'*14}  "
+              f"{'-'*14}  {'-'*2}  {'-'*5}  {'-'*5}  {'-'*4}  {'-'*4}  "
+              f"{'-'*5}  {'-'*6}")
+        for r in recs[: args.n]:
+            sel = "✓" if r.get("selected") else " "
+            t = float(r.get("timestamp", 0) or 0)
+            ts = _mmss(t)
+            br = r.get("bucket_rank", "?")
+            src = (r.get("source") or "")[:4]
+            pat = (r.get("primary_pattern") or "-")[:28]
+            cat = (r.get("primary_category") or "?")[:14]
+            seg = (r.get("segment_type") or "?")[:14]
+            cv = "Y" if r.get("cross_validated") else "n"
+            pb = _fmt_score(r.get("score"))
+            norm = _fmt_score(r.get("normalized_score"))
+            pos = _fmt_mult(r.get("position_weight"))
+            ln = _fmt_mult(r.get("length_penalty"))
+            ax = _fmt_mult(r.get("axis_multiplier"))
+            fin = _fmt_score(r.get("final_score"))
+            line = (f"  {sel:>3}  {ts:>7}  {br:>5}  {src:<4}  "
+                    f"{pat:<28}  {cat:<14}  {seg:<14}  {cv:>2}  "
+                    f"{pb:>5}  {norm:>5}  {pos:>4}  {ln:>4}  "
+                    f"{ax:>5}  {fin:>6}")
+            if r.get("selected"):
+                line = _c("32", line)
+            print(line)
+        # Show suppressed-row count when -n cut off the bucket.
+        if len(recs) > args.n:
+            print(_c("2", f"  ... ({len(recs) - args.n} more in this bucket; -n N to show more)"))
+
+    print()
+    print(_c("2",
+        "  Legend: sel=selected, pB=Pass-B score, norm=normalized_score after ceiling, "
+        "pos=position_weight, len=length_penalty, axis=combined axis_multiplier, "
+        "cv=cross_validated (Y/n)."))
+    print(_c("2",
+        "  Look for: high pB+norm scores in 'sel=  ' rows (= rejected despite "
+        "strong Pass B) vs low pB in '✓' rows (= selected because axis "
+        "multipliers tipped them over)."))
+    print(_c("2",
+        "  Filter: --pattern <id> to focus on a specific pattern; "
+        "--bucket N to focus on one bucket."))
+    return 0
+
+
+def _mmss(secs: float) -> str:
+    try:
+        secs = int(secs or 0)
+    except (TypeError, ValueError):
+        return "?"
+    return f"{secs//60:02d}:{secs%60:02d}"
+
+
+def _fmt_score(v) -> str:
+    try:
+        return f"{float(v):.3f}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _fmt_mult(v) -> str:
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return "-"
+
+
 def cmd_dead(args) -> int:
     """Pass B dead-chunk skip log (2026-06-04). Shows which transcript chunks
     the dead-chunk gate skipped this run + why (signal breakdown). Useful
@@ -581,6 +719,17 @@ def main(argv) -> int:
     pd.add_argument("-n", type=int, default=40, help="max rows to print")
     pd.add_argument("--json", action="store_true", help="raw JSON output")
 
+    psel = sub.add_parser("selection",
+        help="Show the Pass C candidate trace — every deduped moment's "
+             "scoring chain (Pass B → multipliers → final_score → selected)")
+    psel.add_argument("-n", type=int, default=15,
+        help="max rows per bucket (default 15)")
+    psel.add_argument("--pattern", default=None,
+        help="filter to one primary_pattern (e.g. rap_battle_freestyle)")
+    psel.add_argument("--bucket", type=int, default=None,
+        help="filter to one bucket index (0-based)")
+    psel.add_argument("--json", action="store_true", help="raw JSON output")
+
     args = ap.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor(args)
@@ -596,6 +745,8 @@ def main(argv) -> int:
         return cmd_axes(args)
     if args.cmd == "dead":
         return cmd_dead(args)
+    if args.cmd == "selection":
+        return cmd_selection(args)
     ap.print_help()
     return 0
 

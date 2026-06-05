@@ -111,6 +111,21 @@ The Delaware case had **at least 5 of these 6 signals present simultaneously** �
 
 ---
 
+## 2026-06-05 — verification run + Pass C dropout discovery
+
+The rakai VOD was re-run 2026-06-05 11:31 (commit `dad3596`, all three structural fixes in place). Verified end-to-end:
+
+- ✅ Pass A surfaces the rap-battle window — 5 keyword hits at T=619/639/669/699/719, all categorised `dancing` (the new vocabulary)
+- ✅ Pass B identifies the pattern — `T=654 pattern=rap_battle_freestyle score=0.878`, citing the exact "Where you from? / Long Beach / I'm well aware you're from Delaware" call-and-response from the enhanced pattern signature
+- ✅ Stage 3 segmentation now multi-segment (T=0-1264s is `just_chatting`, not 100% `gaming` as before)
+- ❌ **But Pass C selection dropped it.** T=654 (Pass B 0.878, cross-validated to normalized 1.000) lost bucket 0 to T=1828 ("Dirty Booty Ass Confession") whose Pass B score was the bucket's LOWEST at 0.433 — a 2.03× ranking inversion.
+
+The diagnosis: **axis multipliers (arc / reaction / baseline / engagement) compounded to ~1.55× on T=1828 vs ~1.05× on T=654**. T=1828's `irl` segment + cross-validation + funny category triggered baseline-contrast and other axes; T=654's `just_chatting` + rare `rap_battle_freestyle` pattern triggered almost nothing on those axes. The rare-pattern detection works, but the rare-pattern scoring isn't compensated for absent axis support.
+
+Surfaced via the new **`logtool selection`** subcommand (shipped 2026-06-05) which dumps every Pass C deduped candidate's full scoring chain to `{TEMP_DIR}/pass_c_candidates.json`. See `concepts/pipeline-optimizations-2026-06.md §Phase 1`.
+
+The next fix is a **rare-pattern bonus** that compensates the axis gap for patterns we know are rare-but-clip-worthy (rap_battle_freestyle, interview_revelation, social_callout). Tracked as Phase 2 in the optimization sweep.
+
 ## Concrete tuning recommendations (ranked by ROI)
 
 > [!success] Quick wins shipped 2026-06-04
