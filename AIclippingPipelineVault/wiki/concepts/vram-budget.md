@@ -26,7 +26,7 @@ Models are configured in `config/models.json` — the specific model ID and its 
 
 Whisper never co-resides with the LLM (the pipeline unloads LM Studio before Stage 2), so turbo's smaller footprint doesn't add LLM headroom — but it loads faster and transcribes ~2.5x quicker. See [[entities/faster-whisper]].
 
-Peak VRAM usage: determined by the configured LLM. On the **16 GB RTX 5060 Ti**, keep the LLM **under ~14 GB** so the KV cache + desktop fit; the installed 27B/26B/31B/35B (≥17.5 GB at Q4) offload layers to **CPU** and run *much* slower — this was ~half the 135-min slow run ([[concepts/model-split]] §Active config). The current `qwen3.5-9b` + `gemma-4-12b` split (6.5 + 7.6 GB) fits with room to co-reside.
+Peak VRAM usage: determined by the configured LLM. **Two-GPU reality:** the box has the **16 GB RTX 5060 Ti + a 12 GB AMD RX 6700 XT**, and LM Studio's **Vulkan** backend pools them → **≈28 GB**. So the big models (27B/26B-A4B/31B/35B, 17.5–22.1 GB) fit *in VRAM* across both cards — they do **not** spill to CPU (an earlier note here said they did; corrected). But "fits ≠ fast": models load **one at a time** (the pipeline swaps per stage, so each gets the full pooled budget), and a model split across both cards on the Vulkan runtime is typically **slower per token** than one that fits the 5060 Ti alone on **CUDA** (cross-vendor backend + inter-GPU PCIe transfer; bigger model also = slower reload per swap). For max speed: **CUDA / NVIDIA-only with a ≤16 GB model**; for capacity (a Q4 Qwen3-VL-30B, or a big MoE on the Judge): **Vulkan / both**. The current `qwen3.5-9b` + `gemma-4-12b` (6.5 + 7.6 GB) both fit the NVIDIA card alone. See [[concepts/model-split]] §Active config for the per-role + thinking guidance.
 
 ---
 
