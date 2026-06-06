@@ -94,6 +94,9 @@ Concrete, file:line-anchored plans for the four fixes designed in [[concepts/det
 
 ## Fix 1 — Finer segment granularity (measure-first; likely low priority)
 
+> [!success] SHIPPED 2026-06-06 (`stage3_segments.py`, knob `CLIP_SEGMENT_CHUNK` default **600** = unchanged)
+> The classification window size is now an env knob: `CLIP_SEGMENT_CHUNK` (default 600 s) + `CLIP_SEGMENT_OVERLAP` (default 0, read-context only — recorded segments stay nominal/non-overlapping so the adjacent-merge still works). Set `CLIP_SEGMENT_CHUNK=300` to halve the window and sharpen granularity (a short off-type pocket gets its own label) at ~2× classification calls. **Default deliberately unchanged** — this *is* the measure-first stance: the knob lets you A/B 300 vs 600 on a variety VOD and compare the segment map / clip set before committing. (Detection is already type-agnostic, so finer segments mainly sharpen chunk-sizing + Pass A thresholds, not whether a moment is found.) Compile clean.
+
 **Goal:** reduce the 10-min labeling coarseness so short off-type pockets (a 2-min debate in a gaming stream) get their own segment type for chunk-sizing + Pass A thresholds. **Caveat: moment detection is already type-agnostic** (Pass B/A1/M3 read transcript, not labels), so a pocket's *clips are not lost today* — this only sharpens chunk-size + threshold plumbing.
 
 ### Plan
