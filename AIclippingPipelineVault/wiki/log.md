@@ -7,6 +7,23 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-05] query | Post-run review of the 17:06 rakai run — 5 findings + BUG 60
+Reviewed the 2026-06-05 17:06 rakai run (commits up to `2e4aca8`, all rounds 1-4 + BLAS-pin + audio fast-load shipped pre-run). Five non-blocking observations + a new bug:
+
+**(1) BUG 60 — Stage 6 vision leaks `Pattern <id>:` reasoning text into title/description**. Observed on T=7749 (title `Pattern socialcallout Friend roasts streamer for l`) and T=9985 (description starts with `Pattern social_callout:`). Filed as [[concepts/bugs-and-fixes]] §BUG 60 with diagnosis + fix sketch (regex strip in stage6_vision.py post-process + prompt-side prohibition). Selection-neutral quality fix.
+
+**(2) Axis global clamp bound 253/253 candidates** — per-axis ceilings produce a natural product that exceeds the [0.8, 1.35] global clamp on every Pass C candidate. Compounds with the Delaware rare-pattern issue: candidates that don't activate axes get crushed by candidates that hit the ceiling. Either lower per-axis ceilings, raise the clamp, or add pattern-aware compensation (Phase 2). The `logtool selection` tool will show the per-axis breakdown for empirical tuning.
+
+**(3) Chat features disabled** for the rakai VOD (no `vods/.chat/...jsonl`, auto-fetch off). Degrades Pass A hard-events, Pass B chat context, Stage 6 sub/raid/donation grounding, and Pass C engagement axis. Not a bug; suggested follow-up is a dashboard auto-fetch checkbox.
+
+**(4) Stage 7 render under-scaled** — 412.9 s for 10 clips with `STAGE7_WORKERS=4` = only 1.6× over serial (predicted 3-4×). Likely ffmpeg-internal threading colliding with worker-level parallelism on the 24-core CPU. Tuning candidates: `STAGE7_WORKERS=6` (oversubscribed), or `=3` with each ffmpeg bound to `-threads 8` (sums to 24).
+
+**(5) Pass B per-chunk timing steady at ~37 s/chunk** — qwen3.6-35b-a3b MoE thinking-off on Vulkan pool delivers consistent throughput, no slow-chunk outliers from BUG 20-class issues. With per-chunk cost so low, the deferred parallel HTTP would still save ~12 min but is no longer dominant.
+
+**(6) Grounding regen fired 4/10 final clips (40%)** — tier-3 cascade catching ungrounded fields on first VLM pass. Many likely fixing the same pattern-text leak from BUG 60; the BUG 60 fix may also lower regen rate.
+
+All five logged to [[concepts/pipeline-optimizations-2026-06]] §"Observations from the 2026-06-05 17:06 rakai run". Next-session priority list at the end of that section: BUG 60 fix → verify BLAS-pin & fast-load → verify `logtool selection` → Phase 2 rare-pattern → Stage 7 tuning → chat auto-fetch toggle. Pages updated: [[concepts/bugs-and-fixes]] (BUG 60 added — both index row and full body section), [[concepts/pipeline-optimizations-2026-06]] (new "Observations from 2026-06-05 17:06 rakai run" section, 6 sub-findings + recommended priority order). No code changes — analysis and documentation only.
+
 ## [2026-06-05] update | audio_events fast-load path — soundfile.read + polyphase resample
 The same rakai run that surfaced the BLAS-pin issue also measured the audio load at **53 s** for a 3.2 h 16 kHz WAV (977 MB output). Root cause: `librosa.load()` defaults to `res_type="kaiser_best"` which is the highest-quality resampler but ~5-7× slower than `scipy.signal.resample_poly`. For HPSS / onset / RMS detection the quality difference is inaudible; speed dominates. Fix: new `_load_audio_fast()` helper in `scripts/lib/audio_events.py` does `soundfile.read(dtype="float32", always_2d=False)` → optional mono mix-down → `librosa.resample(res_type="polyphase")`. Wrapped in try/except so any non-OOM failure falls back to the original `librosa.load` for codec compatibility. MemoryError propagates to the same OOM handler from either path. The `[AUDIO_EVENTS] loaded …` log line now reports `method=soundfile+polyphase` or `method=librosa.load` so the operator can confirm which path ran. Skips resampling entirely when source already matches target rate (common when an operator pre-extracts at 22050 Hz). **Expected**: 53 s → ~7-10 s on the same rakai input. Combined with the BLAS-pin fix earlier today, Tier-2 M2 wall-clock projection drops from 11.6 min (observed) to under ~3 min on a 3 h VOD. Pages updated: [[entities/audio-events]] (fast-path success callout). Files: `scripts/lib/audio_events.py` (+50 lines `_load_audio_fast` helper + 20 lines wrapping the call). Smoke test scheduled to run on the existing `work/audio.wav` to verify speedup + result parity.
 
