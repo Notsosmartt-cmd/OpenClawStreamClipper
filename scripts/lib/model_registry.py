@@ -64,6 +64,20 @@ _KV_KB_PER_TOKEN_FALLBACK: List[Tuple[str, float]] = [
 _INFERENCE_OVERHEAD_MB = 300
 _DEFAULT_SAFETY_MB = 500
 
+# Workload-aware context targets (2026-06-06). The clipper pipeline is
+# CHUNKED — Pass B processes ~8-minute transcript windows independently, and
+# even the cross-chunk arc pass (Tier-3 A1) only feeds ~30-60 summary lines
+# (~3 KB) in one call. The PEAK single-call context demand anywhere in the
+# pipeline is Pass B's worst case: ~6 K prompt + up to 8 K generation ≈ 14 K
+# tokens. So:
+#   * 16 K is the practical floor (covers Pass B worst case)
+#   * 32 K gives 2x headroom and is the right target for EVERY model
+#   * Anything larger reserves KV cache the pipeline never fills AND can push
+#     a CUDA-fittable model onto the slower Vulkan pool. "Max that fits" is
+#     the wrong objective — recommend the workload size, not the ceiling.
+WORKLOAD_FLOOR_CONTEXT = 16_384
+WORKLOAD_COMFORT_CONTEXT = 32_768
+
 _NATIVE_MAX_FALLBACK: List[Tuple[str, int]] = [
     ("qwen35moe",  262_144), ("qwen3vlmoe", 262_144),
     ("qwen35",     262_144), ("qwen3vl",    262_144),
@@ -334,11 +348,22 @@ def recommend_context(
     model_id: str,
     available_pool_mb: int,
     safety_margin_mb: int = _DEFAULT_SAFETY_MB,
+    cuda_card_mb: int = 0,
 ) -> Dict[str, Any]:
-    """Largest safe ``context_length`` fitting weights + KV + overhead in
-    ``available_pool_mb``. Iterates the context tiers from largest down and
-    picks the first that fits — robust for any KV shape including Gemma's
-    piecewise sliding-window cache."""
+    """Workload-aware context recommendation.
+
+    ``recommended`` is the **workload-optimal** context (≈32 K), NOT the
+    maximum that fits the pool. The clipper pipeline is chunked — its peak
+    per-call demand is ~14 K tokens (Pass B worst case), so 32 K gives 2x
+    headroom and nothing benefits from more. Recommending the max instead
+    would reserve KV cache the pipeline never fills and could push a
+    CUDA-fittable model onto the slower Vulkan pool.
+
+    Returns both ``recommended`` (use this) and ``max_fits`` (the capability
+    ceiling — largest that fits the pool). When ``cuda_card_mb`` is provided,
+    ``cuda_single_card_fits`` tells whether the model at ``recommended`` fits
+    a single CUDA card (the fastest path) vs needing the Vulkan pool.
+    """
     m = model_by_id(model_id)
     if not m:
         return {"error": f"model not found in lms ls: {model_id}"}
@@ -349,35 +374,67 @@ def recommend_context(
             "model_id": model_id, "arch": m["arch"],
             "available_pool_mb": available_pool_mb, "weights_mb": m["size_mb"],
             "overhead_mb": _INFERENCE_OVERHEAD_MB, "safety_margin_mb": safety_margin_mb,
-            "recommended": 0, "native_max": native, "fit_class": "no_kv_room",
+            "recommended": 0, "max_fits": 0, "native_max": native, "fit_class": "no_kv_room",
             "kv_source": _kv_cache_mb(model_id, m["arch"], 4096)[1],
             "headroom_mb": budget,
             "note": (f"Weights ({m['size_mb']} MB) + overhead + safety exceeds pool "
                      f"({available_pool_mb} MB). Will spill to CPU if loaded."),
         }
-    # Walk tiers from largest ≤ native down to smallest; pick first that fits.
-    recommended = 0
-    kv_at_rec = 0
+    # max_fits: largest tier ≤ native that fits the pool (capability ceiling).
+    max_fits = 0
     source = "heuristic"
     for tier in sorted(_CONTEXT_TIERS, reverse=True):
         if tier > native:
             continue
         kv_mb, source = _kv_cache_mb(model_id, m["arch"], tier)
         if kv_mb <= budget:
-            recommended = tier
-            kv_at_rec = kv_mb
+            max_fits = tier
             break
-    if recommended == 0:
-        # Even the smallest tier doesn't fit the KV budget
+    if max_fits == 0:
         kv_mb, source = _kv_cache_mb(model_id, m["arch"], _CONTEXT_TIERS[0])
         return {
             "model_id": model_id, "arch": m["arch"],
             "available_pool_mb": available_pool_mb, "weights_mb": m["size_mb"],
             "overhead_mb": _INFERENCE_OVERHEAD_MB, "safety_margin_mb": safety_margin_mb,
-            "recommended": 0, "native_max": native, "fit_class": "no_kv_room",
+            "recommended": 0, "max_fits": 0, "native_max": native, "fit_class": "no_kv_room",
             "kv_source": source, "headroom_mb": budget,
             "note": f"Even {_CONTEXT_TIERS[0]} ctx needs {kv_mb} MB KV > {budget} MB budget.",
         }
+
+    # Workload-optimal recommendation: comfort target (32 K), capped at what
+    # fits and at native. Never below the Pass B floor unless that's all that
+    # fits (then warn).
+    recommended = min(WORKLOAD_COMFORT_CONTEXT, max_fits, native)
+    workload_note = ""
+    if recommended < WORKLOAD_FLOOR_CONTEXT:
+        workload_note = (f"⚠ only {recommended} fits — below the {WORKLOAD_FLOOR_CONTEXT} "
+                         "Pass B floor; long chunks may truncate.")
+    elif max_fits > recommended:
+        workload_note = (f"32 K covers the pipeline's chunked workload (peak ~14 K tokens). "
+                         f"This model could hold up to {max_fits} but the pipeline never "
+                         f"uses it — larger just reserves unused KV cache.")
+    else:
+        workload_note = "32 K covers the pipeline's chunked workload (peak ~14 K tokens)."
+
+    kv_at_rec, source = _kv_cache_mb(model_id, m["arch"], recommended)
+
+    # CUDA single-card fit at the RECOMMENDED context (the fast path).
+    cuda_single_card_fits = None
+    cuda_note = ""
+    if cuda_card_mb:
+        total_at_rec = m["size_mb"] + kv_at_rec + _INFERENCE_OVERHEAD_MB
+        cuda_single_card_fits = total_at_rec <= cuda_card_mb
+        if cuda_single_card_fits:
+            cuda_note = (f"Fits a single {round(cuda_card_mb / 1024)} GB CUDA card at this "
+                         "context (fastest path — no Vulkan pool).")
+        elif m["size_mb"] + _INFERENCE_OVERHEAD_MB > cuda_card_mb:
+            cuda_note = (f"Weights alone ({m['size_mb']} MB) exceed the {round(cuda_card_mb / 1024)} "
+                         "GB CUDA card — the Vulkan pool is required regardless of context.")
+        else:
+            # A smaller context WOULD fit CUDA — worth telling the user.
+            cuda_note = (f"At this context it needs the Vulkan pool; a smaller context could "
+                         f"keep it on the faster {round(cuda_card_mb / 1024)} GB CUDA card.")
+
     pct = recommended / native if native else 0
     fit_class = ("fits_native_max" if recommended >= native else
                  "fits_tight" if pct >= 0.5 else "fits_easily")
@@ -387,8 +444,13 @@ def recommend_context(
         "overhead_mb": _INFERENCE_OVERHEAD_MB, "safety_margin_mb": safety_margin_mb,
         "kv_cache_mb_at_recommended": kv_at_rec,
         "kv_source": source,
-        "recommended": recommended, "native_max": native,
+        "recommended": recommended,
+        "max_fits": max_fits,
+        "native_max": native,
         "fit_class": fit_class, "headroom_mb": budget,
+        "cuda_single_card_fits": cuda_single_card_fits,
+        "workload_note": workload_note,
+        "cuda_note": cuda_note,
     }
 
 
@@ -397,6 +459,7 @@ def recommend_context_combo(
     vision_model_id: Optional[str],
     available_pool_mb: int,
     safety_margin_mb: int = _DEFAULT_SAFETY_MB,
+    cuda_card_mb: int = 0,
 ) -> Dict[str, Any]:
     """Recommended SHARED context_length for a text+vision config.
 
@@ -405,7 +468,7 @@ def recommend_context_combo(
     the safe recommendation is the MORE CONSTRAINED of the two models. When
     text == vision (consolidation), it's just that one model.
     """
-    text_rec = recommend_context(text_model_id, available_pool_mb, safety_margin_mb)
+    text_rec = recommend_context(text_model_id, available_pool_mb, safety_margin_mb, cuda_card_mb)
     if "error" in text_rec:
         return text_rec
     if not vision_model_id or vision_model_id == text_model_id:
@@ -414,22 +477,34 @@ def recommend_context_combo(
             "vision_model": vision_model_id or text_model_id,
             "consolidated": True,
             "recommended": text_rec["recommended"],
+            "max_fits": text_rec.get("max_fits"),
             "constrained_by": text_model_id,
+            "cuda_single_card_fits": text_rec.get("cuda_single_card_fits"),
+            "workload_note": text_rec.get("workload_note", ""),
+            "cuda_note": text_rec.get("cuda_note", ""),
             "text": text_rec,
             "vision": text_rec,
         }
-    vision_rec = recommend_context(vision_model_id, available_pool_mb, safety_margin_mb)
+    vision_rec = recommend_context(vision_model_id, available_pool_mb, safety_margin_mb, cuda_card_mb)
     if "error" in vision_rec:
         return vision_rec
     rec = min(text_rec["recommended"], vision_rec["recommended"])
-    constrained = (text_model_id if text_rec["recommended"] <= vision_rec["recommended"]
-                   else vision_model_id)
+    constrained_rec = text_rec if text_rec["recommended"] <= vision_rec["recommended"] else vision_rec
+    constrained = constrained_rec["model_id"]
+    # Both models must fit CUDA at the shared context for the fast path.
+    cuda_fits = None
+    if text_rec.get("cuda_single_card_fits") is not None:
+        cuda_fits = bool(text_rec.get("cuda_single_card_fits") and vision_rec.get("cuda_single_card_fits"))
     return {
         "text_model": text_model_id,
         "vision_model": vision_model_id,
         "consolidated": False,
         "recommended": rec,
+        "max_fits": min(text_rec.get("max_fits") or 0, vision_rec.get("max_fits") or 0),
         "constrained_by": constrained,
+        "cuda_single_card_fits": cuda_fits,
+        "workload_note": constrained_rec.get("workload_note", ""),
+        "cuda_note": constrained_rec.get("cuda_note", ""),
         "text": text_rec,
         "vision": vision_rec,
     }

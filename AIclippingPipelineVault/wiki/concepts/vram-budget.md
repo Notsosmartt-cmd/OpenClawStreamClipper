@@ -114,6 +114,32 @@ Discord agent loads its own model on demand outside the pipeline stages — no V
 
 ---
 
+## Why bigger context ≠ better clips (the pipeline is chunked)
+
+> [!note] The recommendation tool targets WORKLOAD size (~32K), not the max that fits — corrected 2026-06-06
+> A common misconception: "my small model can hold 128K context, so I should use it." For this pipeline that's **overkill that actively hurts**. The recommendation was changed from "largest that fits the pool" to "the workload-optimal ~32K."
+
+**The pipeline never feeds a model more than ~14K tokens in a single call.** It's architecturally *chunked*:
+
+| LLM call | Peak context (prompt + max generation) |
+|---|---|
+| **Pass B main** (per ~8-min chunk) | **~14K** (6K prompt: transcript + pattern catalog + 2 prior summaries + instructions; up to 8K generation) |
+| Stage 6 vision (per candidate) | ~10.5K (6 frames + transcript + 8K gen) |
+| Tier-3 A1 global arc pass | ~7K (the *whole-stream* cross-chunk pass is only ~30-60 summary lines ≈ 3KB — see `stage4_moments.py:1697`) |
+| Stage 3 / Pass D / Vision Judge | ≤ 6.5K each |
+
+So **16K is the floor** (covers Pass B worst case), **32K is the comfortable target** (2× margin), and **nothing benefits from more**. Cross-chunk inference — finding setup→payoff arcs across the whole stream — is done via the **summary-skeleton mechanism** (Pass B writes a 15-word summary per chunk; Tier-3 A1 reads all summaries in one tiny call), NOT by stuffing the raw transcript into a giant context.
+
+**Why too much is worse than wasteful** — the user's "reserving too much RAM" intuition is exactly right:
+
+1. **KV cache is allocated up-front at load time** for the full `context_length`, regardless of how much the pipeline fills. At 128K, `qwen3.5-9b` reserves **16 GB of KV cache** that Pass B fills **~4.6%** of.
+2. **It can force a CUDA-fittable model onto the slower Vulkan pool.** `qwen3.5-9b` (6.5 GB weights):
+   - @ 32K: 6.5 + 4 GB KV = **10.8 GB → fits the 16 GB CUDA card alone (fast)** ⚡
+   - @ 128K: 6.5 + 16 GB KV = **22.8 GB → needs the NVIDIA+AMD Vulkan pool (slower per token)**
+   So 128K makes the pipeline *slower* for *zero* quality gain.
+
+**Rule**: pick the model first, set context to **32K** (or 16K on tight VRAM). Only go higher if you have a specific reason to feed long single prompts — which this pipeline never does. `logtool vram` now shows `rec ctx` (32K), `ceiling` (the max the model *could* hold), and `CUDA@rec` (whether 32K keeps it on the fast single card).
+
 ## Installed model quantizations (read from GGUF `general.file_type`, 2026-06-06)
 
 | Model | Quant | Weights | Notes |

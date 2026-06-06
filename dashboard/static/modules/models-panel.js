@@ -223,33 +223,26 @@ function _fmtCtx(n) {
 }
 
 function renderContextRecommendation(el, data) {
-    const rec = data.recommended || 0;
+    const rec = data.recommended || 0;          // workload-optimal (~32K)
+    const maxFits = data.max_fits || 0;         // capability ceiling
     const currentCtx = pendingModels.context_length || currentModels.context_length || 8192;
-    const fitClass = (data.consolidated ? data.text : (data.text && data.vision ? null : null));
     const constrained = data.constrained_by || "";
     const poolGb = data.pool_total_mb ? (data.pool_total_mb / 1024).toFixed(1) : "?";
 
-    // CUDA-only caveat: if the model only fits this context via the Vulkan
-    // pool (NVIDIA + AMD), warn that single-card users get less.
-    let cudaNote = "";
-    if (data.cuda_only && data.nvidia_only_mb) {
-        const cudaRec = data.cuda_only.recommended || 0;
-        if (cudaRec && cudaRec < rec) {
-            cudaNote = `<div style="opacity:0.6;font-size:0.82em;margin-top:2px;">`
-                + `CUDA single-card (${(data.nvidia_only_mb/1024).toFixed(0)} GB): `
-                + `${_fmtCtx(cudaRec)} — the rest needs the Vulkan pool.</div>`;
-        }
-    }
-
+    // Verdict vs the CURRENT setting. The recommendation is the workload size,
+    // so "current is way above rec" means the user is over-reserving KV cache.
     let verdict, color;
     if (rec === 0) {
         verdict = "won't fit — model spills to CPU";
         color = "#e06c75";
-    } else if (rec >= currentCtx) {
-        verdict = rec > currentCtx ? "you could go higher" : "right-sized";
+    } else if (currentCtx === rec) {
+        verdict = "right-sized ✓";
         color = "#98c379";
+    } else if (currentCtx > rec) {
+        verdict = `current ${_fmtCtx(currentCtx)} is overkill — reserves KV cache the pipeline never uses`;
+        color = "#e5c07b";
     } else {
-        verdict = "current setting EXCEEDS safe fit — reduce it";
+        verdict = `current ${_fmtCtx(currentCtx)} is below recommended`;
         color = "#e5c07b";
     }
 
@@ -259,16 +252,29 @@ function renderContextRecommendation(el, data) {
         : "";
 
     const who = data.consolidated
-        ? `single model`
+        ? "single model"
         : `constrained by ${constrained.split("/").pop()}`;
+
+    // Backend (CUDA single-card vs Vulkan pool) note — affects speed.
+    let backendNote = "";
+    if (data.cuda_note) {
+        const fast = data.cuda_single_card_fits === true;
+        backendNote = `<div style="opacity:0.7;font-size:0.82em;margin-top:2px;color:${fast ? "#98c379" : "#999"};">`
+            + `${fast ? "⚡ " : ""}${data.cuda_note}</div>`;
+    }
+    // Workload rationale (why not the max).
+    const workloadNote = data.workload_note
+        ? `<div style="opacity:0.6;font-size:0.82em;margin-top:2px;">${data.workload_note}</div>`
+        : "";
 
     el.innerHTML = `
         <div style="color:${color};">
             💡 Recommended context: <b>${_fmtCtx(rec)}</b> (${rec.toLocaleString()})
             on your ${poolGb} GB pool — <i>${verdict}</i>${applyBtn}
         </div>
-        <div style="opacity:0.6;font-size:0.82em;margin-top:2px;">${who}; from GGUF KV-cache metadata + live VRAM</div>
-        ${cudaNote}`;
+        <div style="opacity:0.6;font-size:0.82em;margin-top:2px;">${who}; from GGUF KV-cache metadata + live VRAM. Ceiling: ${_fmtCtx(maxFits)}.</div>
+        ${workloadNote}
+        ${backendNote}`;
 }
 
 export function applyRecommendedContext(value) {

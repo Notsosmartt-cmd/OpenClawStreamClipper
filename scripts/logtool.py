@@ -534,26 +534,30 @@ def cmd_vram(args) -> int:
         f"# Recommended context_length per installed LLM "
         f"(empty space in pool right now: {pool_free} MB)"))
     print(f"  {'model':<26}  {'arch':<11}  {'wt GB':>5}  "
-          f"{'KVsrc':>9}  {'CUDA-only ctx':>13}  {'pool ctx':>10}  {'verdict':<15}")
-    print(f"  {'-'*26}  {'-'*11}  {'-'*5}  {'-'*9}  {'-'*13}  {'-'*10}  {'-'*15}")
+          f"{'KVsrc':>9}  {'rec ctx':>8}  {'ceiling':>8}  {'CUDA@rec':>9}  {'verdict':<15}")
+    print(f"  {'-'*26}  {'-'*11}  {'-'*5}  {'-'*9}  {'-'*8}  {'-'*8}  {'-'*9}  {'-'*15}")
     for m in models:
         # Skip embedding entries (they parse with weird fields)
         if "embed" in m["id"].lower() or "Nomic" in m.get("params", ""):
             continue
-        cuda_rec = _reg.recommend_context(m["id"], nvidia_only_mb) if nvidia_only_mb else {}
-        pool_rec = _reg.recommend_context(m["id"], pool_total) if pool_total else {}
-        cuda_ctx = cuda_rec.get("recommended", 0) if "error" not in cuda_rec else 0
-        pool_ctx = pool_rec.get("recommended", 0) if "error" not in pool_rec else 0
+        # Pass the CUDA card size so the rec knows whether the workload
+        # context stays on the fast single-card path.
+        pool_rec = (_reg.recommend_context(m["id"], pool_total, cuda_card_mb=nvidia_only_mb)
+                    if pool_total else {})
+        rec_ctx = pool_rec.get("recommended", 0) if "error" not in pool_rec else 0
+        max_fits = pool_rec.get("max_fits", 0) if "error" not in pool_rec else 0
         fit_class = pool_rec.get("fit_class", "?")
+        cuda_fits = pool_rec.get("cuda_single_card_fits") if "error" not in pool_rec else None
         # 'gguf' = exact KV from model file metadata; 'heuristic' = rate table
         kv_src = pool_rec.get("kv_source", "?") if "error" not in pool_rec else "?"
         verdict_color = ("32" if fit_class in ("fits_easily", "fits_native_max") else
                           "33" if fit_class == "fits_tight" else
                           "31" if fit_class == "no_kv_room" else "0")
-        cuda_str = f"{cuda_ctx:>5}" if cuda_ctx else "  N/A"
+        cuda_at_rec = ("⚡ yes" if cuda_fits is True else
+                       "pool" if cuda_fits is False else "—")
         line = (f"  {m['id']:<26}  {m['arch']:<11}  "
                 f"{m['size_gb']:>5.1f}  {kv_src:>9}  "
-                f"{cuda_str:>13}  {pool_ctx:>10}  {fit_class:<15}")
+                f"{rec_ctx:>8}  {max_fits:>8}  {cuda_at_rec:>9}  {fit_class:<15}")
         print(_c(verdict_color, line))
 
     print()
