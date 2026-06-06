@@ -91,6 +91,31 @@ CLI: `python scripts/lib/model_registry.py {list|predict|recommend|combo} …`.
 
 ---
 
+## Verifying fit on real hardware — `lms load --estimate-only` is ground truth
+
+The most authoritative fit check is LM Studio's own estimator (it accounts for the active runtime, KV settings, and guardrails — closer to reality than `model_registry`'s FP16 math):
+
+```
+lms load <model> -c <ctx> --estimate-only      # non-destructive; does NOT load
+```
+
+Read the **"Estimated GPU Memory"** number and compare it to your **physical VRAM pool** (minus whatever the desktop/browser already use — check with `logtool vram`):
+
+| `Estimated GPU Memory` vs free pool | Meaning |
+|---|---|
+| ≤ free pool | fits entirely in VRAM ✓ |
+| > free pool | spills layers to system RAM → bottleneck ✗ |
+
+> [!warning] Ignore the "may be loaded based on your resource guardrails" line
+> LM Studio prints that even when the estimate exceeds the physical pool (guardrails allow overcommit). It is NOT a fit guarantee. Trust the **GiB number vs physical VRAM**, not the message. Likewise, the estimate reports the whole need as "GPU Memory" even in the over-budget case (Total == GPU), so "Total > GPU" is *not* a reliable spill signal here — compare the estimate to your pool instead.
+
+**Measured example (dev box, 28.5 GiB pool, qwen3.6-35b-a3b):** 32K → 22.24 GiB, 64K → 23.30 GiB (both fit, ~1 GiB apart), 256K → 29.66 GiB (exceeds pool → spills).
+
+> [!note] `model_registry` is intentionally conservative vs LM Studio's actual
+> The tool's FP16 KV math over-states VRAM relative to LM Studio's real footprint — e.g. it projected ~27.4 GiB for the 35b @ 64K where `--estimate-only` reported 23.3 GiB. LM Studio's KV cache is more memory-efficient (KV-cache quantization and/or its "Unified KV Cache" option). So `logtool vram` / `model_registry recommend` err toward *under*-stating how much context fits (safe direction); use `lms load --estimate-only` for the final word on a specific machine + LM Studio config.
+
+**Do you need a full test run?** For *fit*, no — `--estimate-only` answers it instantly. For *speed* (confirm no spill in practice), load the model and watch `logtool vram` + the first few Pass B chunk timings (~30-40 s/chunk = healthy; minutes = spill).
+
 ## Can the pipeline control the engine / GPU split? No — and it doesn't need to
 
 Investigated 2026-06-06. The project interacts with LM Studio only via the HTTP API + `lms` CLI. Neither exposes backend or per-GPU selection:
