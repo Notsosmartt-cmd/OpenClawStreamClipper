@@ -38,21 +38,73 @@ import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Fix 4 (2026-06-06): pyannote.audio 4.x emits a one-time UserWarning at import
-# ("torchcodec is not installed correctly ...") and falls back to torchaudio/
-# soundfile for audio decoding. On this Windows host the fallback is the
-# CORRECT path, not a degradation: torchcodec needs FFmpeg *shared* libraries,
-# but the installed FFmpeg (C:\ffmpeg\bin) is a STATIC build with no av*.dll, so
-# torchcodec can never load here — and Stage 2 pre-extracts audio to WAV, which
-# soundfile decodes perfectly, so torchcodec would add nothing. Silence ONLY
-# this benign message (regex-scoped, not a blanket ignore) so diarization logs
-# stay clean. (?s) lets .* cross the leading newline in the warning text.
+# Fix 4 (2026-06-06, revised): make torchcodec actually work, not just silence
+# its warning. pyannote.audio 4.x PREFERS torchcodec for audio decoding; the
+# fallback path it warns about is the degraded one. torchcodec needs FFmpeg
+# *shared* libraries, but the project's ffmpeg (C:\ffmpeg\bin) is a STATIC build
+# with no av*.dll. Several installed apps ship a complete FFmpeg shared set
+# (notably the AMD GPU driver's CNext dir — stable on this AMD-GPU host).
+# Put the first complete set on the DLL search path BEFORE whisperx/pyannote
+# import torchcodec, then confirm torchcodec imports. If it can't (no shared
+# libs / not installed), pyannote falls back to soundfile/torchaudio — fine,
+# Stage 2 hands it a pre-extracted WAV — and we silence the benign warning.
+# Override the FFmpeg search dir with CLIP_FFMPEG_SHARED_DIR.
 # See concepts/clip-quality-remediation-2026-06.md Fix 4.
-warnings.filterwarnings(
-    "ignore",
-    message=r"(?s).*torchcodec is not installed correctly",
-    category=UserWarning,
-)
+_TC_DLL_HANDLES: list = []  # keep os.add_dll_directory handles alive (GC drops them otherwise)
+
+
+def _enable_torchcodec_ffmpeg() -> Optional[str]:
+    """Add a complete FFmpeg shared-lib dir to the Windows DLL search path so
+    torchcodec can load. Returns the dir used, or None. No-op off Windows."""
+    if os.name != "nt":
+        return None
+    import glob
+    needed = ("avcodec", "avformat", "avutil", "swresample")
+    candidates = [
+        os.environ.get("CLIP_FFMPEG_SHARED_DIR", ""),
+        r"C:\Program Files\AMD\CNext\CNext",
+        r"C:\Program Files\Blackmagic Design\DaVinci Resolve",
+        r"C:\Program Files\Blender Foundation\Blender 4.2\blender.shared",
+    ]
+    for d in candidates:
+        if not d or not os.path.isdir(d):
+            continue
+        dll_names = " ".join(
+            os.path.basename(p).lower() for p in glob.glob(os.path.join(d, "*.dll"))
+        )
+        if all(stem in dll_names for stem in needed):
+            try:
+                _TC_DLL_HANDLES.append(os.add_dll_directory(d))
+                return d
+            except OSError:
+                continue
+    return None
+
+
+_TORCHCODEC_FFMPEG_DIR = _enable_torchcodec_ffmpeg()
+_torchcodec_ok = False
+try:
+    import torchcodec  # noqa: F401  — warm the import so pyannote reuses it
+    _torchcodec_ok = True
+    print(
+        f"[SPEECH] torchcodec ready (FFmpeg shared libs: "
+        f"{_TORCHCODEC_FFMPEG_DIR or 'system default'}) — pyannote will use it",
+        file=sys.stderr,
+    )
+except Exception as _tce:  # not installed, or shared libs still unresolved
+    print(
+        f"[SPEECH] torchcodec unavailable ({type(_tce).__name__}); pyannote "
+        f"falls back to soundfile/torchaudio (fine — Stage 2 pre-extracts WAV)",
+        file=sys.stderr,
+    )
+if not _torchcodec_ok:
+    # Silence ONLY the benign one-time "torchcodec is not installed correctly"
+    # warning (regex-scoped; (?s) crosses the message's leading newline).
+    warnings.filterwarnings(
+        "ignore",
+        message=r"(?s).*torchcodec is not installed correctly",
+        category=UserWarning,
+    )
 
 DEFAULT_SPEECH_CONFIG = Path(
     os.environ.get("CLIP_SPEECH_CONFIG", "/root/.openclaw/speech.json")

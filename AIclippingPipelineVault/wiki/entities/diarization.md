@@ -12,8 +12,8 @@ WhisperX + pyannote-audio integration that assigns a `speaker` label (e.g. `SPEA
 
 Introduced 2026-04-27 as Tier-2 M1 of the [[concepts/moment-discovery-upgrades]]. Lives inside [[entities/speech-module]] (`_maybe_diarize()` helper); not a separate file because it's a thin WhisperX wrapper.
 
-> [!note] torchcodec warning is benign (2026-06-06, Fix 4)
-> `pyannote.audio` 4.x logs `torchcodec is not installed correctly so built-in audio decoding will fail` and falls back to `soundfile`/`torchaudio`. On this Windows host that fallback is **correct, not degraded**: torchcodec needs FFmpeg *shared* libraries but `C:\ffmpeg\bin` is a static build, and Stage 2 pre-extracts audio to WAV (which `soundfile` reads natively). The warning is now suppressed by a regex-scoped `warnings.filterwarnings` in `speech.py`. Coverage is unaffected (4621/4706 segments on the 6/6 rakai run). See [[concepts/clip-quality-remediation-2026-06]] Fix 4.
+> [!success] torchcodec now installed + working (2026-06-06, Fix 4 revised)
+> `pyannote.audio` 4.x prefers `torchcodec` for audio decoding. It's now `pip install`ed (`torchcodec==0.7.0`, pinned in `requirements-speech.txt`; no torch pin, ABI-OK with torch 2.8). The only blocker was the missing FFmpeg *shared* libraries (`C:\ffmpeg\bin` is static) — resolved by `_enable_torchcodec_ffmpeg()` in `speech.py`, which puts a complete FFmpeg shared set (the AMD GPU driver's `CNext` dir on this host; override via `CLIP_FFMPEG_SHARED_DIR`) on the DLL search path before pyannote imports torchcodec. Verified end-to-end: import + `AudioDecoder` + a real WAV decode all succeed. If the shared libs ever go missing it falls back to `soundfile` and suppresses the benign warning (prior behaviour, kept as safety net). See [[concepts/clip-quality-remediation-2026-06]] Fix 4.
 
 ---
 

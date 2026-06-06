@@ -14,3 +14,13 @@
 
 whisperx>=3.1
 demucs>=4.0
+
+# torchcodec is pyannote.audio 4.x's preferred audio decoder. It has NO torch
+# version pin but is ABI-coupled — 0.7.0 matches torch 2.8 (the venv's version).
+# It also needs FFmpeg *shared* libraries at runtime; the project's static
+# C:\ffmpeg\bin has none, so scripts/lib/speech.py discovers a shared set
+# (e.g. the AMD GPU driver's CNext dir) and puts it on the DLL search path
+# before import. If unavailable, pyannote falls back to soundfile (Stage 2
+# pre-extracts WAV, so the fallback is fine). See
+# AIclippingPipelineVault/wiki/concepts/clip-quality-remediation-2026-06.md Fix 4.
+torchcodec==0.7.0
