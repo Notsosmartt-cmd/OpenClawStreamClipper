@@ -65,6 +65,24 @@ The `setup_time` field also activates Tier-3 A2 in Stage 5/6 (extra setup frames
 
 ---
 
+## Evaluation: is the 15-word summary enough? (2026-06-06)
+
+> [!warning] The 15-word summary under-provisions A1's stated specialty
+> A1 consumes a 15-word "main topic" summary per ~8-min chunk (`stage4_moments.py:1599-1627`). That's a **~77:1 compression** (a 480 s chunk holds ~1,150 words). The question isn't "is 15 words a fair chunk summary" — it's "does it preserve the *arc-relevant* signal," a harder bar that it often fails.
+
+**What 15 words handles fine**: theme-level / dominant-thread arcs — when the whole chunk *is about* the setup (an 8-min bet hype → later outcome). The "main topic" line captures both halves.
+
+**Where it structurally fails** — exactly A1's stated kinds (irony / contradiction / exposure / prediction):
+1. **Buried minor-at-the-time setups.** The canonical "penthouse" example the A1 prompt itself cites: the setup is often a 2-second offhand brag inside a chunk that's *mostly about something else*. A summarizer told to keep "the **main** claim/topic" systematically discards it — the exact selection bias that defeats arc detection. A setup is, by definition, unremarkable when said; "summarize the main thing" filters out the un-main detail that later pays off.
+2. **Specific entities genericized.** "I'm well aware you're from Delaware" → "streamer does a rap battle." The matchable token (Delaware, the penthouse, the named bet) is gone, so A1 has nothing to link setup↔payoff on.
+3. **Multi-topic chunks → one survivor.** A busy chunk has 3-4 threads; only one reaches the summary. If the setup is in thread #3, it's invisible to A1.
+
+**The backstop and its limit**: [[concepts/callback-detection]] (M3) does NOT use the summaries — it embeds the *real* transcript windows + FAISS cosine + LLM judge, so it catches *lexically/semantically similar* callbacks A1 dropped ("penthouse"↔"penthouse"). But M3 **misses low-similarity conceptual/ironic arcs** (payoff worded differently than setup). So the **residual gap = conceptual/ironic arcs with a buried minor setup** — which is precisely the category A1 exists to add unique value on.
+
+**Why it's a tradeoff, not a clean bug**: A1 is **boost-only** (a missed arc costs a clip-that-could-have-been, never a wrong clip — low blast radius); a *terser* skeleton is easier for the global pass to scan than a verbose one; and the 15-word cap keeps the per-chunk summary call cheap. So widening it naively (just "more words") risks **attention dilution** ("Lost in the Middle") at A1.
+
+**Verdict**: 15 words is under-provisioned for A1's mission, and the fix is near-free on the dimension everyone fears (VRAM/context is not the constraint — see [[concepts/vram-budget]] §"Why bigger context ≠ better clips"). The high-leverage version is **arc-aware extraction** (preserve concrete claims/predictions/entities, not just the topic), not generic longer summaries. Full research-backed plan: **[[concepts/arc-aware-extraction]]**.
+
 ## Relationship to M3
 
 M3 (callback detection) and A1 attack the same problem from different angles:

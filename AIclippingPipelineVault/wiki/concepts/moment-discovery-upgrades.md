@@ -94,7 +94,8 @@ A3 originally shipped as additive (MiniCheck + Lynx kept as fallbacks per CLAUDE
 - [[concepts/clipping-pipeline]] — full pipeline placement of every Tier item
 - [[concepts/highlight-detection]] — Pass A/B/C consumer of every signal
 - [[concepts/callback-detection]] — M3 architectural concept
-- [[concepts/two-stage-passb]] — A1 architectural concept
+- [[concepts/two-stage-passb]] — A1 architectural concept (+ §Evaluation: the 15-word-summary weakness)
+- [[concepts/arc-aware-extraction]] — plan to fix A1's 15-word bottleneck via structured "chunk cards"
 - [[entities/audio-events]] — M2 module
 - [[entities/diarization]] — M1 module
 - [[entities/callback-module]] — M3 module
