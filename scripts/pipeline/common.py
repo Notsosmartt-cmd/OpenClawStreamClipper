@@ -129,7 +129,13 @@ def _utc_stamp() -> str:
 
 
 def set_stage(log: Logger, stage_text: str) -> None:
-    """Write the current stage to the dashboard-polled marker files."""
+    """Write the current stage to the dashboard-polled marker files.
+
+    Also captures a cross-vendor VRAM snapshot via ``vram_log.stage_snapshot``
+    so a post-run trajectory of GPU occupancy is available via
+    ``logtool vram <run>``. Failure-soft — any probe error is logged but
+    the stage transition itself always completes.
+    """
     try:
         PATHS.stage_file.write_text(stage_text + "\n", encoding="utf-8")
         with open(PATHS.stages_log, "a", encoding="utf-8") as fh:
@@ -138,6 +144,15 @@ def set_stage(log: Logger, stage_text: str) -> None:
         log.warn(f"could not write stage marker: {e}")
     _STAGE_MARKS.append((stage_text, time.time()))
     log.log(f">>> {stage_text}")
+    # 2026-06-05 per-stage VRAM snapshot (cross-vendor NVIDIA + AMD). Lazy
+    # import + try/except so a host without vram_log (or without nvidia-smi
+    # / PowerShell) cannot break the pipeline.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        import vram_log as _vram  # noqa: WPS433
+        _vram.stage_snapshot(stage_text, str(PATHS.work_dir), log_fn=log.log)
+    except Exception as _vram_err:  # noqa: BLE001
+        log.warn(f"[VRAM] hook skipped ({type(_vram_err).__name__}: {_vram_err})")
 
 
 # ---------------------------------------------------------------------------

@@ -402,6 +402,166 @@ def _moments_list(data: dict, key: str) -> list:
     return []
 
 
+def cmd_vram(args) -> int:
+    """VRAM trajectory of the most-recent pipeline run (per-stage snapshots
+    written by ``scripts/lib/vram_log.py`` via the ``set_stage`` hook) plus
+    model-fit recommendations for the current GPU pool.
+
+    Shows in order:
+      1. Each adapter's role + total VRAM (NVIDIA + AMD on Windows-pool box).
+      2. Per-stage table of pool occupancy across the last run — easy way
+         to see which stage spiked, which stage left VRAM stranded, and
+         whether peak occupancy ever approached the pool ceiling (= CPU
+         spill risk).
+      3. Per-installed-model context recommendation for the CURRENT free
+         pool, so the operator can pick a context_length that fits.
+    """
+    log_path = PATHS.work_dir / "vram_log.json"
+    if not log_path.exists():
+        print(_c("33",
+            f"(no VRAM trajectory at {log_path} — run the pipeline first)"))
+        # Fall through to show recommendations using a live snapshot instead.
+
+    # Always show current snapshot + recommendations even if no run trajectory.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[0] / "lib"))
+    try:
+        import vram_log as _vram
+        live = _vram.snapshot()
+    except Exception as e:  # noqa: BLE001
+        print(f"(VRAM probe unavailable: {e})")
+        return 1
+
+    if args.json:
+        history = []
+        if log_path.exists():
+            try:
+                history = json.loads(log_path.read_text(encoding="utf-8") or "[]")
+            except (OSError, json.JSONDecodeError):
+                history = []
+        print(json.dumps({"live": live, "history": history}, indent=2))
+        return 0
+
+    # --- 1. Adapter summary -------------------------------------------------
+    print(_c("36", "# GPU pool"))
+    for a in live.get("adapters") or []:
+        util = f" {a.get('util_pct')}% util" if a.get("util_pct") is not None else ""
+        temp = f" {a.get('temp_c')}°C" if a.get("temp_c") is not None else ""
+        print(f"  {a.get('vendor','?'):<8} {a.get('name','?'):<28} "
+              f"{a.get('total_mb', 0):>5} MB total, "
+              f"{a.get('used_mb', 0):>5} used, "
+              f"{a.get('free_mb', 0) if a.get('free_mb') is not None else 'n/a':>5} free"
+              f"{util}{temp}")
+    pool_total = live.get("pool_total_mb", 0)
+    pool_used = live.get("pool_used_mb", 0)
+    pool_free = live.get("pool_free_mb", 0)
+    pct = (100 * pool_used // pool_total) if pool_total else 0
+    print(_c("36",
+        f"  POOL TOTAL: {pool_total} MB · used {pool_used} ({pct}%) · "
+        f"free {pool_free}"))
+
+    if live.get("lm_studio_loaded"):
+        print()
+        print(_c("33", "# Currently loaded in LM Studio"))
+        for m in live["lm_studio_loaded"]:
+            print(f"  {m.get('id', '?')}")
+
+    # --- 2. Per-stage trajectory -------------------------------------------
+    if log_path.exists():
+        try:
+            history = json.loads(log_path.read_text(encoding="utf-8") or "[]")
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"(failed to read trajectory: {e})")
+            history = []
+        if history:
+            print()
+            print(_c("36", f"# Per-stage VRAM trajectory ({len(history)} snapshots from last run)"))
+            print(f"  {'#':>3}  {'stage':<35}  {'pool used':>10}  {'free':>7}  "
+                  f"{'%':>3}  {'loaded':<28}")
+            print(f"  {'-'*3}  {'-'*35}  {'-'*10}  {'-'*7}  {'-'*3}  {'-'*28}")
+            peak_used = 0
+            peak_stage = ""
+            for i, snap in enumerate(history, 1):
+                pool_t = snap.get("pool_total_mb") or 0
+                pool_u = snap.get("pool_used_mb") or 0
+                pool_f = snap.get("pool_free_mb") or 0
+                p = (100 * pool_u // pool_t) if pool_t else 0
+                if pool_u > peak_used:
+                    peak_used = pool_u
+                    peak_stage = snap.get("stage") or "?"
+                loaded = ", ".join(m.get("id", "?")
+                                    for m in (snap.get("lm_studio_loaded") or []))[:28]
+                stage_label = (snap.get("stage") or "?")[:35]
+                color = "32" if p < 70 else ("33" if p < 90 else "31")
+                line = (f"  {i:>3}  {stage_label:<35}  {pool_u:>5} MB    "
+                        f"{pool_f:>5}    {p:>3}  {loaded:<28}")
+                print(_c(color, line))
+            print()
+            peak_pct = (100 * peak_used // pool_total) if pool_total else 0
+            verdict = (
+                _c("32", f"  Peak occupancy: {peak_used} MB ({peak_pct}%) "
+                       f"at '{peak_stage}' — comfortable headroom")
+                if peak_pct < 80 else
+                _c("33", f"  Peak occupancy: {peak_used} MB ({peak_pct}%) "
+                       f"at '{peak_stage}' — TIGHT, near pool ceiling")
+                if peak_pct < 95 else
+                _c("31", f"  Peak occupancy: {peak_used} MB ({peak_pct}%) "
+                       f"at '{peak_stage}' — RISK of CPU spill")
+            )
+            print(verdict)
+
+    # --- 3. Recommendations ------------------------------------------------
+    try:
+        import model_registry as _reg
+        models = _reg.available_models()
+    except Exception as e:  # noqa: BLE001
+        print(f"(model registry unavailable: {e})")
+        return 0
+
+    if not models:
+        return 0
+
+    # Cap pool at NVIDIA-only for the "CUDA single-card" recommendation
+    # column, so a multi-GPU operator sees both "single-card max" and
+    # "pool max" side by side.
+    nvidia_only_mb = 0
+    for a in live.get("adapters") or []:
+        if a.get("vendor") == "NVIDIA":
+            nvidia_only_mb = a.get("total_mb") or 0
+            break
+
+    print()
+    print(_c("36",
+        f"# Recommended context_length per installed LLM "
+        f"(empty space in pool right now: {pool_free} MB)"))
+    print(f"  {'model':<26}  {'arch':<11}  {'wt':>5}  "
+          f"{'KV/tok':>7}  {'CUDA-only ctx':>13}  {'pool ctx':>10}  {'verdict':<14}")
+    print(f"  {'-'*26}  {'-'*11}  {'-'*5}  {'-'*7}  {'-'*13}  {'-'*10}  {'-'*14}")
+    for m in models:
+        # Skip embedding entries (they parse with weird fields)
+        if "embed" in m["id"].lower() or "Nomic" in m.get("params", ""):
+            continue
+        cuda_rec = _reg.recommend_context(m["id"], nvidia_only_mb) if nvidia_only_mb else {}
+        pool_rec = _reg.recommend_context(m["id"], pool_total) if pool_total else {}
+        cuda_ctx = cuda_rec.get("recommended", 0) if "error" not in cuda_rec else 0
+        pool_ctx = pool_rec.get("recommended", 0) if "error" not in pool_rec else 0
+        fit_class = pool_rec.get("fit_class", "?")
+        verdict_color = ("32" if fit_class == "fits_easily" else
+                          "33" if fit_class == "fits_tight" else
+                          "31" if fit_class == "no_kv_room" else "0")
+        cuda_str = f"{cuda_ctx:>5}" if cuda_ctx else "  N/A"
+        line = (f"  {m['id']:<26}  {m['arch']:<11}  "
+                f"{m['size_gb']:>4.1f}  {m['arch'][:7]:>7}  "
+                f"{cuda_str:>13}  {pool_ctx:>10}  {fit_class:<14}")
+        print(_c(verdict_color, line))
+
+    print()
+    print(_c("2",
+        "  Legend: weights = on-disk GGUF size (≈ VRAM footprint at Q4). "
+        "KV cache + ~300 MB overhead + 500 MB safety margin reserved. "
+        "Use `--json` for raw output."))
+    return 0
+
+
 def cmd_selection(args) -> int:
     """Pass C candidate trace — shows every deduped moment's full scoring
     chain (Pass B score → multipliers → final_score → selection) per time
@@ -730,6 +890,11 @@ def main(argv) -> int:
         help="filter to one bucket index (0-based)")
     psel.add_argument("--json", action="store_true", help="raw JSON output")
 
+    pv = sub.add_parser("vram",
+        help="Show GPU pool status + per-stage VRAM trajectory from the "
+             "last run + recommended context_length per installed LLM")
+    pv.add_argument("--json", action="store_true", help="raw JSON output")
+
     args = ap.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor(args)
@@ -747,6 +912,8 @@ def main(argv) -> int:
         return cmd_dead(args)
     if args.cmd == "selection":
         return cmd_selection(args)
+    if args.cmd == "vram":
+        return cmd_vram(args)
     ap.print_help()
     return 0
 

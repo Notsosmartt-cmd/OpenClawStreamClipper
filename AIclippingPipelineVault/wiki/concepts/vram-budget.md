@@ -1,10 +1,21 @@
 ---
 title: "VRAM Budget and Model Orchestration"
 type: concept
-tags: [vram, gpu, memory, performance, models, orchestration, infrastructure]
-sources: 2
-updated: 2026-06-04
+tags: [vram, gpu, memory, performance, models, orchestration, infrastructure, observability]
+sources: 3
+updated: 2026-06-05
 ---
+
+> [!success] Cross-vendor VRAM observability shipped 2026-06-05
+> `scripts/lib/vram_log.py` + `scripts/lib/model_registry.py` + `logtool vram` give per-stage VRAM trajectory across **both NVIDIA and AMD** cards on Windows, plus model-fit recommendations.
+>
+> - **NVIDIA**: `nvidia-smi` (total / used / free / util% / temp)
+> - **AMD on Windows**: PowerShell `Get-Counter '\GPU Adapter Memory(*)\Dedicated Usage'` for used + registry `HardwareInformation.qwMemorySize` for total
+> - **LM Studio**: `lms ps` + `lms ls` for loaded model IDs and on-disk sizes
+> - **Per-stage snapshots**: hooked into `common.set_stage()`; writes `{TEMP_DIR}/vram_log.json` and a one-line `[VRAM] …` entry to `pipeline.log`
+> - **Viewer**: `python scripts/logtool.py vram` shows current pool + last-run trajectory + per-model recommended context for both CUDA-single-card and Vulkan-pool fit modes
+>
+> Also: `python scripts/lib/model_registry.py recommend <model_id> <pool_mb>` computes the max context fitting weights + KV cache + 300 MB overhead + 500 MB safety margin on any hardware. Other users cloning the repo get the same prediction tooling for their adapters.
 
 # VRAM Budget and Model Orchestration
 
@@ -16,13 +27,25 @@ The stream clipper uses three AI models across different pipeline stages. Only *
 
 Models are configured in `config/models.json` — the specific model ID and its VRAM footprint depend on what is loaded in LM Studio. Reference figures for common choices:
 
-| Model | VRAM | Context |
-|---|---|---|
-| `qwen/qwen3.5-9b` — **current `text_model`** (Stage 3 + Pass B/D), non-thinking | ~6.5 GB (Q4) | 32K tokens |
-| `google/gemma-4-12b` — **current `vision_model`** (Stage 6 + Judge), multimodal | ~7.6 GB (Q4) | 32K tokens |
-| `openai/gpt-oss-20b` — fits; reasoning, dialable effort | ~12.1 GB (MXFP4) | — |
-| ⚠️ **exceed 16 GB → CPU spill (slow)**: `qwen3.6-35b-a3b` 22.1 · `gemma-4-31b` 19.9 · `gemma-4-26b-a4b` 18.0 · `qwen3.6-27b` 17.5 GB | >16 GB | — |
-| [[entities/faster-whisper]] `large-v3-turbo` (default) / `large-v3` | ~3–4 GB / ~6–7 GB | N/A (audio model) |
+| Model | Weight VRAM | KV cache rate | Native max ctx |
+|---|---|---|---|
+| `qwen/qwen3.5-9b` (text or both slots), non-thinking | 6.5 GB (Q4) | ~130 KB/token | 256K |
+| `qwen/qwen3.6-27b` dense | 17.5 GB (Q4) | ~130 KB/token | 256K |
+| `qwen/qwen3.6-35b-a3b` MoE (~3B active) | 22.1 GB (Q4) | ~105 KB/token | 256K |
+| `qwen/qwen3-vl-8b` | 6.2 GB (Q4) | ~115 KB/token | 256K |
+| `qwen/qwen3-vl-30b` MoE | 19.6 GB (Q4) | ~110 KB/token | 256K |
+| `google/gemma-4-12b` multimodal | 7.6 GB (Q4) | **~390 KB/token** (large head_dim) | 128K |
+| `google/gemma-4-26b-a4b` MoE | 18.0 GB (Q4) | ~390 KB/token | 128K |
+| `google/gemma-4-31b` dense | 19.9 GB (Q4) | ~390 KB/token | 128K |
+| `openai/gpt-oss-20b` MXFP4 (~3B active MoE) | 12.1 GB | ~95 KB/token | 128K |
+| `nvidia/nemotron-3-nano-4b` hybrid | 4.2 GB (Q4) | ~60 KB/token | 32K |
+| [[entities/faster-whisper]] `large-v3-turbo` / `large-v3` | 3-4 / 6-7 GB | N/A (audio) | N/A |
+
+KV cache math (used by `model_registry.recommend_context`):
+`projected_total_mb = weights_mb + (ctx_tokens × kb_per_token / 1024) + 300 MB overhead + 500 MB safety`.
+Run `python scripts/lib/model_registry.py recommend <model> <pool_mb>` for the live calculation.
+
+**Key takeaway**: Gemma 4's KV cache is ~3× heavier per token than Qwen's due to its 256-dim head_dim. On the same 16 GB CUDA card, qwen3.5-9b fits ~65K context, but gemma-4-12b only fits ~16K. Pick the model first, then size context to fit.
 
 Whisper never co-resides with the LLM (the pipeline unloads LM Studio before Stage 2), so turbo's smaller footprint doesn't add LLM headroom — but it loads faster and transcribes ~2.5x quicker. See [[entities/faster-whisper]].
 
@@ -72,6 +95,46 @@ Stage 7 prep: unload vision model
 Discord agent loads its own model on demand outside the pipeline stages — no VRAM conflict during pipeline execution.
 
 ---
+
+## Per-stage `max_tokens` (output budget, independent of context)
+
+Each pipeline call to LM Studio has an output-token budget. These are **output limits, not context limits** — they cap how many tokens the LLM generates, NOT how much it can read. Increasing `context_length` doesn't require touching these. But if you reduce `context_length` to fit tight VRAM, you need to confirm `prompt_tokens + max_tokens ≤ context_length` at the chunk's call site.
+
+| Stage / call site | max_tokens | Source |
+|---|---|---|
+| Stage 3 segment classify | 6000 | `stage3_segments.py:109` |
+| Stage 4 Pass B main call (per chunk) | 8000 | `stage4_moments.py:659` (default `call_llm`) |
+| Stage 4 Pass B summary call (per chunk) | 4000 | `stage4_moments.py:1610` |
+| Stage 4 Tier-3 A1 global skeleton | 6000 | `stage4_moments.py:1774` |
+| Stage 4 Pass C dedup-merge LLM call | 3000 | `stage4_moments.py:1473` (call_llm default) |
+| Stage 4 Pass D rubric judge | 1000 | `stage4_rubric.py:217` |
+| Stage 5.5 Vision Judge (pairwise) | 1200 | `stage5_5_judge.py:46` |
+| Stage 6 Vision Enrichment | 8000 | `stage6_vision.py:487` |
+| `lmstudio.py` (used by grounding cascade tier 2 judge) | 800 | `lmstudio.py:31` (default) |
+| `grounding.py` LLM judge | 400 | `grounding.py:349` |
+| `callbacks.py` callback LLM judge | 400 | `callbacks.py:216` |
+
+**Rules of thumb**:
+
+- The 8000-token Pass B and Stage 6 budgets are sized for the Qwen3.5-35B-A3B thinking budget; non-thinking models finish in ~200-500 tokens and just leave the rest unused. **Do not lower below 4000** without verifying — reasoning models can spike unexpectedly even when thinking-off is set ([[concepts/bugs-and-fixes]] BUG 57 history).
+- Pass B chunk is up to ~6000 prompt tokens (transcript + catalog + prior context). With `max_tokens=8000` output, the worst case is ~14000 tokens used. So `context_length` must be ≥ 16K for Pass B to not get truncated. Below 16K context, **Pass B will fail silently** on long chunks (the prompt gets clipped to the context window).
+- Stage 6 vision call: ~3000 prompt tokens + 6 frames + 8000 output budget → context_length ≥ 16K. Same constraint.
+- Stage 5.5 Vision Judge: ~1500 prompt + 8 frames + 1200 output → context_length ≥ 8K is fine. This stage has the smallest context demand.
+
+## Portable hardware → recommended config
+
+For another user cloning the repo with different hardware, here are sensible defaults that keep everything in VRAM (no CPU spill). Verify on your box with `python scripts/logtool.py vram` after pulling.
+
+| Hardware | text_model | vision_model | context_length | Why |
+|---|---|---|---|---|
+| **16 GB single CUDA** (RTX 4060 Ti / 5060 Ti) | `qwen3.5-9b` (or unified for both) | `qwen3.5-9b` (consolidation) or `gemma-4-12b` | 16K-32K | Both fit single card; 32K ctx leaves ~4 GB headroom for KV |
+| **16 GB single CUDA, Qwen3-VL** | `qwen3.5-9b` | `qwen3-vl-8b` (download) | 32K | Two CUDA-fit models with one swap per VOD |
+| **24 GB single CUDA** (RTX 4090 / 3090) | `gpt-oss-20b` @ Reasoning Low | `gemma-4-12b` or `qwen3-vl-8b` | 32K | Runtime-tunable reasoning + headroom |
+| **28 GB Vulkan pool** (NVIDIA 16 GB + AMD 12 GB, like the dev box) | `qwen3.6-35b-a3b` (both slots) | (same) | 32K | Single-model consolidation; MoE 3B active stays fast on pool |
+| **12 GB single** (RTX 3060) | `qwen3.5-9b` (or `nemotron-3-nano-4b`) | (same) | 16K | Tight; cut chunk size if Pass B truncates |
+| **8 GB single** | `nemotron-3-nano-4b` | (same) | 8K | Bare-minimum config; quality suffers but pipeline runs |
+
+For other configs, run `python scripts/lib/model_registry.py recommend <model_id> <pool_mb>` — it computes the largest safe context for ANY model + pool combination including KV-cache rate per architecture (Gemma's is 3× heavier than Qwen's per token).
 
 ## Minimum GPU requirements
 
