@@ -21,7 +21,7 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 |---|---|---|---|---|
 | 1 | **Vision REGEN → ungrounded fallback titles** — clips ship raw pattern-name titles like `"Pattern setupexternalcontradiction Streamer claims"` | **P1 quality (user-visible)** | many `REGEN still fails for title/hook (judge_low_weighted)`; final manifest title byte-identical to the garbage string | ✅ **SHIPPED 2026-06-06** (Fix 1A-D) |
 | 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | ✅ **2B parallelized SHIPPED 2026-06-06** (~2×); 2A/2C documented |
-| 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | Plan below |
+| 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | ✅ **3A SHIPPED 2026-06-06** (→ 0.83-0.96 spread); 3B deferred |
 | 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | Plan below |
 | 5 | **A1 arcs don't win selection** — 5 arcs detected, 0 in final 10 | **P5 tuning (deferred)** | see [[concepts/arc-aware-extraction]] §Verified-in-production | Deferred to arc Phase 3 |
 
@@ -86,6 +86,9 @@ It is **sequential** — the comparison loop calls `compare(a, b)` one at a time
 ---
 
 ## Fix 3 — Pass C score display saturates at 1.000 (P3, cosmetic)
+
+> [!success] SHIPPED 2026-06-06 (3A; `stage4_moments.py`)
+> Replaced the hard `min(raw, 1.0)` display clamp at the Pass C output (`:2797`) with a soft-squash `min(raw / _DISPLAY_SCALE, 1.0)` (`_DISPLAY_SCALE=1.6`, `CLIP_DISPLAY_SCORE_SCALE` env). Verified on the 6/6 run's 10 selected `raw_score`s: the display went from **10 tied 1.000s → 10 distinct, monotonic values 0.830-0.965** (rank preserved). **Confirmed display-only**: selection ranks on the unclamped `final_score`, and Stage 6 drives all its score math off `raw_score` (the `score` field there is only a clamped display + one log line). **3B (reactivate inert reaction/engagement axes) NOT done** — deferred: it changes selection and the axes are likely inert due to missing chat/audio inputs on this VOD, not bad thresholds. **Note:** Stage 6's *final* manifest clamp (`stage6_vision.py` `min(new_raw,1.0)`) is unchanged by design (BUG 37: `raw_score` carries true magnitude); extending the squash to the user-facing manifest/Discord score is a separate UX call.
 
 ### Root cause (confirmed, file:line)
 The displayed `score` is a **hard `min(raw, 1.0)` clamp** at `stage4_moments.py:2797` (`display_score = round(min(max(raw,0.0),1.0),3)`). With raw `final_score` 1.33–1.54, all top clips flatten to 1.000. **Selection is unaffected** — ranking runs entirely on the unclamped `final_score` (`stage4_moments.py:2505,2695,2718`), and the unclamped value is already preserved as `raw_score` (`:2805`) and logged (`:2873`). So this is purely a **display** issue (intentional per the BUG 37 comment, but it over-flattens).

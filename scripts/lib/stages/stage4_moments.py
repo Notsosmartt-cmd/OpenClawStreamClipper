@@ -202,6 +202,14 @@ try:
 except Exception as _sae:
     print(f"[AXES] global clamp using defaults [{_AXIS_FLOOR}, {_AXIS_CEIL}] ({_sae})", file=sys.stderr)
 
+# Fix 3A — empirical ceiling used to soft-squash the user-facing `score` so top
+# moments differentiate instead of all pinning at 1.000 (see the display block
+# in the Pass C output loop). Top `final_score`s cluster ~1.0-1.6 (axis product
+# clamp _AXIS_CEIL=1.35 × style/cross-val/speaker multipliers); 1.6 maps the
+# realistic top to ~0.96 and reserves a true 1.000 for genuinely off-the-charts
+# raw scores. Display-only — ranking + Stage 6 math use the unclamped raw_score.
+_DISPLAY_SCALE = float(os.environ.get("CLIP_DISPLAY_SCORE_SCALE", "1.6") or "1.6")
+
 
 def _serialize_pattern_catalog_for_prompt(catalog):
     """Render the Pattern Catalog as a numbered list for the Pass B prompt.
@@ -2794,7 +2802,17 @@ except OSError as _trace_err:
 output = []
 for m in final:
     raw = m.get("final_score", 0.0)
-    display_score = round(min(max(raw, 0.0), 1.0), 3)
+    # Fix 3A (2026-06-06): soft-squash the display instead of a hard
+    # min(raw, 1.0). Top Pass C moments cluster at raw 1.0-1.6 (the axis
+    # product is clamped at 1.35, times the style/cross-val/speaker
+    # multipliers), so the old hard clamp pinned every winner at a
+    # visually-tied 1.000. Dividing by an empirical ceiling (_DISPLAY_SCALE)
+    # spreads them — e.g. raw 1.33->0.83, 1.54->0.96 — so the `score` field
+    # is informative. Selection is UNAFFECTED: it ranks on the unclamped
+    # `final_score`, and Stage 6 drives all its score math off `raw_score`
+    # (below); `score` is display-only. See clip-quality-remediation-2026-06
+    # Fix 3.
+    display_score = round(min(max(raw, 0.0) / _DISPLAY_SCALE, 1.0), 3)
     entry = {
         "timestamp": m["timestamp"],
         "score": display_score,
