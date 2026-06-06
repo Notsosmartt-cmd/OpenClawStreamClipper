@@ -181,8 +181,20 @@ def evaluate(
         return {"engagement_score": None, "multiplier": 1.0, "signals": signals, "reason": "flat"}
 
     w = cfg.get("weights", {}) or {}
-    score = max(0.0, min(1.0, float(w.get("predicted", 0.40)) * predicted
-                         + float(w.get("observed", 0.60)) * observed))
+    if observed <= 0:
+        # 3B (2026-06-06): chat absent/insufficient -> `observed` (0.60 weight)
+        # is dead mass that dilutes the score to a near-no-op (median 1.0 with
+        # no chat). Renormalize the surviving `predicted` term — a structural,
+        # ENERGY-FREE stance/monologue signal from conversation_shape — to full
+        # weight so a firm take or sustained monologue still earns its boost.
+        # Energy-safe by construction (no audio/loudness here). Only changes
+        # chatless VODs; chat VODs keep the original blend. weights_chat_absent
+        # in config/selection_axes.json. See clip-quality-remediation-2026-06 3B.
+        wp = float((cfg.get("weights_chat_absent", {}) or {}).get("predicted", 1.0))
+        score = max(0.0, min(1.0, wp * predicted))
+    else:
+        score = max(0.0, min(1.0, float(w.get("predicted", 0.40)) * predicted
+                             + float(w.get("observed", 0.60)) * observed))
 
     cat = str(moment.get("primary_category") or "hype").lower()
     cat_gain = float(cfg.get("category_gain", {}).get(cat, cfg.get("default_category_gain", 0.9)))

@@ -133,9 +133,21 @@ def evaluate(
     crowd, rhythm, asig = _audio_term(audio)
     chat_t, csig = _chat_term(chat, cfg)
 
-    score = (float(w.get("audio", 0.55)) * crowd
-             + float(w.get("chat", 0.40)) * chat_t
-             + float(w.get("rhythm", 0.05)) * rhythm)
+    if chat_t <= 0:
+        # 3B (2026-06-06): chat absent/insufficient -> redistribute the dead
+        # chat weight (0.40) across the surviving audio + rhythm terms so a
+        # genuine crowd-pop / rhythmic beat still earns its (ceiling-capped)
+        # boost instead of being diluted to ~1.00x. The multiplier_ceil (1.10 —
+        # the smallest by design) stays the energy-bias guard, and crowd_response
+        # is a GATED laughter/cheer detector (not raw loudness), so crediting it
+        # more within that cap is safe. Only changes chatless VODs.
+        wca = cfg.get("weights_chat_absent", {}) or {}
+        score = (float(wca.get("audio", 0.92)) * crowd
+                 + float(wca.get("rhythm", 0.08)) * rhythm)
+    else:
+        score = (float(w.get("audio", 0.55)) * crowd
+                 + float(w.get("chat", 0.40)) * chat_t
+                 + float(w.get("rhythm", 0.05)) * rhythm)
     sub = int((chat or {}).get("sub_count") or 0)
     if sub > 0:
         score += float(cfg.get("sub_legitimacy_bonus", 0.10))
