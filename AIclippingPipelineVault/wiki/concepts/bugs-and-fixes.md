@@ -1663,7 +1663,19 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 **Fix**: replace `"\`\`\`"` → `"```"` (real triple backtick) in both modules. Verified clean under `python -W error::SyntaxWarning`. Found during the 2026-06-06 session review; stage4 was fixed alongside the arc-aware extraction work, stage6 in the same review.
 
-**Related observation (not yet fixed)**: the same 6/6 session showed repeated `REGEN still fails for title/hook/description (judge_low_weighted)`, and some clips shipped with fallback titles like `"Pattern setupexternalcontradiction Streamer claims"` instead of a catchy title. The backtick fix removes one contributor (fenced-JSON parse failure); the remaining REGEN failures are a separate vision-grounding-strictness question to investigate. See [[concepts/vision-enrichment]].
+**Related observation (not yet fixed)**: the same 6/6 session showed repeated `REGEN still fails for title/hook/description (judge_low_weighted)`, and some clips shipped with fallback titles like `"Pattern setupexternalcontradiction Streamer claims"` instead of a catchy title. The backtick fix removes one contributor (fenced-JSON parse failure); the remaining REGEN failures are a separate vision-grounding-strictness question to investigate. See [[concepts/vision-enrichment]]. *(Fixed 2026-06-06 by field-aware grounding — see [[concepts/clip-quality-remediation-2026-06]] Fix 1.)*
+
+---
+
+## BUG 61 — Pass C dedup hard-resets `cross_validated`, silently stripping A1 arcs' boost
+
+> [!success] Resolved 2026-06-06
+
+**Symptom**: Tier-3 A1 cross-chunk arcs were detected and logged (e.g. 5 arcs on the 6/6 rakai run) but **never reached the final clip selection** — 0 of 10.
+
+**Cause**: arcs (and M3 callbacks) are created with `cross_validated=True` because skeleton-/embedding-level evidence is itself high-signal (the A1 creation site says so). But the Pass C dedup loop ended with `if not merged: m["cross_validated"] = False` (`stage4_moments.py:2240`) — a **hard reset** that fired for any moment which didn't merge with a nearby (<25 s) different-source moment. A standalone arc (the common case — arcs rarely coincide with a keyword/LLM hit) therefore lost its `cross_validated` flag and the **×1.20 boost** (`:2323-2324`), directly contradicting the "Skeleton arcs are added as first-class moments with … cross_validated=True" intent. Compounding factors (not the primary cause): the creation-time `×1.4` arc boost is mostly swallowed by its `min(…,1.0)` cap, and `category="arc"` has no entry in the style `weight_map` (moot under `style=auto`, where no category is weighted).
+
+**Fix**: `:2240` → `m.setdefault("cross_validated", False)` so arcs/callbacks keep their creation-time `True` while keyword/LLM moments (which never set it) still default to `False`. Plus a bounded **Phase 2.5 arc guarantee** (`:after 2679`): if no arc won a bucket slot, the single highest-`final_score` arc is swapped in for the weakest selected clip — one swap, spacing-safe, behind a quality floor (`CLIP_ARC_GUARANTEE_MIN_RATIO`=0.6; `CLIP_ARC_GUARANTEE=0` to disable). See [[concepts/clip-quality-remediation-2026-06]] Fix 5 and [[concepts/arc-aware-extraction]] Phase 3. Unit-tested; **needs a validation run** to confirm guaranteed arcs win pairwise in `judge_tournament`.
 
 ---
 

@@ -210,6 +210,24 @@ except Exception as _sae:
 # raw scores. Display-only — ranking + Stage 6 math use the unclamped raw_score.
 _DISPLAY_SCALE = float(os.environ.get("CLIP_DISPLAY_SCORE_SCALE", "1.6") or "1.6")
 
+# Fix 5 / arc Phase 3 (2026-06-06) — bounded guarantee that the single
+# strongest A1 cross-chunk arc gets a final slot if none won Pass C on score.
+# Arcs are A1's unique value-add (conceptual/ironic setup->payoff the keyword
+# and local-LLM passes structurally miss), and the pipeline's philosophy is
+# "a missed clip costs more than a false positive". Bounded to ONE arc, behind
+# a quality floor (the arc's final_score must be >= MIN_RATIO x the weakest
+# selected clip's) so a weak arc can't evict a much stronger clip. Env-tunable;
+# CLIP_ARC_GUARANTEE=0 disables. See concepts/arc-aware-extraction.md Phase 3.
+_ARC_GUARANTEE = os.environ.get("CLIP_ARC_GUARANTEE", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+try:
+    _ARC_GUARANTEE_MIN_RATIO = float(
+        os.environ.get("CLIP_ARC_GUARANTEE_MIN_RATIO", "0.6") or "0.6"
+    )
+except ValueError:
+    _ARC_GUARANTEE_MIN_RATIO = 0.6
+
 
 def _serialize_pattern_catalog_for_prompt(catalog):
     """Render the Pattern Catalog as a numbered list for the Pass B prompt.
@@ -2237,7 +2255,15 @@ for m in all_moments:
             merged = True
             break
     if not merged:
-        m["cross_validated"] = False
+        # Fix 5A (2026-06-06): use setdefault, NOT a hard reset. A standalone
+        # arc (or M3 callback) is created with cross_validated=True because
+        # skeleton-/embedding-level evidence is itself high-signal (see the A1
+        # creation site + comment). The old `= False` clobbered that for any
+        # arc that didn't merge with a nearby keyword/LLM moment — which is the
+        # usual case — silently stripping its 1.20x boost and contradicting the
+        # stated "first-class moments, cross_validated=True" intent. Keyword/LLM
+        # moments never set the flag at creation, so they still default to False.
+        m.setdefault("cross_validated", False)
         deduped.append(m)
 
 print(f"  After dedup: {len(deduped)} unique moments ({sum(1 for d in deduped if d.get('cross_validated'))} cross-validated)", file=sys.stderr)
@@ -2677,6 +2703,42 @@ def _phase2_round_robin(buckets, selected, max_clips, min_spacing_fn):
             return  # nothing pickable anywhere
 
 _phase2_round_robin(buckets, selected, MAX_CLIPS, min_spacing)
+
+# Phase 2.5 (Fix 5 / arc Phase 3): guarantee the single strongest A1 arc a
+# slot if none survived Phase 1/2 on score. A1 arcs are the conceptual/ironic
+# cross-chunk setup->payoffs that keyword + local-LLM passes structurally miss
+# (the whole reason A1 exists), and the pipeline treats a missed clip as more
+# costly than a false positive. Bounded to ONE swap, gated by a quality floor
+# so a weak arc can't displace a much stronger clip, and spacing-safe.
+if _ARC_GUARANTEE and selected and not any(
+    s.get("primary_category") == "arc" for s in selected
+):
+    _arc_cands = sorted(
+        (m for m in deduped if m.get("primary_category") == "arc"),
+        key=lambda x: x.get("final_score", 0.0), reverse=True,
+    )
+    _non_arcs = [s for s in selected if s.get("primary_category") != "arc"]
+    if _arc_cands and _non_arcs:
+        _weakest = min(_non_arcs, key=lambda x: x.get("final_score", 0.0))
+        _floor = _ARC_GUARANTEE_MIN_RATIO * _weakest.get("final_score", 0.0)
+        for _arc in _arc_cands:
+            if _arc.get("final_score", 0.0) < _floor:
+                break  # sorted desc — no remaining arc clears the quality floor
+            _kept = [s for s in selected if s is not _weakest]
+            _sp = min_spacing(_arc)
+            if any(abs(_arc["timestamp"] - s["timestamp"]) < _sp for s in _kept):
+                continue  # too close to a clip we're keeping; try the next arc
+            selected.remove(_weakest)
+            selected.append(_arc)
+            print(
+                f"[ARC] Phase 2.5 guaranteed arc T={_arc['timestamp']} "
+                f"(kind={_arc.get('arc_kind','?')}, score={_arc.get('final_score',0):.3f}) "
+                f"over weakest clip T={_weakest['timestamp']} "
+                f"({_weakest.get('final_score',0):.3f}) "
+                f"[CLIP_ARC_GUARANTEE=0 to disable]",
+                file=sys.stderr,
+            )
+            break
 
 # Phase 3: If a style is specified, apply style-aware re-ranking within the selection
 if CLIP_STYLE == "variety":
