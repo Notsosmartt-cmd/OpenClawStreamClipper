@@ -162,12 +162,18 @@ def _derive_baseline_title(why, category, T):
     was broken when really vision was just unavailable.
 
     Preference order:
-      1. First sentence of Pass B's `why` field (capped at 60 chars). Usually
-         a phrase like "Streamer reacts to first sub of the stream" — fine
-         as both filename and hook text.
+      1. First sentence of Pass B's `why` field (capped at 60 chars), AFTER
+         stripping the "Pattern <id>:" debug prefix that Pass B prepends.
+         Without that strip the baseline leaks a raw pattern label — e.g.
+         "Pattern setup_external_contradiction: ..." sanitizes (Stage 7) to the
+         garbage title "Pattern setupexternalcontradiction Streamer claims".
+         See concepts/clip-quality-remediation-2026-06.md Fix 1.
       2. "<Category> at MM:SS" — predictable and readable when `why` is empty.
     """
     if why:
+        # Strip Pass B's "Pattern <id>:" prefix so the title is a readable
+        # sentence, never a sanitized pattern label (Fix 1B).
+        why = re.sub(r"^\s*Pattern\s+[A-Za-z0-9_]+\s*:\s*", "", why, flags=re.IGNORECASE)
         first = why.strip().split(". ")[0].strip().rstrip(".")
         if len(first) > 60:
             first = first[:57].rstrip() + "..."
@@ -180,6 +186,43 @@ def _derive_baseline_title(why, category, T):
         T_int = 0
     mm, ss = T_int // 60, T_int % 60
     return f"{cat_pretty} at {mm}:{ss:02d}"
+
+
+# Fix 1A — grounding is field-aware. `title` and `hook` are intentionally
+# CREATIVE (the Stage 6 prompt asks for a "viral title" and a hook "in the
+# voice of a content creator"), so they have low literal overlap with the
+# transcript and were spuriously nulled by the Tier-2 weighted judge (which
+# weights `grounding` at 0.55, threshold 5.0). That nulling forced the entry
+# back to the Pass-B `why` baseline → the "Pattern <id>:" garbage-title leak.
+# Fix: ground creative fields with the Tier-1 DENYLIST + Phase-2.4d hard-event
+# check ONLY (overlap gate disabled via min_overlap=0.0, no LLM judge). This
+# still blocks fabricated events ("gifted subs" with sub_count==0) while
+# letting punchy phrasing through. `description` is meant to be literal
+# ("grounded in what was literally said/shown") so it keeps the full two-tier
+# cascade. See concepts/clip-quality-remediation-2026-06.md Fix 1.
+_CREATIVE_FIELDS = ("title", "hook")
+
+
+def _ground_field(field, claim, refs, hard_events):
+    """Field-aware grounding check. Returns the cascade/check_claim result dict
+    (always carries `passed`, `reason`, `tier`)."""
+    if _grounding is None:
+        return {"passed": True, "reason": "no_grounding", "tier": 0}
+    if field in _CREATIVE_FIELDS:
+        chk = _grounding.check_claim(
+            claim, refs, GROUNDING_DENYLIST,
+            min_overlap=0.0,                 # disable the literal-overlap gate
+            hard_events=hard_events,         # keep the anti-fabrication guard
+            event_map=CHAT_EVENT_MAP,
+        )
+        chk.setdefault("tier", 1)
+        return chk
+    return _grounding.cascade_check(
+        claim, refs, GROUNDING_DENYLIST, GROUNDING_CONFIG,
+        min_overlap=0.15,
+        hard_events=hard_events,
+        event_map=CHAT_EVENT_MAP,
+    )
 
 
 def _process_moment(moment):
@@ -585,12 +628,7 @@ Respond ONLY with JSON: {{
                         _claim = (parsed.get(_field) or "").strip()
                         if not _claim:
                             continue
-                        _chk = _grounding.cascade_check(
-                            _claim, refs, GROUNDING_DENYLIST, GROUNDING_CONFIG,
-                            min_overlap=0.15,
-                            hard_events=hard_events,
-                            event_map=CHAT_EVENT_MAP,
-                        )
+                        _chk = _ground_field(_field, _claim, refs, hard_events)
                         field_results[_field] = _chk
 
                 # --- Phase 1.1: regenerate once when the first response failed. ---
@@ -645,12 +683,7 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                             _rclaim = (retry_parsed.get(_f) or "").strip()
                             if not _rclaim:
                                 continue
-                            _rchk = _grounding.cascade_check(
-                                _rclaim, refs, GROUNDING_DENYLIST, GROUNDING_CONFIG,
-                                min_overlap=0.15,
-                                hard_events=hard_events,
-                                event_map=CHAT_EVENT_MAP,
-                            )
+                            _rchk = _ground_field(_f, _rclaim, refs, hard_events)
                             if _rchk["passed"]:
                                 parsed[_f] = _rclaim
                                 field_results[_f] = _rchk
@@ -673,8 +706,11 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                             v_score = _retry_score
 
                 # --- Final pass: null any field that is STILL failing. ---
-                # Downstream Stage 7 falls back to the transcript-only defaults
-                # already seeded in entry (title=f"Clip_T{T}", description=why).
+                # A nulled field falls back to the baseline seeded in `entry`:
+                # title <- _derive_baseline_title (Pass-B `why` with the
+                # "Pattern <id>:" prefix stripped, Fix 1B), or — when the vision
+                # description survived grounding — synthesized from that
+                # description in the enrichment block below (Fix 1C).
                 for _field, _chk in field_results.items():
                     if _chk["passed"]:
                         continue
@@ -711,10 +747,20 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         vision_norm = max(0.0, min((best_vision_score - 1) / 9.0, 1.0))
         entry["vision_score"] = round(vision_norm, 3)
         # Use vision title/description (usually better than generic)
+        v_desc = best_vision_result.get("description", "")
         v_title = best_vision_result.get("title", "")
         if v_title and v_title != "":
             entry["title"] = v_title
-        v_desc = best_vision_result.get("description", "")
+        elif v_desc.strip():
+            # Fix 1C: the vision title was nulled by grounding but the
+            # description passed — a grounded description is a far better title
+            # seed than the Pass-B "Pattern <id>:" baseline. Use its first
+            # clause (cap ~60 chars). See clip-quality-remediation-2026-06 Fix 1.
+            _syn = v_desc.strip().split(". ")[0].strip().rstrip(".")
+            if len(_syn) > 60:
+                _syn = _syn[:57].rstrip() + "..."
+            if _syn:
+                entry["title"] = _syn
         if v_desc:
             entry["description"] = v_desc
         v_hook = best_vision_result.get("hook", "")

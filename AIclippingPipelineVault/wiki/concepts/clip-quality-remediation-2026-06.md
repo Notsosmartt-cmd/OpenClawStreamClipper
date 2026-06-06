@@ -19,7 +19,7 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 
 | # | Issue | Severity | Evidence (this run) | Status |
 |---|---|---|---|---|
-| 1 | **Vision REGEN → ungrounded fallback titles** — clips ship raw pattern-name titles like `"Pattern setupexternalcontradiction Streamer claims"` | **P1 quality (user-visible)** | many `REGEN still fails for title/hook (judge_low_weighted)`; final manifest title byte-identical to the garbage string | Plan below; BUG 60 (one contributor) already fixed |
+| 1 | **Vision REGEN → ungrounded fallback titles** — clips ship raw pattern-name titles like `"Pattern setupexternalcontradiction Streamer claims"` | **P1 quality (user-visible)** | many `REGEN still fails for title/hook (judge_low_weighted)`; final manifest title byte-identical to the garbage string | ✅ **SHIPPED 2026-06-06** (Fix 1A-D) |
 | 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | Plan below |
 | 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | Plan below |
 | 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | Plan below |
@@ -30,6 +30,9 @@ Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc p
 ---
 
 ## Fix 1 — Vision REGEN → ungrounded fallback titles (P1, quality)
+
+> [!success] SHIPPED 2026-06-06 (`stage6_vision.py`)
+> All four sub-fixes are in: **1A** `_ground_field()` dispatch — `title`/`hook` now run Tier-1 denylist + hard-event check only (`min_overlap=0.0`, no judge), `description` keeps the full cascade; used in both the initial loop and the REGEN recheck. **1B** `_derive_baseline_title()` strips the `^Pattern <id>:` prefix (regex). **1C** when a vision title is nulled but the description passed, the title is synthesized from the description's first clause instead of the baseline. **1D** stale `f"Clip_T{T}"` comments corrected here + in [[concepts/vision-enrichment]]. Compile clean; unit-tested that the canonical garbage title `"Pattern setupexternalcontradiction Streamer claims"` no longer occurs. Next live run should show ~zero `REGEN still fails for title/hook`.
 
 ### Root cause (confirmed, file:line)
 The grounding cascade is applied **uniformly** to `title`, `hook`, and `description` in Stage 6 (`stage6_vision.py:584-594`, `cascade_check(..., min_overlap=0.15)`). The cascade's Tier-2 **LLM judge** (`grounding.py:312-395`) scores five dims and weights **`grounding` at 0.55** (`grounding.py:376-382` / `config/grounding.json`), with a pass threshold of **5.0** (`grounding.py:383, 492-495`). The judge prompt explicitly rewards literal paraphrase ("paraphrases what the streamer actually said scores 8-10", `grounding.py:290`).

@@ -146,7 +146,8 @@ The VLM call is factored into a local `_vision_call(prompt_text)` closure so the
 
 ### Fallback ladder
 
-- Nulled fields fall back to the transcript-only defaults seeded in `entry` (title = `f"Clip_T{T}"`, description = the Pass-B `why`, no hook).
+- Nulled fields fall back to baselines seeded in `entry`. **Title** ← `_derive_baseline_title`: first sentence of the Pass-B `why` with its `"Pattern <id>:"` debug prefix stripped (Fix 1B, 2026-06-06 — previously this leaked garbage titles like "Pattern setupexternalcontradiction Streamer claims"), or — when the vision *description* survived grounding — synthesized from that description (Fix 1C). **Description** ← the Pass-B `why`. (The pre-Tier-4 `f"Clip_T{T}"` baseline is long gone.)
+- **Grounding is field-aware (Fix 1A, 2026-06-06)**: `title`/`hook` are intentionally creative, so they run the Tier-1 denylist + Phase-2.4d hard-event check ONLY (overlap gate off, no LLM judge) — blocking fabricated events while allowing punchy phrasing. `description` keeps the full two-tier cascade. See [[concepts/clip-quality-remediation-2026-06]] Fix 1.
 - Every cascade failure logs to stderr with `[GROUND] Stage 6 null <field> T=<T> tier=<1|2|3> reason=<...>`.
 - `parsed["grounding_fails"]` accumulates `{field}:tier{N}:{reason}` entries so the dashboard can surface questionable clips.
 - `parsed["grounding_tier"]` records which tier ruled on each moment (useful for A/B measurement).
