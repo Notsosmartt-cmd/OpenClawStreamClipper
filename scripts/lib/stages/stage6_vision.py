@@ -539,8 +539,13 @@ Respond ONLY with JSON: {{
 
                 _response = re.sub(r"<think>.*?</think>", "", _raw, flags=re.DOTALL).strip()
                 _clean = _response.strip()
-                if "\`\`\`" in _clean:
-                    _parts = _clean.split("\`\`\`")
+                # Strip a ```json code fence if present. This is a real .py module
+                # — the old \-escaped backticks were a vestigial heredoc artifact
+                # that never matched a real fence and emitted a SyntaxWarning
+                # (so vision JSON wrapped in a fence silently failed to parse,
+                # forcing avoidable grounding REGEN cycles). Same fix as stage4.
+                if "```" in _clean:
+                    _parts = _clean.split("```")
                     if len(_parts) >= 2:
                         _clean = _parts[1]
                         if _clean.startswith("json"):
