@@ -41,6 +41,70 @@ def api_models_available():
     })
 
 
+@bp.route("/api/models/context-recommendation")
+def api_context_recommendation():
+    """Recommend a context_length for the given text+vision model pair on
+    the current GPU pool. Reads exact KV-cache hyperparameters from each
+    model's GGUF header (deterministic) and the live VRAM pool size.
+
+    Query params: ``text_model``, ``vision_model`` (optional). Falls back
+    to the saved config when params are absent.
+
+    Returns ``{recommended, fit_class, constrained_by, pool_total_mb,
+    consolidated, text:{...}, vision:{...}}`` or ``{error}`` when the
+    prediction tooling isn't importable on this host.
+    """
+    import sys
+    from pathlib import Path
+    # scripts/lib on path so we can import the prediction modules.
+    lib = Path(__file__).resolve().parents[2] / "scripts" / "lib"
+    sys.path.insert(0, str(lib))
+    try:
+        import model_registry as _reg
+        import vram_log as _vram
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"prediction tooling unavailable: {e}"}), 200
+
+    config = load_models_config()
+    text_model = request.args.get("text_model") or config.get("text_model", "")
+    vision_model = request.args.get("vision_model") or config.get("vision_model", "")
+
+    # Live pool size — prefer total VRAM across all detected adapters.
+    try:
+        snap = _vram.snapshot()
+        pool_total = snap.get("pool_total_mb") or 0
+        # Also expose the single largest (CUDA card) for the single-card view.
+        nvidia_mb = 0
+        for a in snap.get("adapters") or []:
+            if a.get("vendor") == "NVIDIA":
+                nvidia_mb = a.get("total_mb") or 0
+                break
+    except Exception:  # noqa: BLE001
+        pool_total, nvidia_mb = 0, 0
+
+    if not pool_total:
+        return jsonify({"error": "could not determine GPU pool size"}), 200
+    if not text_model:
+        return jsonify({"error": "no text_model specified or configured"}), 200
+
+    try:
+        combo = _reg.recommend_context_combo(text_model, vision_model or None, pool_total)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"recommendation failed: {e}"}), 200
+
+    combo["pool_total_mb"] = pool_total
+    combo["nvidia_only_mb"] = nvidia_mb
+    # Also compute the single-card (CUDA-only) recommendation so the UI can
+    # warn when a model only fits via the Vulkan pool.
+    if nvidia_mb:
+        try:
+            combo["cuda_only"] = _reg.recommend_context_combo(
+                text_model, vision_model or None, nvidia_mb)
+        except Exception:  # noqa: BLE001
+            combo["cuda_only"] = None
+    return jsonify(combo)
+
+
 @bp.route("/api/models", methods=["PUT"])
 def api_models_update():
     """Update model configuration."""

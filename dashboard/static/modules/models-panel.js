@@ -167,6 +167,9 @@ function renderModels(roles) {
                     onchange="onModelChange('context_length', parseInt(this.value))">
                 ${ctxOptions}
             </select>
+            <div id="ctx-recommendation" class="model-status" style="margin-top:8px;">
+                <span style="opacity:0.6;">Computing recommended context for your GPU…</span>
+            </div>
             <div class="model-status model-status-tip" style="margin-top:8px;">
                 ⚠ Takes effect when the model is loaded fresh. If already loaded in LM Studio with
                 a different context, unload it first — the pipeline will reload it automatically.
@@ -175,11 +178,123 @@ function renderModels(roles) {
 
     grid.innerHTML = modelCards + ctxCard;
     updateSaveBar();
+    // Fetch the GPU-aware context recommendation for the current model pair.
+    fetchContextRecommendation();
+}
+
+// --- GPU-aware context recommendation ---------------------------------------
+// Calls /api/models/context-recommendation with the currently-selected (or
+// pending) text + vision models, then renders a recommendation line with an
+// "Apply" button under the Context Window dropdown. Reads exact KV-cache
+// hyperparameters from each model's GGUF header on the backend, so the number
+// accounts for things like Gemma's sliding-window attention (its KV cache is
+// ~10x smaller at 32K than a naive flat-rate estimate).
+let _ctxRecAbort = null;
+
+export async function fetchContextRecommendation() {
+    const el = document.getElementById("ctx-recommendation");
+    if (!el) return;
+    const textModel = pendingModels.text_model || currentModels.text_model || "";
+    const visionModel = pendingModels.vision_model || currentModels.vision_model || "";
+    if (!textModel) { el.innerHTML = ""; return; }
+
+    // Cancel any in-flight request so rapid dropdown changes don't race.
+    if (_ctxRecAbort) _ctxRecAbort.abort();
+    _ctxRecAbort = new AbortController();
+    const q = new URLSearchParams({ text_model: textModel, vision_model: visionModel });
+    try {
+        const res = await fetch(`/api/models/context-recommendation?${q}`,
+                                { signal: _ctxRecAbort.signal });
+        if (!res.ok) { el.innerHTML = ""; return; }
+        const data = await res.json();
+        if (data.error) {
+            el.innerHTML = `<span style="opacity:0.6;">⚠ ${data.error}</span>`;
+            return;
+        }
+        renderContextRecommendation(el, data);
+    } catch (e) {
+        if (e.name !== "AbortError") el.innerHTML = "";
+    }
+}
+
+function _fmtCtx(n) {
+    if (!n) return "0";
+    return n >= 1024 ? `${Math.round(n / 1024)}K` : `${n}`;
+}
+
+function renderContextRecommendation(el, data) {
+    const rec = data.recommended || 0;
+    const currentCtx = pendingModels.context_length || currentModels.context_length || 8192;
+    const fitClass = (data.consolidated ? data.text : (data.text && data.vision ? null : null));
+    const constrained = data.constrained_by || "";
+    const poolGb = data.pool_total_mb ? (data.pool_total_mb / 1024).toFixed(1) : "?";
+
+    // CUDA-only caveat: if the model only fits this context via the Vulkan
+    // pool (NVIDIA + AMD), warn that single-card users get less.
+    let cudaNote = "";
+    if (data.cuda_only && data.nvidia_only_mb) {
+        const cudaRec = data.cuda_only.recommended || 0;
+        if (cudaRec && cudaRec < rec) {
+            cudaNote = `<div style="opacity:0.6;font-size:0.82em;margin-top:2px;">`
+                + `CUDA single-card (${(data.nvidia_only_mb/1024).toFixed(0)} GB): `
+                + `${_fmtCtx(cudaRec)} — the rest needs the Vulkan pool.</div>`;
+        }
+    }
+
+    let verdict, color;
+    if (rec === 0) {
+        verdict = "won't fit — model spills to CPU";
+        color = "#e06c75";
+    } else if (rec >= currentCtx) {
+        verdict = rec > currentCtx ? "you could go higher" : "right-sized";
+        color = "#98c379";
+    } else {
+        verdict = "current setting EXCEEDS safe fit — reduce it";
+        color = "#e5c07b";
+    }
+
+    const applyBtn = (rec && rec !== currentCtx)
+        ? `<button class="btn-small" style="margin-left:8px;padding:1px 8px;font-size:0.8em;"
+                   onclick="applyRecommendedContext(${rec})">Apply ${_fmtCtx(rec)}</button>`
+        : "";
+
+    const who = data.consolidated
+        ? `single model`
+        : `constrained by ${constrained.split("/").pop()}`;
+
+    el.innerHTML = `
+        <div style="color:${color};">
+            💡 Recommended context: <b>${_fmtCtx(rec)}</b> (${rec.toLocaleString()})
+            on your ${poolGb} GB pool — <i>${verdict}</i>${applyBtn}
+        </div>
+        <div style="opacity:0.6;font-size:0.82em;margin-top:2px;">${who}; from GGUF KV-cache metadata + live VRAM</div>
+        ${cudaNote}`;
+}
+
+export function applyRecommendedContext(value) {
+    const sel = document.getElementById("sel-context_length");
+    if (sel) {
+        // Add the option if it isn't one of the preset tiers, then select it.
+        if (!Array.from(sel.options).some(o => parseInt(o.value) === value)) {
+            const opt = document.createElement("option");
+            opt.value = value;
+            opt.textContent = `${value} (recommended)`;
+            sel.appendChild(opt);
+        }
+        sel.value = String(value);
+    }
+    onModelChange("context_length", value);
+    fetchContextRecommendation();
 }
 
 export function onModelChange(key, value) {
     pendingModels[key] = value;
     updateSaveBar();
+    // When a model role changes, the optimal context changes too — refresh
+    // the recommendation. (Skip when only the context dropdown itself moved.)
+    if (key === "text_model" || key === "vision_model") {
+        fetchContextRecommendation();
+    }
 }
 
 export function resetModel(key) {
