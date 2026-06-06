@@ -2360,7 +2360,7 @@ for m in all_moments:
 
 print(f"  After dedup: {len(deduped)} unique moments ({sum(1 for d in deduped if d.get('cross_validated'))} cross-validated)", file=sys.stderr)
 
-# --- LENGTH PENALTY FUNCTION ---
+# --- LENGTH PENALTY FUNCTION (legacy; used when CLIP_LENGTH_NEUTRAL=0) ---
 # Prevents over-clipping: longer clips need higher base scores to survive selection.
 # Short punchy clips are favored unless the content genuinely justifies length.
 def length_penalty(duration_sec):
@@ -2376,24 +2376,111 @@ def length_penalty(duration_sec):
     else:
         return 0.65       # exceptional content only
 
+
+# --- Fix 4 (2026-06-06): length-NEUTRAL duration --------------------------
+# The ~30s skew came from (a) the flat per-category default below and (b)
+# length_penalty docking long clips at selection. When CLIP_LENGTH_NEUTRAL is
+# on (default), duration follows CONTENT: boundary-less moments get a
+# content-shaped window (expand across contiguous speech to silence gaps), and
+# the selection multiplier judges TIGHTNESS (words/sec), not raw seconds — so a
+# tight 70s monologue isn't penalized but a padded 30s clip is. Nothing pushes
+# toward long; the duration-causing biases are simply removed.
+# See concepts/detection-improvements-plan.md Fix 4.
+_LENGTH_NEUTRAL = os.environ.get("CLIP_LENGTH_NEUTRAL", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
+
+def _wps_in(segs, a, b):
+    """Overlap-weighted words/sec spoken in [a, b]. (Lifted from baseline_contrast.)"""
+    if b <= a:
+        return 0.0
+    words = 0.0
+    for s in segs:
+        ss, se = float(s.get("start", 0) or 0), float(s.get("end", 0) or 0)
+        if se <= a or ss >= b:
+            continue
+        ov = min(b, se) - max(a, ss)
+        words += len((s.get("text") or "").split()) * (ov / max(1e-6, se - ss))
+    return words / (b - a)
+
+
+def _tightness_multiplier(m, segs):
+    """Length-neutral replacement for length_penalty: judge content density, not
+    seconds. Maps words/sec over the clip window into [floor, 1.0]; slower
+    categories (emotional/storytime/arc/callback) keep a higher floor so a
+    heartfelt pause isn't over-penalized. Duration is NOT an input."""
+    cs, ce = m.get("clip_start"), m.get("clip_end")
+    if cs is None or ce is None or ce <= cs:
+        return 1.0
+    wps = _wps_in(segs, float(cs), float(ce))
+    # Engaged speech ~1.5-3.5 wps (gate calibration); map ~[0.7, 2.3] wps -> [0,1].
+    dens = max(0.0, min((wps - 0.7) / (2.3 - 0.7), 1.0))
+    cat = m.get("primary_category", "hype")
+    floor = 0.85 if cat in ("emotional", "storytime", "arc", "callback") else 0.7
+    return round(floor + (1.0 - floor) * dens, 4)
+
+
+def _infer_content_window(ts, segs, max_dur):
+    """Content-shaped window for a boundary-less moment: anchor on the speech
+    segment nearest the peak, grow outward across contiguous segments (silence
+    gap <= GAP) up to max_dur. Bounded to >=15s. Symmetric ~30s fallback when
+    the transcript is too sparse around ts."""
+    GAP = 1.5
+    ordered = sorted(
+        (s for s in segs if s.get("start") is not None and s.get("end") is not None),
+        key=lambda s: float(s["start"]),
+    )
+    if not ordered:
+        return max(0, int(ts) - 15), int(ts) + 15
+    ai = min(range(len(ordered)),
+             key=lambda i: abs((float(ordered[i]["start"]) + float(ordered[i]["end"])) / 2 - ts))
+    start, end = float(ordered[ai]["start"]), float(ordered[ai]["end"])
+    j = ai + 1
+    while j < len(ordered):
+        ss, se = float(ordered[j]["start"]), float(ordered[j]["end"])
+        if ss - end > GAP or se - start > max_dur:
+            break
+        end = se; j += 1
+    k = ai - 1
+    while k >= 0:
+        ss, se = float(ordered[k]["start"]), float(ordered[k]["end"])
+        if start - se > GAP or end - ss > max_dur:
+            break
+        start = ss; k -= 1
+    if end - start > max_dur:
+        # Anchor speech run longer than the cap — center a max_dur window on the peak.
+        start = max(start, float(ts) - max_dur / 2.0)
+        end = start + max_dur
+    if end - start < 15:
+        end = start + 15
+    return max(0, int(start)), int(end)
+
+
 # Compute clip duration for each moment
 for m in deduped:
     if "clip_start" in m and "clip_end" in m:
         m["clip_duration"] = m["clip_end"] - m["clip_start"]
     else:
-        # Default duration based on category
         cat = m.get("primary_category", "hype")
-        DEFAULT_DURATIONS = {
-            "storytime": 45, "emotional": 40, "controversial": 35,
-            "hot_take": 35, "funny": 30, "hype": 30,
-            "reactive": 25, "dancing": 25
-        }
-        dur = DEFAULT_DURATIONS.get(cat, 30)
-        m["clip_duration"] = dur
-        # Set default boundaries centered on the peak timestamp
-        half = dur // 2
-        m["clip_start"] = max(0, m["timestamp"] - half)
-        m["clip_end"] = m["clip_start"] + dur
+        if _LENGTH_NEUTRAL:
+            # Fix 4a: content-shaped window instead of a flat per-category default.
+            _maxd = 150 if cat in ("storytime", "emotional") else 90
+            cs, ce = _infer_content_window(m["timestamp"], segments, _maxd)
+            m["clip_start"], m["clip_end"] = cs, ce
+            m["clip_duration"] = ce - cs
+        else:
+            DEFAULT_DURATIONS = {
+                "storytime": 45, "emotional": 40, "controversial": 35,
+                "hot_take": 35, "funny": 30, "hype": 30,
+                "reactive": 25, "dancing": 25
+            }
+            dur = DEFAULT_DURATIONS.get(cat, 30)
+            m["clip_duration"] = dur
+            # Set default boundaries centered on the peak timestamp
+            half = dur // 2
+            m["clip_start"] = max(0, m["timestamp"] - half)
+            m["clip_end"] = m["clip_start"] + dur
 
 # Plan C: baseline-contrast — compute the streamer's per-VOD 'normal' ONCE
 # (before the scoring loop) so Pass C can boost moments that break it. Topic
@@ -2553,8 +2640,10 @@ for m in deduped:
     m["axis_multiplier"] = round(axis_mult, 3)
     styled_score *= axis_mult
 
-    # Apply length penalty — longer clips need higher base scores
-    lp = length_penalty(m["clip_duration"])
+    # Fix 4b: length-NEUTRAL — judge tightness (words/sec), not raw duration,
+    # so long-but-dense clips aren't penalized and padded clips are. Falls back
+    # to the legacy duration penalty when CLIP_LENGTH_NEUTRAL=0.
+    lp = _tightness_multiplier(m, segments) if _LENGTH_NEUTRAL else length_penalty(m["clip_duration"])
     # BUG 37: was min(... * lp, 1.0) — caused 9/10 selected clips to land
     # at exactly 1.000 because cross-val × style × position routinely pushed
     # base 0.7-0.9 over the cap. Score saturation destroyed Pass C's

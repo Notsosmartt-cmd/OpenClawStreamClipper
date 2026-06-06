@@ -14,6 +14,9 @@ Concrete, file:line-anchored plans for the four fixes designed in [[concepts/det
 
 ## Fix 4 — Length-neutral duration (remove the ~30 s skew without an anti-30 s bias)
 
+> [!success] SHIPPED 2026-06-06 (`stage4_moments.py`, flag `CLIP_LENGTH_NEUTRAL` default on)
+> Both changes are in: **(a)** boundary-less moments now get a content-shaped window via `_infer_content_window()` (anchor on the speech segment nearest the peak, grow across contiguous segments to silence gaps ≤1.5 s, capped at 90/150 s, ≥15 s) instead of the flat `DEFAULT_DURATIONS`. **(b)** `_tightness_multiplier()` replaces `length_penalty` in the score (`:2557`) — it maps words/sec over the clip window (`_wps_in`, lifted from baseline_contrast) into `[floor, 1.0]`, floor 0.85 for emotional/storytime/arc/callback else 0.7; **duration is not an input**, so a dense 70 s monologue scores ~1.0 and a padded 30 s clip is docked. `length_penalty` + `DEFAULT_DURATIONS` kept as the `CLIP_LENGTH_NEUTRAL=0` fallback. Unit-tested (dense vs padded, emotional floor, duration-independence, content-window cap). **Needs a validation run** to confirm the duration distribution widens (monologues survive) without over-rewarding slow content.
+
 **Goal:** clip length follows content (punchy ~15–25 s, monologues ~45–90 s) by removing the two artificial pulls — the per-category default and the duration penalty — and replacing them with *content-aware* equivalents. Both changes are in one file (`stage4_moments.py`) and reuse existing signals; no new infra.
 
 ### Change (a) — content-aware boundary inference (replaces `DEFAULT_DURATIONS`)
