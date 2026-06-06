@@ -1,9 +1,9 @@
 ---
 title: "Clip Rendering (Stage 7)"
 type: concept
-tags: [rendering, ffmpeg, blur-fill, smart-crop, captions, subtitles, 9:16, vertical, originality, stitch, stage-7, video]
+tags: [rendering, ffmpeg, blur-fill, smart-crop, captions, subtitles, 9:16, vertical, originality, stitch, stage-7, video, nvenc, gpu-encode]
 sources: 3
-updated: 2026-04-25
+updated: 2026-06-06
 ---
 
 # Clip Rendering (Stage 7)
@@ -63,14 +63,17 @@ Stage 6.5 emits a `crop=w:h:x='<piecewise-linear expr over t>':y='<expr>',scale=
 | Property | Value |
 |---|---|
 | Resolution | 1080×1920 (9:16 vertical) |
-| Video codec | H.264 (`libx264`), profile High@4.2, `yuv420p` |
-| Quality | CRF 20, preset `slow`, 18 Mbps target / 20 Mbps max / 40 Mbps bufsize |
+| Video codec | **NVENC H.264 (`h264_nvenc`) by default** when GPU encode is available; `libx264` fallback. Profile High, `yuv420p` |
+| Quality | NVENC `-rc vbr -cq 20`; libx264 `CRF 20, preset slow`. Both: 18 Mbps target / 20 Mbps max / 40 Mbps bufsize |
 | Frame rate | 30 fps (CFR) |
 | Audio codec | AAC, 192 kbps |
 | Duration | Per-category variable: hype/reactive 18–25 s, funny 20–30 s, emotional 40–55 s, storytime 50–80 s (narrative groups up to 90 s) |
 | Subtitles | Burned-in (not soft subtitles) |
 
-The old defaults (CRF 23, preset medium, 128 kbps audio) are still used by the fallback render path when the primary render fails.
+The old defaults (CRF 23, preset medium, 128 kbps audio) are still used by the legacy fallback render path when the primary render fails.
+
+> [!note] GPU encode (NVENC) — 2026-06-06
+> Stage 7 encodes with **`h264_nvenc` (GPU) by default**. The model is already unloaded before rendering (`run()` calls `common.unload_model`), so the full GPU is free for the NVENC ASIC — which is several × faster than `libx264 -preset slow` AND offloads the CPU so the parallel filter work (blur-fill, captions) runs faster too. **Reliability:** encoder is chosen by `_resolve_encoder()` (`STAGE7_ENCODER`=`auto`|`nvenc`|`libx264`, default `auto`) — `auto` runs a one-shot 0.1 s NVENC test-encode and only uses it if it actually works; and **each clip falls back to `libx264` if its NVENC render fails** (session limit / driver), so a flaky session never drops a clip. NVENC `-rc vbr -cq 20` + the 18 Mbps cap targets ~the libx264 CRF-20 quality. Note: only the *encode* is GPU-accelerated; the per-clip *filtering* stays on CPU, so the speedup depends on the filter/encode split. See [[concepts/bugs-and-fixes]] and `stage7.py`.
 
 ---
 

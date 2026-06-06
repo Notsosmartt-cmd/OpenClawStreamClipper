@@ -285,10 +285,75 @@ def _extract_moment(scored_path: Path, T, out: Path) -> bool:
         return False
 
 
-_VENC = ["-c:v", "libx264", "-crf", "20", "-preset", "slow", "-profile:v", "high",
-         "-level", "4.2", "-pix_fmt", "yuv420p", "-r", "30",
-         "-b:v", "18M", "-maxrate", "20M", "-bufsize", "40M",
-         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+# --- Video-encode profiles (Stage 7 NVENC, 2026-06-06) ---------------------
+# The model is unloaded before rendering (run() below), so the full GPU is free
+# for hardware encode. h264_nvenc on the dedicated NVENC ASIC is several times
+# faster than libx264 -preset slow AND offloads the CPU so the parallel filter
+# work (blur-fill, captions) runs faster too. libx264 stays as the per-clip
+# fallback. Choose with STAGE7_ENCODER=auto|nvenc|libx264 (auto probes NVENC and
+# uses it only when it actually encodes on this machine). NVENC `-rc vbr -cq 20`
+# + the 18M cap targets ~the libx264 crf-20 quality. See concepts/clip-rendering.
+_VENC_LIBX264 = ["-c:v", "libx264", "-crf", "20", "-preset", "slow", "-profile:v", "high",
+                 "-level", "4.2", "-pix_fmt", "yuv420p", "-r", "30",
+                 "-b:v", "18M", "-maxrate", "20M", "-bufsize", "40M",
+                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+
+_VENC_NVENC = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "20",
+               "-profile:v", "high", "-pix_fmt", "yuv420p", "-r", "30",
+               "-b:v", "18M", "-maxrate", "20M", "-bufsize", "40M",
+               "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+
+# Active primary encoder for this run; set in run() after the model unload.
+# Defaults to libx264 so any render before run() resolves it still works.
+_ACTIVE_VENC = _VENC_LIBX264
+
+
+def _nvenc_works() -> bool:
+    """True iff h264_nvenc can actually encode on this machine right now (build
+    has it AND the driver/GPU accept a session). One-shot 0.1 s null-muxed test
+    encode — definitive, vs just grepping `-encoders` which only proves the
+    build has it."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+             "-i", "color=c=black:s=256x256:r=30:d=0.1", "-c:v", "h264_nvenc",
+             "-f", "null", "-"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _resolve_encoder(log):
+    """Pick the Stage 7 primary video encoder. STAGE7_ENCODER=auto|nvenc|libx264
+    (default auto). auto uses NVENC only when the probe confirms it encodes.
+    A per-clip NVENC failure still falls back to libx264 (_encode_with_fallback),
+    so this only chooses the primary."""
+    choice = os.environ.get("STAGE7_ENCODER", "auto").strip().lower()
+    if choice == "libx264":
+        log.log("  [encode] STAGE7_ENCODER=libx264 — CPU encode (preset slow)")
+        return _VENC_LIBX264
+    if choice == "nvenc":
+        log.log("  [encode] STAGE7_ENCODER=nvenc — h264_nvenc (GPU); libx264 per-clip fallback")
+        return _VENC_NVENC
+    if _nvenc_works():
+        log.log("  [encode] NVENC probe OK — h264_nvenc (GPU); libx264 per-clip fallback")
+        return _VENC_NVENC
+    log.log("  [encode] NVENC unavailable — libx264 (CPU, preset slow)")
+    return _VENC_LIBX264
+
+
+def _encode_with_fallback(ctx, base_cmd, out) -> bool:
+    """Append the active encoder + output to base_cmd and run. If NVENC is
+    active and the render fails (session limit / driver / odd input), retry the
+    SAME render once with libx264 so a flaky NVENC session never drops a clip."""
+    if common.run_ffmpeg(base_cmd + _ACTIVE_VENC + [str(out)]) == 0:
+        return True
+    if _ACTIVE_VENC is _VENC_NVENC:
+        ctx.log.warn(f"NVENC render failed for {Path(out).name}; retrying with libx264")
+        return common.run_ffmpeg(base_cmd + _VENC_LIBX264 + [str(out)]) == 0
+    return False
 
 
 def _ffmpeg_render(ctx, start, length, render_vf, speed_audio_filter,
@@ -312,13 +377,13 @@ def _ffmpeg_render(ctx, start, length, render_vf, speed_audio_filter,
         filter_complex = (f"[0:v]{render_vf}[vout];{audio_defs};{mix_ins}"
                           f"amix=inputs={idx}:duration=first:dropout_transition=0:normalize=0[amixed];"
                           f"[amixed]volume=0.95[aout]")
-        cmd = ["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length), *mix_args,
-               "-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]", *_VENC, str(out)]
+        base_cmd = ["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length), *mix_args,
+                    "-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]"]
     else:
         af = ["-af", speed_audio_filter] if speed_audio_filter else []
-        cmd = ["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length),
-               "-i", str(ctx.vod_path), "-vf", render_vf, *af, *_VENC, str(out)]
-    return common.run_ffmpeg(cmd) == 0
+        base_cmd = ["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length),
+                    "-i", str(ctx.vod_path), "-vf", render_vf, *af]
+    return _encode_with_fallback(ctx, base_cmd, out)
 
 
 def _ffmpeg_legacy(ctx, start, length, speed_vf, speed_audio_filter, out) -> bool:
@@ -356,6 +421,11 @@ def run(ctx) -> None:
     log.log("=== Stage 7/8 — Editing and Export ===")
 
     common.unload_model(log, ctx.llm_url, ctx.vision_model_stage6)
+
+    # Pick the video encoder now that the model is unloaded (GPU is free for
+    # NVENC). Per-clip libx264 fallback keeps it reliable. STAGE7_ENCODER env.
+    global _ACTIVE_VENC
+    _ACTIVE_VENC = _resolve_encoder(log)
 
     # 7a — manifest
     log.log("  Generating clip manifest...")
