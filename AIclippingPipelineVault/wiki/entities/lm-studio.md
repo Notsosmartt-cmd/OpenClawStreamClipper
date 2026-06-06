@@ -244,14 +244,10 @@ POST /api/v1/models/load
 
 The pipeline calls this via `load_model()` before Stage 3 and (if text ≠ vision model) before Stage 6. The value comes from `CLIP_CONTEXT_LENGTH` env var, which is read from `config/models.json → context_length`.
 
-**VRAM budget for KV cache** (9B model ~5 GB weights at Q4_K_M):
-
-| context_length | KV cache VRAM | Total VRAM needed |
-|---|---|---|
-| 4 096 | ~2 GB | ~7 GB |
-| 8 192 | ~4 GB | ~9 GB (default) |
-| 16 384 | ~8 GB | ~13 GB |
-| 32 768 | ~16 GB | ~21 GB |
+> [!warning] Stale KV table removed (2026-06-06) — use the GGUF-exact tooling
+> An older table here gave generic per-context KV figures (e.g. "8192 → ~4 GB → ~9 GB default"). Those were flat-rate estimates and were **wrong by up to 11×** for sliding-window models like Gemma. KV-cache size is now computed exactly per model from GGUF metadata — see [[concepts/vram-context-tooling]] and the corrected per-model table + per-stage `max_tokens` floor in [[concepts/vram-budget]]. The pipeline default is **32768** (covers Pass B's ~14K peak with 2× margin); 8192 is too small (Pass B truncation — [[concepts/bugs-and-fixes]] BUG 61).
+>
+> Run `python scripts/lib/model_registry.py recommend <model> <pool_mb>` or `logtool vram` for the live, exact recommendation on the current hardware.
 
 > [!note] If the model is already loaded with a different context length, LM Studio will return an error and the pipeline will log a warning then continue (using the existing loaded context). To change context length, unload the model in LM Studio first.
 
@@ -283,13 +279,25 @@ This is handled by the `unload_model()` bash function in `scripts/clip-pipeline.
 
 ---
 
-## GPU configuration
+## GPU / engine configuration — operator-controlled, project-agnostic
 
-GPU assignment is managed through LM Studio's GUI — the user selects which GPU(s) to use per model load. The pipeline has no control over this. For best results:
+GPU assignment, the inference **engine** (CUDA / Vulkan / ROCm / CPU), and the multi-GPU **strategy** are all LM Studio settings. **The pipeline cannot and does not control them** — it stays engine-agnostic and works with whatever the operator has set (confirmed 2026-06-06; see [[concepts/vram-context-tooling]] §"Can the pipeline control the engine").
 
-- Load the text model (`qwen/qwen3.5-9b`) on the primary GPU before running the pipeline
-- LM Studio's JIT loading will auto-load models on first request if not pre-loaded (adds latency)
-- Enable "Keep model loaded" or use long TTL in LM Studio to avoid reload between pipeline stages
+What's controllable, and by whom:
+
+| Control | Where | Project can set it? |
+|---|---|---|
+| Offload **ratio** (GPU vs CPU) | `lms load --gpu <off\|max\|0..1>` | Yes, but the pipeline leaves it at LM Studio's auto default |
+| Inference **engine** (Vulkan ⟷ CUDA ⟷ ROCm) | `lms runtime select <alias>` or GUI → Runtime | **No** — global app setting; not a per-API-call parameter |
+| Multi-GPU **strategy** ("Split evenly" / "Priority order") | GUI → Hardware → Strategy | **No** — GUI only |
+| Per-model GPU assignment | GUI model-load dialog | **No** |
+
+`lms runtime ls` shows installed engines with the selected one marked `✓` (dev box: Vulkan selected across both the RTX 5060 Ti + RX 6700 XT; CUDA engines installed but unselected). Switching to a CUDA engine would force NVIDIA-only (true CUDA speed) but cap at ~16 GB — a tradeoff the operator makes in LM Studio, not something the pipeline touches.
+
+For best results regardless of engine:
+- Pre-load the configured model (the pipeline does this via `lms load`), or rely on JIT (adds first-call latency).
+- Set context to **32K** (the pipeline's workload size) so a CUDA-fittable model isn't needlessly pushed onto a multi-GPU pool by an oversized KV cache — see [[concepts/vram-budget]] §"Why bigger context ≠ better clips".
+- Use a long TTL / "Keep model loaded" to avoid reloads between stages.
 
 ---
 
@@ -306,4 +314,5 @@ GPU assignment is managed through LM Studio's GUI — the user selects which GPU
 - [[entities/qwen3-vl]] — vision model (stage 6)
 - [[entities/qwen25]] — Discord agent model
 - [[concepts/vram-budget]] — model VRAM and stage-by-stage orchestration
+- [[concepts/vram-context-tooling]] — the GGUF-exact VRAM/context recommendation subsystem + `lms` CLI control findings
 - [[concepts/deployment]] — setup instructions including LM Studio startup
