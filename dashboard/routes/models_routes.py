@@ -88,20 +88,16 @@ def api_context_recommendation():
         return jsonify({"error": "no text_model specified or configured"}), 200
 
     try:
-        combo = _reg.recommend_context_combo(text_model, vision_model or None, pool_total)
+        # Pass the CUDA card size so the recommendation can tell whether the
+        # workload-optimal context keeps the model on the fast single-card
+        # path vs. needing the Vulkan pool.
+        combo = _reg.recommend_context_combo(
+            text_model, vision_model or None, pool_total, cuda_card_mb=nvidia_mb)
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": f"recommendation failed: {e}"}), 200
 
     combo["pool_total_mb"] = pool_total
     combo["nvidia_only_mb"] = nvidia_mb
-    # Also compute the single-card (CUDA-only) recommendation so the UI can
-    # warn when a model only fits via the Vulkan pool.
-    if nvidia_mb:
-        try:
-            combo["cuda_only"] = _reg.recommend_context_combo(
-                text_model, vision_model or None, nvidia_mb)
-        except Exception:  # noqa: BLE001
-            combo["cuda_only"] = None
     return jsonify(combo)
 
 
