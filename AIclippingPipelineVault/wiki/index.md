@@ -83,6 +83,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/text-comparison-2026-06]] — Head-to-head: Qwen 3.6 hybrid (avoid) vs gpt-oss-20b vs Gemma 4 for the text slot; recommends Gemma 4 12B (IFEval 88.9)
 - [[concepts/case-rap-battle-missed]] — Case study: rakai 2026-04-24 Delaware freestyle missed by Pass A + Pass B + audio_events; concrete keyword/prompt/diarization tuning recommendations
 - [[concepts/pipeline-optimizations-2026-06]] — Parallelization + RMS-gate + dead-chunk pre-filter sweep; implemented Stage 5/7 ffmpeg parallel + Pass B pre-filter + audio events RMS gate; ~1.6× combined wall-clock lift expected
+- [[concepts/clip-quality-remediation-2026-06]] — **Plan** from the 6/6 session review: fix vision REGEN→garbage titles, gate/parallelize Stage 5.5 (620s), score-display saturation, torchcodec; file:line-anchored
 - [[concepts/self-consistency]] — Phase 5.2 N-candidate ranking for hallucination suppression
 - [[concepts/callback-detection]] — Tier-2 M3 architecture: cosine search + LLM judgment for cross-chunk arcs
 - [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection (+ §Evaluation: 15-word-summary weakness)
