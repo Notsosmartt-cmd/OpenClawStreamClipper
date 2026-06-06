@@ -1139,6 +1139,13 @@ chunk_summaries = []
 # Full design + research: AIclippingPipelineVault/wiki/concepts/arc-aware-extraction.
 chunk_cards = {}
 
+# Gap #1 (2026-06-06): chunks whose Pass B LLM call fails (timeout / HTTP 400 /
+# connection refused / empty content) are captured here and retried ONCE after
+# the main loop, when LM Studio has usually drained its queue / recovered from a
+# transient stall. Without this, a momentary blip drops every moment in that
+# ~5-min window — a pure false negative. See concepts/pass-b-false-negatives.
+_failed_chunks = []
+
 
 def _arc_extract_json_obj(text):
     """Best-effort single-JSON-object parse for a chunk card: strip a code
@@ -1576,7 +1583,7 @@ Skip these:
 - Routine gameplay or "oh my god" reactions that don't fit any pattern's signature.
 - Generic hype with no setup, no payoff, no social dynamic.
 
-When in doubt, lean toward INCLUDING with a lower score (3-5) over skipping — the scoring system handles the rest.
+When in doubt, lean toward INCLUDING with a lower score (3-5) over skipping — the scoring system handles the rest. List EVERY distinct qualifying moment in this chunk — do NOT stop at a tidy 2-3. A busy chunk can legitimately have 5+ separate moments; a quiet one may have 0. Under-reporting a real moment is worse than including a weak one (downstream scoring + grounding filter the weak ones for free).
 
 Transcript (timestamps MM:SS from stream start):
 {chunk_text}
@@ -1794,7 +1801,16 @@ If nothing stands out at all, respond: {{"moments": []}}"""
             summary_text = " ".join(_fallback)[:160] or "(no summary)"
         chunk_summaries.append((chunk_count, summary_text))
     else:
-        print(f"  Chunk {chunk_count}: LLM call failed, skipping", file=sys.stderr)
+        # Gap #1: don't drop the chunk — queue it for one end-of-pass retry.
+        print(f"  Chunk {chunk_count}: LLM call failed — queued for end-of-pass retry", file=sys.stderr)
+        _failed_chunks.append({
+            "chunk_count": chunk_count,
+            "chunk_start": chunk_start,
+            "chunk_end": chunk_end,
+            "seg_type": seg_type,
+            "chunk_text": chunk_text,
+            "prompt": prompt,
+        })
 
     # BUG 31: short-circuit Pass B when LM Studio has been unreachable for
     # 3 consecutive chunks. Without this, a Docker-Desktop bridge failure or
@@ -1809,6 +1825,66 @@ If nothing stands out at all, respond: {{"moments": []}}"""
         break
 
     chunk_start += cur_chunk_dur
+
+# Gap #1 (2026-06-06): re-queue chunks whose LLM call failed mid-loop. call_llm
+# already retried 3x in-line, but a transient LM Studio stall / restart can take
+# out a whole chunk -> every moment in those ~5 min is a false negative. Give
+# each failed chunk ONE more attempt now that the queue has usually drained.
+# Best-effort recovery: recovered moments get the core scoring + a LIGHT
+# grounding pass (denylist + content-overlap vs the chunk, so a hallucinated
+# `why` still can't reach Stage 6); the per-chunk M1 speaker annotation and arc
+# card are skipped (enrichments — recovering the moment matters more). Skipped
+# entirely if a persistent outage is still in effect. See
+# concepts/pass-b-false-negatives.
+if _failed_chunks and not llm_net_outage():
+    print(
+        f"[PASS B] Re-queueing {len(_failed_chunks)} failed chunk(s) for one retry...",
+        file=sys.stderr,
+    )
+    _recovered = 0
+    for _fc in _failed_chunks:
+        _resp = call_llm(_fc["prompt"])
+        if not _resp:
+            print(f"  Chunk {_fc['chunk_count']}: re-queue still failed", file=sys.stderr)
+            if llm_net_outage():
+                print("[PASS B] outage during re-queue — stopping retries", file=sys.stderr)
+                break
+            continue
+        _cms = parse_llm_moments(_resp, int(_fc["chunk_start"]), int(_fc["chunk_end"]))
+        _boost = SEGMENT_SCORE_BOOST.get(_fc["seg_type"], 0.0)
+        for _m in _cms:
+            _m["score"] = min(_m["score"] + _boost, 1.0)
+            _m["segment_type"] = _fc["seg_type"]
+            _m["requeued"] = True
+            if _grounding is not None and _m.get("why"):
+                try:
+                    _gc = _grounding.cascade_check(
+                        _m["why"], [_fc["chunk_text"]], GROUNDING_DENYLIST,
+                        GROUNDING_CONFIG, min_overlap=0.15,
+                    )
+                    if not _gc["passed"]:
+                        _m["why"] = ""
+                        _m["grounding_fail"] = _gc["reason"]
+                        _m["grounding_tier"] = _gc.get("tier")
+                except Exception:
+                    pass  # grounding is best-effort on the recovery path
+        llm_moments.extend(_cms)
+        _recovered += len(_cms)
+        print(
+            f"  Chunk {_fc['chunk_count']}: re-queue recovered {len(_cms)} moment(s)",
+            file=sys.stderr,
+        )
+    print(
+        f"[PASS B] Re-queue recovered {_recovered} moment(s) from "
+        f"{len(_failed_chunks)} failed chunk(s)",
+        file=sys.stderr,
+    )
+elif _failed_chunks:
+    print(
+        f"[PASS B] {len(_failed_chunks)} chunk(s) failed and were NOT retried "
+        "(persistent LM Studio outage) — Pass A keyword moments still apply",
+        file=sys.stderr,
+    )
 
 print(f"[PASS B] LLM found {len(llm_moments)} moments across {chunk_count} chunks", file=sys.stderr)
 with open(f"{TEMP_DIR}/llm_moments.json", "w") as f:
