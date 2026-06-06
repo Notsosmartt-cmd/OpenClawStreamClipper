@@ -216,7 +216,29 @@ def _worker_init(shm_name: str, shm_shape, shm_dtype: str, sr: int) -> None:
     module — so the librosa import cost (1-3 s) hits once per worker at pool
     startup, not once per window. Amortized over hundreds of windows the
     spawn cost is negligible vs the HPSS savings.
+
+    2026-06-05 BLAS-thread-pinning fix: ``librosa.effects.hpss()`` uses
+    STFT which calls NumPy → OpenBLAS/MKL. Each worker's BLAS library
+    defaults to spawning ``cpu_count`` threads. On a 24-core CPU running
+    8 workers, that's 8 × 24 = 192 BLAS threads competing for 24 cores —
+    massive context-switching kills the parallel speedup. Measured before
+    fix: 1.7 win/s with 8 workers (only 2.1× over the 0.8 win/s serial
+    baseline) instead of the expected 6-8×. Setting OMP/BLAS thread vars
+    to 1 BEFORE NumPy imports (they're cached once numpy.linalg loads)
+    gives each worker a clean single-threaded BLAS so the 8 processes
+    actually run in parallel on dedicated cores.
     """
+    # CRITICAL: set BLAS thread vars BEFORE importing numpy/scipy/librosa.
+    # NumPy reads these the first time it imports its BLAS backend; later
+    # changes are ignored. ``setdefault`` so an operator who wants more
+    # threads per worker (e.g. running 4 workers on a 24-core box) can
+    # override via env. Five vars cover the major BLAS implementations.
+    _blas_vars = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                  "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
+                  "VECLIB_MAXIMUM_THREADS")
+    for _v in _blas_vars:
+        os.environ.setdefault(_v, "1")
+
     import numpy as np  # type: ignore
     from multiprocessing import shared_memory as _shm_mod
 
