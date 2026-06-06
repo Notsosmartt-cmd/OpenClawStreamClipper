@@ -84,6 +84,10 @@ class Ctx:
         self.framing = os.environ.get("CLIP_FRAMING", "blur_fill")
         self.stitch = _bool_env("CLIP_STITCH", False)
         self.narrative = _bool_env("CLIP_NARRATIVE", True)
+        # Fix 3 (2026-06-06): render A1 arc / M3 callback moments as a 2-segment
+        # stitch (short setup snippet -> payoff) so the setup->payoff arc lands
+        # visually instead of the setup only living in the caption. Opt-in.
+        self.arc_stitch = _bool_env("CLIP_ARC_STITCH", False)
         self.tts_vo = _bool_env("CLIP_TTS_VO", False)
         self.music_bed = os.environ.get("CLIP_MUSIC_BED", "")
         self.music_tier_c = _bool_env("CLIP_MUSIC_TIER_C", False)

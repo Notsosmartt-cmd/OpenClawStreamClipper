@@ -47,6 +47,9 @@ Concrete, file:line-anchored plans for the four fixes designed in [[concepts/det
 
 ## Fix 3 — Stitched setup→payoff clips (make A1/M3 detection pay off in the render)
 
+> [!success] SHIPPED 2026-06-06 (`moment_groups.py` + wiring; flag `CLIP_ARC_STITCH` default **off**)
+> `build_arc_stitch_groups()` emits a 2-member `kind="stitch"` group per arc/callback moment that has a `setup_time` genuinely earlier than its payoff window (≥10 s gap, else skipped — a solo clip already shows it): **setup** member (`setup_time-2`, 8 s, `hook="Earlier: <setup_text/why>"` with the "Pattern <id>:" prefix stripped) + **payoff** member (the normal window, capped 30 s). Both members carry the payoff `timestamp` so `stitch_render.py` (already 2-member-capable) resolves them and renders the jump-cut. Wired: `CLIP_ARC_STITCH` in `run_pipeline.py`; `--arc-stitch` passed from `stage4.py`; Stage 7 solo-skip + 7e dispatch now fire for `ctx.stitch OR ctx.arc_stitch`. Callbacks have `setup_text`; arcs fall back to `why` (could add `setup_text` to the arc dict later). Compile clean (4 files); functionally tested (2 groups built, too-close/non-arc skipped, shared timestamp, clean setup hook). **Opt-in** (default off) — enable + validate on a known-arc VOD; note `stitch_render.apply_overlays` burns only the hook, not subtitles.
+
 **Goal:** render arc/callback moments as a **2-segment clip** — a short setup snippet jump-cut to the payoff — so the irony/contradiction lands visually. Reuses the existing stitch machinery.
 
 ### Changes

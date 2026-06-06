@@ -43,13 +43,14 @@ def run(ctx) -> None:
     common.run_module(log, "stages/stage4_5_snap.py",
                       [str(p.transcript_json), str(p.hype_moments)], env=env, check=False)
 
-    # Stage 4.5 — Moment Groups (only when stitching/narrative enabled).
-    if ctx.stitch or ctx.narrative:
+    # Stage 4.5 — Moment Groups (only when stitching/narrative/arc-stitch enabled).
+    if ctx.stitch or ctx.narrative or ctx.arc_stitch:
         common.set_stage(log, "Stage 4.5/8 — Moment Groups")
-        log.log(f"=== Stage 4.5/8 — Moment Groups (stitch={ctx.stitch} narrative={ctx.narrative}) ===")
+        log.log(f"=== Stage 4.5/8 — Moment Groups (stitch={ctx.stitch} narrative={ctx.narrative} arc_stitch={ctx.arc_stitch}) ===")
         common.run_module(log, "moment_groups.py", [
             "--stitch", "true" if ctx.stitch else "false",
             "--narrative", "true" if ctx.narrative else "false",
+            "--arc-stitch", "true" if ctx.arc_stitch else "false",
             "--moments", str(p.hype_moments),
             "--out", str(p.work("moment_groups.json")),
         ], env=env, check=False)

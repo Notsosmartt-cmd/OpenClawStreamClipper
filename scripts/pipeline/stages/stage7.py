@@ -148,7 +148,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
     vo_line, vo_placement, group_id = parts[1], parts[2], parts[3]
     kind = parts[4] or "solo"
 
-    if kind == "stitch" and ctx.stitch:
+    if kind == "stitch" and (ctx.stitch or ctx.arc_stitch):
         log.log(f"  Deferring stitch group member T={T} (group={group_id})")
         return
 
@@ -493,9 +493,9 @@ def run(ctx) -> None:
                 except Exception as e:  # noqa: BLE001
                     log.warn(f"render error for T={row['t']}: {e}")
 
-    # 7e — stitch groups
+    # 7e — stitch groups (regular stitch + Fix 3 arc-stitch share this renderer)
     groups_file = p.work("moment_groups.json")
-    if ctx.stitch and groups_file.exists():
+    if (ctx.stitch or ctx.arc_stitch) and groups_file.exists():
         st_env = dict(env)
         st_env.update({
             "CLIPS_DIR_ENV": str(p.clips_dir), "TEMP_DIR_ENV": str(p.work_dir),
