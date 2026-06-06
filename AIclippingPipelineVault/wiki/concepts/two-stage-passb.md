@@ -3,7 +3,7 @@ title: "Two-stage Pass B — local + global (Tier-3 A1)"
 type: concept
 tags: [pass-b, callbacks, arcs, long-range, tier-3, a1, skeleton, stage-4, text]
 sources: 1
-updated: 2026-04-27
+updated: 2026-06-06
 ---
 
 # Two-stage Pass B (Tier-3 A1)
@@ -22,8 +22,10 @@ Pass B-local finishes (chunk_summaries cache fully populated by Tier-1 Q1)
 Build chunk_index → (start_time, end_time) map by re-walking the
   timeline with Tier-1 Q4's per-segment chunk window logic
         ↓
-Compose stream skeleton — N lines, one per chunk:
-  "[MM:SS-MM:SS] (chunk i/N) <summary text>"
+Compose stream skeleton — as of 2026-06-06 a type-grouped REGISTER built
+  from per-chunk arc cards (== CLAIMS / PREDICTIONS / OPEN LOOPS / TOPICS ==);
+  falls back to the legacy flat form "[MM:SS-MM:SS] (chunk i/N) <summary>"
+  only when no cards were produced. See §"A1+ arc-aware extraction (shipped)".
         ↓
 ONE Gemma call with the full skeleton + a focused prompt asking for
   cross-chunk arcs (irony / contradiction / fulfillment / theme_return /
@@ -82,6 +84,16 @@ The `setup_time` field also activates Tier-3 A2 in Stage 5/6 (extra setup frames
 **Why it's a tradeoff, not a clean bug**: A1 is **boost-only** (a missed arc costs a clip-that-could-have-been, never a wrong clip — low blast radius); a *terser* skeleton is easier for the global pass to scan than a verbose one; and the 15-word cap keeps the per-chunk summary call cheap. So widening it naively (just "more words") risks **attention dilution** ("Lost in the Middle") at A1.
 
 **Verdict**: 15 words is under-provisioned for A1's mission, and the fix is near-free on the dimension everyone fears (VRAM/context is not the constraint — see [[concepts/vram-budget]] §"Why bigger context ≠ better clips"). The high-leverage version is **arc-aware extraction** (preserve concrete claims/predictions/entities, not just the topic), not generic longer summaries. Full research-backed plan: **[[concepts/arc-aware-extraction]]**.
+
+## A1+ arc-aware extraction (shipped 2026-06-06)
+
+The 15-word summary is **gone**. Phases 1 + 2 of [[concepts/arc-aware-extraction]] are live in `scripts/lib/stages/stage4_moments.py`:
+
+- **Per-chunk (was the 15-word summary call):** `_build_chunk_card()` makes the *same one call per chunk* but extracts a structured **chunk card** — `{topic, claims[≤3], predictions[≤2], entities[≤5], open_loops[≤2]}`. Every quoted string is **substring-verified** against the chunk text (`_arc_verify_quotes()`, whitespace-normalized + case-insensitive) so a small model can't smuggle in a hallucinated "setup". Cards live in a new `chunk_cards` dict; a flattened `_card_to_oneliner()` still populates `chunk_summaries`, so Tier-1 Q1's prior-context block is byte-for-byte unchanged. Card extraction failure is non-fatal — falls back to first ~12 transcript words.
+- **Global A1 (was the flat skeleton):** `_build_arc_register()` reformats every card into a **type-grouped register** (`== CLAIMS ==` / `== PREDICTIONS ==` / `== OPEN LOOPS ==` / `== TOPICS ==`, one `ci MM:SS "quote"` per line). This counters "Lost in the Middle" (Liu 2023) — arc detection becomes near-neighbour scanning *within a register* and the section headers give the model a structural prior on what an arc looks like (claim↔claim contradiction, prediction↔outcome). The A1 prompt now says *"Match on MEANING, not shared words … a real arc has a BEAT."* If every card failed, A1 falls back to the original flat `[MM:SS-MM:SS] (chunk i/N) summary` skeleton.
+- **Unchanged downstream:** the `{"arcs":[…]}` contract, chunk-order + in-range-timestamp validation, the 1.4× boost, and `cross_validated=True` are all the same. Cards are also dumped to `{TEMP_DIR}/chunk_cards.json` for observability.
+
+Cost: same call *count*; ~2-4× output tokens on the per-chunk call (~80 vs ~15 words). Zero added VRAM. Phases 0 (baseline) and 3 (precision via `judge_tournament`) are still to be run.
 
 ## Relationship to M3
 

@@ -8,7 +8,10 @@ updated: 2026-06-06
 
 # Arc-Aware Chunk Extraction (plan)
 
-A research-backed plan to fix the [[concepts/two-stage-passb]] §Evaluation weakness: the **15-word per-chunk summary** that feeds the Tier-3 A1 global arc pass systematically discards the *minor-at-the-time* setups that long-range arcs hinge on. This page is the **plan only** — no code changed yet. Researched 2026-06-06.
+A research-backed plan to fix the [[concepts/two-stage-passb]] §Evaluation weakness: the **15-word per-chunk summary** that feeds the Tier-3 A1 global arc pass systematically discards the *minor-at-the-time* setups that long-range arcs hinge on. Researched 2026-06-06.
+
+> [!note] Phases 1 + 2 SHIPPED 2026-06-06
+> The per-chunk **structured "chunk card"** extractor (Phase 1) and the **type-grouped register** for the A1 global pass (Phase 2) are now live in `scripts/lib/stages/stage4_moments.py`. The 15-word summary is gone; A1 now reads grouped CLAIMS / PREDICTIONS / OPEN LOOPS / TOPICS with substring-verified quotes. Cards are dumped to `chunk_cards.json` for inspection. Phases 0 (baseline instrument) and 3 (precision measurement via `judge_tournament`) remain to be run against real VODs. See §"Phased implementation plan" below and `[[concepts/two-stage-passb]]` §"A1+ arc-aware extraction (shipped)".
 
 > [!note] One-line thesis
 > Replace the free-text 15-word "main topic" summary with a fixed-size **structured "chunk card"** that preserves concrete claims / predictions / named entities / open loops (the *arc-bait*), and feed A1 a **type-grouped register** instead of a prose blob. Context/VRAM is not the constraint (see [[concepts/vram-budget]]); the only real cost is ~2-4× generation tokens on the one summary call already made per chunk.
@@ -112,10 +115,10 @@ Rules: setup earlier than payoff; quality > quantity; 0 arcs is valid.
 
 ## Phased implementation plan
 
-- **Phase 0 — instrument first.** Dump current per-chunk summaries + A1 arcs for 3-5 VODs via `logtool`. Baseline: arcs/VOD + hand-labelled recall on a few known buried-setup arcs (the penthouse/Delaware archetypes). This is the before/after denominator.
-- **Phase 1 — swap the extractor only.** Per-chunk call → structured card; add the substring-verify guard; A1 unchanged but reads `claims+entities+open_loops` flattened. **Low blast radius** — `chunk_summaries` is the single integration point (built `:1627`, consumed `:1357` + `:1711`). Compare arcs/VOD + qualitative `why`.
-- **Phase 2 — grouped-register A1.** Reformat the skeleton into type-grouped sections (`:1730-1740`). Expect the biggest recall gain on conceptual/ironic arcs here.
-- **Phase 3 — measure precision with the existing harness.** Route new arc moments through `judge_tournament` (does an arc clip win pairwise vs a non-arc clip?) and watch `axis_report` `at_ceil` (arc moments piling at the score ceiling = over-boosting / false positives). `logtool axes` reads both.
+- **Phase 0 — instrument first.** *(Not yet run.)* Dump current per-chunk summaries + A1 arcs for 3-5 VODs via `logtool`. Baseline: arcs/VOD + hand-labelled recall on a few known buried-setup arcs (the penthouse/Delaware archetypes). This is the before/after denominator. As of the Phase 1+2 ship, the per-chunk cards are persisted to `{TEMP_DIR}/chunk_cards.json` (total_cards / total_claims / total_predictions + the full per-chunk cards) — the raw material this baseline needs.
+- **Phase 1 — swap the extractor only. ✅ SHIPPED 2026-06-06.** Per-chunk call → structured card via `_build_chunk_card()`; `_arc_verify_quotes()` substring-verifies every claim/prediction/entity/open_loop against the chunk (whitespace-normalized, case-insensitive, ≥3 chars) and caps each list (3/2/5/2). Card stored in the new `chunk_cards` dict; a flattened `_card_to_oneliner()` still feeds `chunk_summaries` so the Tier-1 Q1 prior-context block is untouched. JSON parsed by `_arc_extract_json_obj()` (fence-strip + outermost `{...}`). Reuses the existing `max_tokens=4000` budget; `max_retries=0` (a missing card is non-fatal — falls back to first ~12 transcript words). **Low blast radius** — `chunk_summaries` stayed the single integration point.
+- **Phase 2 — grouped-register A1. ✅ SHIPPED 2026-06-06.** `_build_arc_register(chunk_cards, chunk_time_map)` emits `== CLAIMS ==` / `== PREDICTIONS ==` / `== OPEN LOOPS ==` / `== TOPICS ==` sections (each line `ci MM:SS "quote"`). A1 prefers the register (`_skeleton_kind="grouped-register"`); if every card failed it falls back to the old flat `[MM:SS-MM:SS] (chunk i/N) summary` skeleton (`_skeleton_kind="flat-summary-fallback"`). A1 prompt rewritten to "Match on MEANING, not shared words … a real arc has a BEAT". The `{"arcs":[…]}` contract + downstream validation (chunk-order, in-range timestamps, 1.4× boost) are unchanged.
+- **Phase 3 — measure precision with the existing harness.** *(Not yet run.)* Route new arc moments through `judge_tournament` (does an arc clip win pairwise vs a non-arc clip?) and watch `axis_report` `at_ceil` (arc moments piling at the score ceiling = over-boosting / false positives). `logtool axes` reads both.
 
 **Decision rule**: keep Phase 2 only if buried-setup recall rises **without** the `judge_tournament` win-rate for arc clips falling — honor the pipeline's "quality > quantity" contract.
 
