@@ -1689,6 +1689,10 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 **Fix**: extracted the DLL-dir logic into a shared, idempotent `scripts/lib/ffmpeg_dll.py::enable_ffmpeg_dll_dir()` and call it in **both** `speech.py` (Stage 2) and `stage4_moments.py` (Stage 4, before M3's lazy imports). Verified in a fresh process: bootstrap resolves the AMD CNext FFmpeg 7.0 set and `import torchcodec` + `AudioDecoder` succeed. Lesson: any runtime that depends on a process-local `os.add_dll_directory` must be applied in **every** stage subprocess, not just the first one that needed it. See [[concepts/pass-b-false-negatives]].
 
+> [!warning] Recurred (6/6 13:57 run) → central fix
+> The per-module patch wasn't enough: the next run hit the SAME failure in a **third** process — `[MMR] sentence-transformers unavailable (Could not load libtorchcodec ...)`. MMR diversity ranking lives in `scripts/lib/stages/stage4_diversity.py`, its own subprocess, which also imports the torch stack and didn't have the bootstrap. (`transformers`/`sentence-transformers` eagerly probe torchcodec on import, so ANY torch-stack stage breaks without the FFmpeg DLLs.)
+> **Central fix:** added `scripts/lib/sitecustomize.py` (just calls `ffmpeg_dll.enable_ffmpeg_dll_dir()`). `PATHS.child_env()` already puts `scripts/lib` on `PYTHONPATH` for every stage subprocess, so Python's `site` machinery **auto-imports this sitecustomize at startup in every stage process** — before any heavy import — covering M3, MMR, pyannote, and any future torch-stack stage in one place. Verified: with only `PYTHONPATH=scripts/lib`, a fresh interpreter auto-runs the hook and `import sentence_transformers` / `torchcodec` succeed with no explicit call. The explicit calls in speech.py/stage4_moments.py stay as idempotent belt-and-suspenders.
+
 ---
 
 ## Related

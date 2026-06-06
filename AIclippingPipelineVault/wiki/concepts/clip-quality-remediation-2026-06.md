@@ -37,6 +37,13 @@ Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc p
 > - **Gap #2 (de-tidy)** ✅ — per-chunk counts vary (7/5/4/3), 82 moments vs 75. **Gap #1 (re-queue)** dormant (no chunk failed — 35b stable).
 > - **❌ REGRESSION → fixed:** installing torchcodec **broke M3 callback detection** in the Stage 4 subprocess (it never got the FFmpeg DLL dir speech.py added — each stage is its own process). M3 produced 0 callbacks. Fixed by the shared `scripts/lib/ffmpeg_dll.py` now called in both Stage 2 and Stage 4 (see [[concepts/bugs-and-fixes#BUG 62]]). **Re-validate next run.**
 
+> [!success] Validation run #2 2026-06-06 (`20260606_185751`) — arc guarantee fired; torchcodec fix went central
+> The run after the BUG 62 fix (39m 9s, exit 0, 10 clips). New confirmations:
+> - **M3 recovered** ✅ — `[STAGE4] FFmpeg shared libs on DLL path` then `[CALLBACKS] indexed 744 transcript windows (faiss)` (no crash; kept 0 callbacks — a content outcome).
+> - **Fix 5D arc guarantee FIRED** ✅ — A1 found 1 arc and `[ARC] Phase 2.5 guaranteed arc T=11224 (kind=prediction, score=0.992) over weakest clip T=246 (1.380)`. The mechanism works end-to-end. **Open Phase-3 question:** it evicted a higher-raw clip (1.380) for the arc (0.992) under the 0.6 quality floor — `judge_tournament` / a human should confirm the arc clip is actually better, else tighten `CLIP_ARC_GUARANTEE_MIN_RATIO`.
+> - **Fix 1** ✅ — only **description** REGEN-fails now (4), zero title/hook — exactly the intended behaviour (description stays grounded; title/hook exempt).
+> - **❌ Same torchcodec failure recurred in a THIRD process** — `[MMR] sentence-transformers unavailable` (MMR diversity = `stage4_diversity.py`, its own subprocess). **Central fix:** `scripts/lib/sitecustomize.py` auto-runs the FFmpeg-DLL bootstrap at startup in *every* stage subprocess (scripts/lib is on `PYTHONPATH` via `child_env`). Verified the hook auto-loads `sentence_transformers`/`torchcodec` with no explicit call. See [[concepts/bugs-and-fixes#BUG 62]]. **Re-validate next run** (MMR + a fresh arc-guarantee case).
+
 ---
 
 ## Fix 1 — Vision REGEN → ungrounded fallback titles (P1, quality)
