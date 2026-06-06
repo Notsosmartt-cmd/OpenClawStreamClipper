@@ -3,7 +3,7 @@ title: "VRAM Budget and Model Orchestration"
 type: concept
 tags: [vram, gpu, memory, performance, models, orchestration, infrastructure, observability]
 sources: 3
-updated: 2026-06-05
+updated: 2026-06-06
 ---
 
 > [!success] Cross-vendor VRAM observability + deterministic context prediction (2026-06-05)
@@ -16,6 +16,11 @@ updated: 2026-06-05
 > - **Dashboard**: the Context Window card now shows a GPU-aware recommendation that updates whenever you change the text/vision model dropdown, with an "Apply" button. Calls `/api/models/context-recommendation`.
 >
 > **The KV-cache math is now deterministic** (`scripts/lib/gguf_meta.py`): it reads the exact `block_count`, `head_count_kv`, `key_length`, `value_length`, and `sliding_window_pattern` from each model's GGUF header instead of a per-architecture rate guess. This corrected large errors — see the KV-cache section below.
+
+> [!success] Live-config verification (2026-06-06 session review)
+> The `[VRAM]` telemetry in the `20260606_071210_20260424_2xRaKai` run settles a recurring "is LM Studio spilling to system RAM?" worry. With `qwen3.6-35b-a3b` (22 GB GGUF) loaded and LM Studio set to **split evenly across both GPUs (Vulkan)**, Stage 4 showed `pool: 24116/28583 MB (84%)` = **13.4 GB on the NVIDIA + 10.8 GB on the AMD, both with free headroom**. So the 35b runs **fully in VRAM across the two cards — not spilling**. The ~10 GB system-RAM working set Task Manager attributes to LM Studio is the **mmap'd GGUF page cache + Vulkan host-staging buffers** (reclaimable, off the compute hot path), and Task Manager's "Dedicated GPU memory ≈ 22 GB" is Windows *summing dedicated VRAM across both adapters* — the opposite of a spill. The only real cost of this layout is **Vulkan cross-vendor split < CUDA-on-one-card** in raw speed; a model that fits the 16 GB NVIDIA card alone (`qwen3.5-9b` 6.5 GB, `gpt-oss-20b` 12 GB) would run CUDA-native and faster, at a model-quality tradeoff.
+>
+> **Live `context_length`**: the operator dropped it `65536 → 32768` on 2026-06-06 (the reviewed run was at 64K). 32K is the right call — it shrinks the 35b KV cache (more pool headroom) and is still well above the chunked pipeline's ~14K-token peak, so **zero clip-quality loss** (see §"Why bigger context ≠ better clips").
 
 # VRAM Budget and Model Orchestration
 
