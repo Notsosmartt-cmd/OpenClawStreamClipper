@@ -72,6 +72,10 @@ Concrete, file:line-anchored plans for the four fixes designed in [[concepts/det
 
 ## Fix 2 — Embedding-similarity category signal for Pass A (modernize the crude keyword term)
 
+> [!success] SHIPPED 2026-06-06 (`stage4_moments.py`, flag `CLIP_PASSA_EMBED` default **off**)
+> `keyword_scan` now (when enabled) pre-embeds every window's text + the 8 category prototypes (`_CATEGORY_DESCRIPTIONS`, lifted from the legacy Pass B prompt) in **one** batched `callbacks.embed_segments()` call, then adds a capped, segment-weighted cosine term per category to `categories_found`/`total_signals` after the keyword loop. Additive, capped (`_PASSA_EMBED_CAP`=1.0), failure-soft (no sentence-transformers → keywords only), opt-in.
+> **Empirical finding (validates the user's "too crude?" instinct):** cosines between a 30 s window and a *one-line* category description run **~0.15–0.27** — only mildly discriminative. In a quick test hot_take (0.26) and reactive (0.26) classified correctly but a clear storytime opener mis-mapped to emotional (0.18), and at the original 0.30 threshold **nothing fired**. So the default threshold was lowered to **0.20** (fires on clear matches, skips the ambiguous), and the contribution stays small (~0.15 signal). **Recommended follow-up:** swap the short prototypes for the richer `config/patterns.json` `signature` paragraphs (mapped via `category_hint`) — they'll give higher, more discriminative cosines. Ship-as-foundation: gated + tunable, does no harm off; validate recall gains before defaulting on.
+
 **Goal:** make Pass A semantic without losing its deterministic recall-net role — augment the literal keyword count with embedding similarity to per-category prototypes. Keep keywords + shape/audio/speaker signals.
 
 ### Changes
