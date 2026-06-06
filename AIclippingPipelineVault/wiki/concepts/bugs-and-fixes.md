@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Bugs and Fixes
@@ -1650,6 +1650,20 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 - Stage 6 `max_tokens`: `2000` → `4000` (extra headroom for reasoning-heavy calls)
 
 **Key principle**: The timeout must be set ABOVE the model's actual latency. A timeout below actual latency causes more requests to be submitted per chunk than LM Studio can drain between chunks, creating exponentially growing queue depth.
+
+---
+
+## BUG 60 — Vestigial `\`-escaped backticks in JSON fence-stripping (stage4 + stage6)
+
+> [!success] Resolved 2026-06-06
+
+**Symptom**: `SyntaxWarning: invalid escape sequence '\`'` at `stage4_moments.py:704-705,1485-1486` and `stage6_vision.py:542-543` on every pipeline run (visible in the 2026-06-04 and 2026-06-06 session logs).
+
+**Cause**: The moment/vision JSON parsers strip a ```` ```json ```` code fence before parsing. The fence test was written as the **string literal** `"\`\`\`"` — a relic from when these Python bodies lived inside an unquoted bash `PYEOF` heredoc (where raw backticks had to be `\`-escaped to avoid command substitution; see [[#BUG 39]]/[[#BUG 46]]). After modularization (2026-05-01) the code is real `.py` modules, so `\`` is just an invalid escape that Python warns about **and** the literal `\`\`\`` never matches an actual ```` ``` ```` fence. Net effect: when a small/vision model wrapped its JSON in a Markdown fence, fence-stripping silently no-op'd → the outer `{…}` slice still usually recovered the object, but in Stage 6 it contributed to **avoidable grounding REGEN cycles** (fenced vision JSON parsed as partial/garbage → field fails the grounding judge → REGEN).
+
+**Fix**: replace `"\`\`\`"` → `"```"` (real triple backtick) in both modules. Verified clean under `python -W error::SyntaxWarning`. Found during the 2026-06-06 session review; stage4 was fixed alongside the arc-aware extraction work, stage6 in the same review.
+
+**Related observation (not yet fixed)**: the same 6/6 session showed repeated `REGEN still fails for title/hook/description (judge_low_weighted)`, and some clips shipped with fallback titles like `"Pattern setupexternalcontradiction Streamer claims"` instead of a catchy title. The backtick fix removes one contributor (fenced-JSON parse failure); the remaining REGEN failures are a separate vision-grounding-strictness question to investigate. See [[concepts/vision-enrichment]].
 
 ---
 
