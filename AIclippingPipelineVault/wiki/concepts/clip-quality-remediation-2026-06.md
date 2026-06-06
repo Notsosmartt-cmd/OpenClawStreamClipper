@@ -27,6 +27,16 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 
 Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc plan's Phase 3. Rationale: #1 is the only one a viewer sees; #2 is the biggest single time sink and partially a "should it even run?" question; #3/#4 are low-risk hygiene.
 
+> [!success] Validation run 2026-06-06 (`20260606_175005`, rakai 193-min, 35b) — most fixes CONFIRMED in production
+> The first full run after all the fixes landed. **Wall-clock 58m → 36m45s (−37%)**, exit 0, 10 clips. Verified live:
+> - **Fix 1** ✅ — `REGEN still fails` dropped 7 → **1**; Stage 6 enrichment 428s → **177s**; final titles all clean/catchy ("Streamer Reveals Segregated Coke Machines", "The Birthday Roast", …), **zero `Pattern …` garbage**.
+> - **Fix 2B** ✅ — Stage 5.5 **620s → 223s** (2 workers); and the new **rank-churn metric reads 9/10 moved, #1 CHANGED** → the judge IS earning its cost (keep it).
+> - **Item A (score spread)** ✅ — manifest scores now 0.32–0.76, Pass C scores 0.89–1.0 (was a wall of 1.000s).
+> - **Fix 5A** ✅ — 71 cross-validated (was 60); all 10 finals `[CROSS-VALIDATED]`. **Fix 5D guarantee did NOT fire** — A1 produced **0 arcs this run** (vs 5 last run; model variability — 25 cards/69 claims still written), so there was nothing to guarantee. Arc guarantee still unexercised live.
+> - **3B** ✅ — engagement axis now contributes on this chatless VOD (`eng=0.6` on most clips vs `0.24`/None before).
+> - **Gap #2 (de-tidy)** ✅ — per-chunk counts vary (7/5/4/3), 82 moments vs 75. **Gap #1 (re-queue)** dormant (no chunk failed — 35b stable).
+> - **❌ REGRESSION → fixed:** installing torchcodec **broke M3 callback detection** in the Stage 4 subprocess (it never got the FFmpeg DLL dir speech.py added — each stage is its own process). M3 produced 0 callbacks. Fixed by the shared `scripts/lib/ffmpeg_dll.py` now called in both Stage 2 and Stage 4 (see [[concepts/bugs-and-fixes#BUG 62]]). **Re-validate next run.**
+
 ---
 
 ## Fix 1 — Vision REGEN → ungrounded fallback titles (P1, quality)

@@ -50,38 +50,14 @@ from typing import Dict, List, Optional, Tuple
 # Stage 2 hands it a pre-extracted WAV — and we silence the benign warning.
 # Override the FFmpeg search dir with CLIP_FFMPEG_SHARED_DIR.
 # See concepts/clip-quality-remediation-2026-06.md Fix 4.
-_TC_DLL_HANDLES: list = []  # keep os.add_dll_directory handles alive (GC drops them otherwise)
-
-
-def _enable_torchcodec_ffmpeg() -> Optional[str]:
-    """Add a complete FFmpeg shared-lib dir to the Windows DLL search path so
-    torchcodec can load. Returns the dir used, or None. No-op off Windows."""
-    if os.name != "nt":
-        return None
-    import glob
-    needed = ("avcodec", "avformat", "avutil", "swresample")
-    candidates = [
-        os.environ.get("CLIP_FFMPEG_SHARED_DIR", ""),
-        r"C:\Program Files\AMD\CNext\CNext",
-        r"C:\Program Files\Blackmagic Design\DaVinci Resolve",
-        r"C:\Program Files\Blender Foundation\Blender 4.2\blender.shared",
-    ]
-    for d in candidates:
-        if not d or not os.path.isdir(d):
-            continue
-        dll_names = " ".join(
-            os.path.basename(p).lower() for p in glob.glob(os.path.join(d, "*.dll"))
-        )
-        if all(stem in dll_names for stem in needed):
-            try:
-                _TC_DLL_HANDLES.append(os.add_dll_directory(d))
-                return d
-            except OSError:
-                continue
-    return None
-
-
-_TORCHCODEC_FFMPEG_DIR = _enable_torchcodec_ffmpeg()
+# The DLL-dir setup is shared with the Stage 4 process via ffmpeg_dll.py so it
+# runs in EVERY subprocess that touches torchcodec, not just this one (2026-06-06
+# regression fix — Stage 4's M3 was hard-failing on torchcodec without it).
+try:
+    import ffmpeg_dll as _ffdll
+    _TORCHCODEC_FFMPEG_DIR = _ffdll.enable_ffmpeg_dll_dir()
+except Exception:
+    _TORCHCODEC_FFMPEG_DIR = None
 _torchcodec_ok = False
 try:
     import torchcodec  # noqa: F401  — warm the import so pyannote reuses it

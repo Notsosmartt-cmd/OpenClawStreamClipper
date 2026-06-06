@@ -1679,6 +1679,18 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
+## BUG 62 — Installing torchcodec broke M3 callback detection in the Stage 4 subprocess
+
+> [!success] Resolved 2026-06-06
+
+**Symptom**: on the 6/6 12:50 validation run, `[PASS B+] M3 callback detection failed (Could not load libtorchcodec ... Could not find module 'libtorchcodec_core7.dll' (or one of its dependencies)); proceeding without callbacks`. M3 produced **0 callbacks** (it had worked — faiss backend — on every prior run). A2 then had 0 callback/arc moments to extract setup frames for.
+
+**Cause**: BUG 4-fix installed `torchcodec` (for pyannote, [[concepts/clip-quality-remediation-2026-06]] Fix 4) and put the FFmpeg shared-lib dir on the DLL search path **in `speech.py` only** — i.e. only the Stage 2 transcription subprocess. The pipeline runs each stage as its **own process**, so the Stage 4 subprocess (which runs M3) never got the DLL dir. Once torchcodec is *installed*, M3's torch-ecosystem imports eagerly probe it, and the probe **hard-fails** when its FFmpeg dependency (`avcodec` etc.) isn't on that process's search path. Net: a fix that helped Stage 2 silently broke Stage 4's recall signal. Classic per-subprocess environment-setup gap.
+
+**Fix**: extracted the DLL-dir logic into a shared, idempotent `scripts/lib/ffmpeg_dll.py::enable_ffmpeg_dll_dir()` and call it in **both** `speech.py` (Stage 2) and `stage4_moments.py` (Stage 4, before M3's lazy imports). Verified in a fresh process: bootstrap resolves the AMD CNext FFmpeg 7.0 set and `import torchcodec` + `AudioDecoder` succeed. Lesson: any runtime that depends on a process-local `os.add_dll_directory` must be applied in **every** stage subprocess, not just the first one that needed it. See [[concepts/pass-b-false-negatives]].
+
+---
+
 ## Related
 - [[entities/dashboard]] — BUGs 3, 5, 6, 7, 8, 10 are dashboard-specific
 - [[entities/lm-studio]] — BUGs 15, 16, 17, 19 are LM Studio / pipeline integration bugs
