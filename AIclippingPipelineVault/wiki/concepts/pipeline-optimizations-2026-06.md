@@ -3,7 +3,7 @@ title: "Pipeline parallelization & optimization sweep (2026-06-04)"
 type: concept
 tags: [performance, parallelization, multiprocessing, threadpool, ffmpeg, librosa, optimization, hub]
 sources: 1
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Pipeline optimization sweep — 2026-06-04
@@ -57,8 +57,11 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 |---|---|---|
 | **`off`** (default — round 4) | No filtering, every chunk LLM'd | 0% lift, **zero false negatives** |
 | `strict` | 2-signal gate (keywords + audio_events) — original round-2 behaviour | 25-30% lift, ~5-10% false-negative rate |
-| `multi` | 6-signal gate: keywords + audio_events + chat hard-events + diarization speakers ≥2 + word density ≥1.5/sec + segment type ∈ {reaction, hot_take, just_chatting} | 5-15% lift, very low false-negative risk |
-| `sample` | `multi` + every Nth dead chunk LLM'd anyway (`CLIP_PASSB_DEAD_SAMPLE_RATE`, default 3) — bounds consecutive-skip streak | 20-25% lift, low false-negative risk |
+| `sample` | `multi` + every Nth dead chunk LLM'd anyway (`CLIP_PASSB_DEAD_SAMPLE_RATE`, default 3) — bounds consecutive-skip streak | 5-15% lift, very low false-negative risk |
+| `multi` | 6-signal gate: keywords + audio_events + chat hard-events + diarization speakers ≥2 + word density ≥1.5/sec + segment type ∈ {reaction, hot_take, just_chatting} | 20-25% lift, low false-negative risk |
+
+> [!warning] Label correction (2026-06-06) — `multi` and `sample` were swapped
+> The original estimates (and the dashboard dropdown) had `multi` at 5-15%/very-low and `sample` at 20-25%/low. That is **backwards**: `sample` uses the *same* 6-signal `_alive` check as `multi` and then *additionally* force-runs the LLM on every Nth dead chunk (`stage4_moments.py` ~`:1413-1436`). So `sample` skips a strict **subset** of what `multi` skips → it runs **more** LLM calls (slower, less lift) and is **strictly safer** (every chunk it skips, `multi` also skips, plus more). Corrected ordering by both speed and FN risk: **off < sample < multi < strict**. Dashboard labels fixed to match (`dashboard/templates/index.html`). Percentages remain rough estimates — only the *ordering* is rigorous.
 
 **Round 4 changes from round 2** (2026-06-04 evening):
 - **Default flipped to `off`** after the rakai Delaware case study showed the strict 2-signal gate has a meaningful false-negative rate. A missed clip displaces a worse one in its time-bucket slot (Pass C is competitive), so false negatives cost ~5-10× a false positive (which downstream stages filter for free).
