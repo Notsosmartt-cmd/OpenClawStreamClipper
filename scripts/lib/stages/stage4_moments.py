@@ -798,8 +798,8 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
 
     clean = response_text.strip()
 
-    if "\`\`\`" in clean:
-        parts = clean.split("\`\`\`")
+    if "```" in clean:
+        parts = clean.split("```")
         if len(parts) >= 2:
             clean = parts[1]
             if clean.startswith("json"):
@@ -1101,6 +1101,154 @@ total_chunks = max(_total_chunks, 1)
 # Populated at the END of each chunk's Pass B work (after parse + grounding) so
 # subsequent chunks see them.
 chunk_summaries = []
+
+# Tier-3 A1+ arc-aware "chunk cards" (2026-06-06). Replaces the 15-word
+# free-text per-chunk summary with a structured extraction of the *arc-bait*
+# — concrete claims / predictions / named entities / open loops — so the A1
+# global pass can match setup<->payoff on verifiable anchors instead of a
+# genericized topic line. chunk_cards is PARALLEL to chunk_summaries:
+#   chunk_cards[ci]  = {topic, claims[], predictions[], entities[], open_loops[]}
+#   chunk_summaries  = [(ci, one_liner)]  (a flattened card line, kept so the
+#                       Tier-1 Q1 prior-context block keeps working unchanged)
+# Full design + research: AIclippingPipelineVault/wiki/concepts/arc-aware-extraction.
+chunk_cards = {}
+
+
+def _arc_extract_json_obj(text):
+    """Best-effort single-JSON-object parse for a chunk card: strip a code
+    fence, slice the outermost {...}, json.loads. Returns {} on failure.
+    (This is a real .py module — plain backticks are fine here.)"""
+    if not text:
+        return {}
+    t = text.strip()
+    if "```" in t:
+        parts = t.split("```")
+        if len(parts) >= 2:
+            t = parts[1]
+            if t.lstrip().lower().startswith("json"):
+                t = t.lstrip()[4:]
+    a = t.find("{")
+    b = t.rfind("}")
+    if a < 0 or b <= a:
+        return {}
+    try:
+        obj = json.loads(t[a:b + 1])
+        return obj if isinstance(obj, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _arc_verify_quotes(items, source_text, max_items):
+    """Keep only strings that actually appear in source_text (whitespace-
+    normalized, case-insensitive) — kills hallucinated quotes so setup_text
+    and the A1 'quote both halves' are trustworthy. Caps list length."""
+    if not isinstance(items, list):
+        return []
+    src_norm = " ".join((source_text or "").lower().split())
+    out = []
+    for it in items:
+        if not isinstance(it, str):
+            continue
+        s = it.strip().strip('"').strip("'").strip()
+        if not s:
+            continue
+        s_norm = " ".join(s.lower().split())
+        if len(s_norm) >= 3 and s_norm in src_norm:
+            out.append(s[:120])
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _build_chunk_card(chunk_text):
+    """One LLM call: extract arc-bait as a structured card. The model may
+    reason in free text; only the final JSON is consumed (constrain the
+    EMISSION, not the reasoning — EMNLP 2024 'Let Me Speak Freely?'). Quotes
+    are substring-verified. Returns a card dict, or None on failure."""
+    prompt = (
+        "/no_think\n"
+        "From this stream transcript chunk, extract anything that could PAY OFF "
+        "LATER in the stream — a brag, claim, prediction, named stake, or dangling "
+        "question. Quote EXACTLY from the transcript; if nothing of a type exists, "
+        "use []. Prefer specific nouns over general topics.\n\n"
+        f"Transcript:\n{chunk_text}\n\n"
+        "Output ONLY this JSON object (no prose, no preamble):\n"
+        '{"topic":"<=12 words","claims":[],"predictions":[],"entities":[],"open_loops":[]}'
+    )
+    resp = call_llm(prompt, max_tokens=4000, max_retries=0)
+    obj = _arc_extract_json_obj(resp)
+    if not obj:
+        return None
+    _topic = obj.get("topic")
+    topic = _topic.strip()[:120] if isinstance(_topic, str) else ""
+    card = {
+        "topic": topic,
+        "claims": _arc_verify_quotes(obj.get("claims"), chunk_text, 3),
+        "predictions": _arc_verify_quotes(obj.get("predictions"), chunk_text, 2),
+        "entities": _arc_verify_quotes(obj.get("entities"), chunk_text, 5),
+        "open_loops": _arc_verify_quotes(obj.get("open_loops"), chunk_text, 2),
+    }
+    if not topic and not any(card[k] for k in
+                             ("claims", "predictions", "entities", "open_loops")):
+        return None
+    return card
+
+
+def _card_to_oneliner(card):
+    """Flatten a card to a short readable line for the Pass B prior-context
+    block (Tier-1 Q1): topic + the single most concrete anchor."""
+    if not card:
+        return ""
+    topic = card.get("topic") or ""
+    anchor = ""
+    for k in ("claims", "predictions", "open_loops"):
+        if card.get(k):
+            anchor = card[k][0]
+            break
+    if not anchor and card.get("entities"):
+        anchor = ", ".join(card["entities"][:2])
+    if topic and anchor:
+        line = f"{topic} — {anchor}"
+    else:
+        line = topic or anchor
+    return line[:160]
+
+
+def _build_arc_register(cards_by_chunk, chunk_time_map):
+    """Phase 2: type-grouped register for the A1 global pass (counters
+    'Lost in the Middle' — Liu 2023). Groups every chunk's arc-bait by signal
+    type so arc detection is near-neighbour scanning within a register, not a
+    linear read of N verbose lines. Returns '' when there's nothing to group."""
+    def _ts(ci):
+        tr = chunk_time_map.get(ci)
+        if not tr:
+            return "??:??"
+        m, s = divmod(int(tr[0]), 60)
+        return f"{m:02d}:{s:02d}"
+
+    claims, preds, loops, topics = [], [], [], []
+    for ci in sorted(cards_by_chunk):
+        card = cards_by_chunk[ci]
+        ts = _ts(ci)
+        if card.get("topic"):
+            topics.append(f"{ci:>2} {ts}  {card['topic']}")
+        for q in card.get("claims", []):
+            claims.append(f'{ci:>2} {ts}  "{q}"')
+        for q in card.get("predictions", []):
+            preds.append(f'{ci:>2} {ts}  "{q}"')
+        for q in card.get("open_loops", []):
+            loops.append(f'{ci:>2} {ts}  {q}')
+    sections = []
+    if claims:
+        sections.append("== CLAIMS (chunk time — quote) ==\n" + "\n".join(claims))
+    if preds:
+        sections.append("== PREDICTIONS (chunk time — quote) ==\n" + "\n".join(preds))
+    if loops:
+        sections.append("== OPEN LOOPS (chunk time) ==\n" + "\n".join(loops))
+    if topics:
+        sections.append("== TOPICS (context) ==\n" + "\n".join(topics))
+    return "\n\n".join(sections)
+
 
 # Tier-4 Phase 4.2: accumulate per-chunk conversation_shape records and write
 # them to /tmp/clipper/conversation_shape.json after the Pass B loop so Pass D
@@ -1586,39 +1734,33 @@ If nothing stands out at all, respond: {{"moments": []}}"""
             print(f"    T={m['timestamp']}s [{m['primary_category']}] score={m['score']} — {m.get('why','')[:60]}", file=sys.stderr)
         llm_moments.extend(chunk_moments)
 
-        # Tier-1 Q1: ask for a one-line summary of THIS chunk so subsequent
-        # chunks can see prior setup. /no_think is honored by Qwen but IGNORED
-        # by Gemma 4 in LM Studio (permanent thinking) — on Gemma the model
-        # burns 1500–4000 reasoning tokens before producing the 15-word answer.
-        # max_tokens=200 was correct for Qwen but caused Gemma to always
-        # finish=length with empty content, so every chunk's summary fell back
-        # to the 12-word transcript snippet, hollowing out the cross-chunk
-        # callback signal that motivates Tier-1 Q1 in the first place. 4000
-        # covers the Gemma reasoning budget plus the short answer; on Qwen
-        # the unused budget is free.
+        # Tier-3 A1+ arc-aware chunk card (2026-06-06, replaces the 15-word
+        # summary). One LLM call extracts structured arc-bait (claims /
+        # predictions / entities / open_loops) so the A1 global pass can match
+        # setup<->payoff on concrete verifiable anchors instead of a
+        # genericized "main topic" line. The card is stored in chunk_cards;
+        # a flattened one-liner still goes into chunk_summaries so the Tier-1
+        # Q1 prior-context block above keeps working unchanged. Quotes are
+        # substring-verified against the chunk to kill hallucinations. The same
+        # max_tokens=4000 budget (Gemma thinking headroom) is reused; the only
+        # added cost is ~2-4x output tokens vs the old 15-word summary.
+        # See concepts/arc-aware-extraction (research-backed plan).
         summary_text = ""
+        card = None
         try:
-            summary_prompt = (
-                "/no_think\n"
-                "Summarize the streamer's main claim, topic, or activity in this "
-                "transcript chunk in 15 words or less. Output ONLY a single "
-                "quoted line of plain English — no JSON, no preamble, no "
-                "explanation.\n\n"
-                f"Transcript:\n{chunk_text}\n\n"
-                "Summary:"
+            card = _build_chunk_card(chunk_text)
+        except Exception as _card_err:
+            print(f"  Chunk {chunk_count}: card extraction errored ({_card_err}); continuing", file=sys.stderr)
+        if card:
+            chunk_cards[chunk_count] = card
+            summary_text = _card_to_oneliner(card)
+            print(
+                f"  Chunk {chunk_count}: card — {len(card['claims'])} claim(s), "
+                f"{len(card['predictions'])} prediction(s), "
+                f"{len(card['entities'])} entity(s), "
+                f"{len(card['open_loops'])} open-loop(s)",
+                file=sys.stderr,
             )
-            summary_resp = call_llm(summary_prompt, max_tokens=4000, max_retries=0)
-            if summary_resp:
-                # Strip surrounding quotes/whitespace and any leftover wrapper.
-                cleaned = summary_resp.strip().strip('"').strip("'").strip()
-                # Take only the first line (defensive against models that
-                # over-explain despite the prompt).
-                cleaned = cleaned.splitlines()[0].strip() if cleaned else ""
-                if cleaned:
-                    # Hard cap so a runaway summary can't blow up later prompts.
-                    summary_text = cleaned[:160]
-        except Exception as _summ_err:
-            print(f"  Chunk {chunk_count}: summary call errored ({_summ_err})", file=sys.stderr)
         if not summary_text:
             # Neutral fallback: first ~12 transcript words. Better than nothing —
             # later chunks at least know what topic the prior chunk was on.
@@ -1645,6 +1787,28 @@ If nothing stands out at all, respond: {{"moments": []}}"""
 print(f"[PASS B] LLM found {len(llm_moments)} moments across {chunk_count} chunks", file=sys.stderr)
 with open(f"{TEMP_DIR}/llm_moments.json", "w") as f:
     json.dump(llm_moments, f, indent=2)
+
+# Tier-3 A1+ arc-aware chunk cards (2026-06-06): persist for observability so a
+# future session can inspect what arc-bait each chunk produced (Phase 0/3 of the
+# arc-aware-extraction plan). Keyed by chunk index (stringified for JSON).
+try:
+    _card_claims = sum(len(c.get("claims", [])) for c in chunk_cards.values())
+    _card_preds = sum(len(c.get("predictions", [])) for c in chunk_cards.values())
+    with open(f"{TEMP_DIR}/chunk_cards.json", "w") as _cf:
+        json.dump({
+            "total_cards": len(chunk_cards),
+            "total_chunks": chunk_count,
+            "total_claims": _card_claims,
+            "total_predictions": _card_preds,
+            "cards": {str(k): v for k, v in chunk_cards.items()},
+        }, _cf, indent=2)
+    print(
+        f"[A1+] Wrote {len(chunk_cards)} arc-aware chunk cards "
+        f"({_card_claims} claims, {_card_preds} predictions) to chunk_cards.json",
+        file=sys.stderr,
+    )
+except (OSError, TypeError) as _ccerr:
+    print(f"[A1+] failed to persist chunk_cards ({_ccerr}); continuing", file=sys.stderr)
 
 # Persist the dead-chunk skip audit log so `logtool dead` can show what was
 # skipped + why. Written even when no chunks were skipped (an empty list
@@ -1727,44 +1891,57 @@ if (
             chunk_time_map[_scan_idx] = (int(_scan_t), int(min(max_time, _scan_t + _scan_dur)))
             _scan_t += _scan_dur
 
-        skeleton_text = []
-        for ci, summ in skeleton_lines:
-            t_range = chunk_time_map.get(ci)
-            if t_range is None:
-                continue
-            s_min, s_sec = divmod(t_range[0], 60)
-            e_min, e_sec = divmod(t_range[1], 60)
-            skeleton_text.append(
-                f"[{s_min:02d}:{s_sec:02d}-{e_min:02d}:{e_sec:02d}] (chunk {ci}/{total_chunks}) {summ}"
-            )
-        skeleton = "\n".join(skeleton_text)
+        # Phase 2 (2026-06-06): prefer the type-grouped register built from the
+        # arc-aware chunk cards. Grouping claims/predictions/open-loops by type
+        # turns arc detection into near-neighbour scanning within a register
+        # (counters 'Lost in the Middle' — Liu 2023) and gives the model a
+        # structural prior on what an arc looks like. Falls back to the flat
+        # summary skeleton when no cards were produced (all extractions failed).
+        register = _build_arc_register(chunk_cards, chunk_time_map)
+        if register:
+            skeleton = register
+            _skeleton_kind = "grouped-register"
+        else:
+            skeleton_text = []
+            for ci, summ in skeleton_lines:
+                t_range = chunk_time_map.get(ci)
+                if t_range is None:
+                    continue
+                s_min, s_sec = divmod(t_range[0], 60)
+                e_min, e_sec = divmod(t_range[1], 60)
+                skeleton_text.append(
+                    f"[{s_min:02d}:{s_sec:02d}-{e_min:02d}:{e_sec:02d}] (chunk {ci}/{total_chunks}) {summ}"
+                )
+            skeleton = "\n".join(skeleton_text)
+            _skeleton_kind = "flat-summary-fallback"
 
         a1_prompt = f"""/no_think
-Below is a skeleton of a stream, line by line, with timestamp ranges. Each line summarizes one chunk's main claim, topic, or activity.
+Below are CLAIMS, PREDICTIONS and OPEN LOOPS pulled from a stream, each tagged with its chunk number and time. Quotes are verbatim from the streamer.
 
-Identify SETUP-PAYOFF ARCS that span MULTIPLE chunks. Look for:
-- A claim made early that's contradicted, fulfilled, or undermined later (the canonical "I'm in my penthouse / actually it's not my penthouse" pattern)
+Find SETUP-PAYOFF ARCS that span MULTIPLE chunks:
+- A claim made early that's later contradicted, exposed, or undermined (the canonical "I'm in my penthouse / actually it's not his penthouse" pattern)
+- A prediction ("watch this work") that later lands or fails
+- An open loop / dangling stake that later closes
 - A theme introduced and revisited 30+ minutes later as a callback
 - A friend / off-screen voice / chat exposing a fake or contradiction
-- A long storytelling arc that crosses chunks
-- A predicted outcome ("watch this work") that comes true or fails
 
-Skeleton:
+Match on MEANING, not shared words — the payoff is often worded differently from the setup. A real arc has a BEAT (irony, contradiction, fulfillment, exposure); a merely shared topic is NOT an arc.
+
 {skeleton}
 
 Respond with ONLY a single JSON object: {{"arcs": [ ... ]}}. Each arc:
-{{"setup_chunk": <int>, "payoff_chunk": <int>, "setup_time": "MM:SS", "payoff_time": "MM:SS", "arc_kind": "irony|contradiction|fulfillment|theme_return|exposure|prediction", "score": 1-10, "why": "one sentence naming both halves of the arc"}}.
+{{"setup_chunk": <int>, "payoff_chunk": <int>, "setup_time": "MM:SS", "payoff_time": "MM:SS", "arc_kind": "irony|contradiction|fulfillment|theme_return|exposure|prediction", "score": 1-10, "why": "one sentence naming BOTH halves, quoting each"}}.
 
 Rules:
-- Setup_chunk MUST be earlier than payoff_chunk by at least 1 chunk.
+- setup_chunk MUST be earlier than payoff_chunk by at least 1 chunk.
 - Both timestamps MUST fall within their chunk's range.
-- Skip "arcs" where the connection is just a shared topic — there must be a real beat (irony / contradiction / payoff).
+- Skip "arcs" that are just a shared topic — there must be a real beat.
 - 0 arcs is a valid answer.  Quality > quantity.
 
 If no arcs, respond {{"arcs": []}}."""
         print(
-            f"[PASS B-GLOBAL] A1 sending skeleton of {len(skeleton_lines)} chunks "
-            f"({len(skeleton)} chars) for cross-chunk arc detection",
+            f"[PASS B-GLOBAL] A1 sending {_skeleton_kind} "
+            f"({len(chunk_cards)} cards, {len(skeleton)} chars) for cross-chunk arc detection",
             file=sys.stderr,
         )
         # 6000: Gemma 4-26B's permanent thinking can use 3000–5000 tokens on a
@@ -1790,13 +1967,11 @@ If no arcs, respond {{"arcs": []}}."""
                 f"preview={_preview!r}",
                 file=sys.stderr,
             )
-            # Triple-backtick fence: must use the \-escaped form inside this
-            # unquoted bash heredoc, otherwise bash treats the backticks as
-            # command substitution before Python sees them and mangles the
-            # heredoc (BUG 29 / BUG 38b). Same escape pattern already used
-            # at lines 1439 and 3416.
-            if "\`\`\`" in text:
-                _parts = text.split("\`\`\`")
+            # Strip a ```json code fence if present (this is a real .py module
+            # now — the old \-escaped form was a vestigial heredoc artifact that
+            # never matched a real fence and emitted a SyntaxWarning).
+            if "```" in text:
+                _parts = text.split("```")
                 if len(_parts) >= 2:
                     text = _parts[1]
                     if text.startswith("json"):
