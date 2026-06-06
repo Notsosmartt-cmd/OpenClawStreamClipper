@@ -309,6 +309,49 @@ def _resolve_worker_count(n_workers: Optional[int]) -> int:
     return max(1, min(PARALLEL_DEFAULT_CAP, cpu - 2))
 
 
+def _load_audio_fast(audio_path: str, sample_rate: int, librosa, np):
+    """Fast audio-load path: ``soundfile.read`` + polyphase resample.
+
+    ``librosa.load()`` defaults to ``res_type='kaiser_best'`` which is the
+    highest-quality resampler but **~5-7× slower** than
+    ``scipy.signal.resample_poly`` (exposed as ``res_type='polyphase'``).
+    For HPSS / onset / RMS detection the difference is inaudible; the
+    speed difference dominates.
+
+    Measured on the 2026-06-05 rakai run (3.2 h 16 kHz mono PCM WAV,
+    977 MB resampled output):
+      * ``librosa.load`` (default kaiser_best): **53.0 s**
+      * Expected ``soundfile.read`` + polyphase: **~7-10 s** (5-7× lift)
+
+    Returns ``(y_mono_float32, sample_rate)`` — interface-compatible
+    with ``librosa.load(audio_path, sr=sample_rate, mono=True)``.
+    Raises ``ImportError`` if soundfile is unavailable, or any other
+    exception on decode/resample failure — the caller falls back to
+    ``librosa.load`` for compatibility.
+    """
+    import soundfile as sf
+
+    # soundfile reads the WAV directly into a float32 ndarray. The
+    # ``always_2d=False`` flag returns a 1-D array for mono input (matches
+    # librosa.load's mono=True shape).
+    y_raw, sr_native = sf.read(audio_path, dtype="float32", always_2d=False)
+    # Mono mix-down if the source somehow ended up stereo (shouldn't on
+    # the pipeline's Stage-2 output but defend against custom audio files).
+    if y_raw.ndim > 1:
+        y_raw = np.mean(y_raw, axis=1, dtype=np.float32)
+    # Skip resampling when source already matches target — common when an
+    # operator pre-extracts audio at 22050 Hz to avoid this stage's cost.
+    if sr_native == sample_rate:
+        return y_raw, sample_rate
+    # polyphase = scipy.signal.resample_poly under the hood. ~5-7× faster
+    # than the default kaiser_best with no audible quality loss for HPSS.
+    y_full = librosa.resample(
+        y_raw, orig_sr=sr_native, target_sr=sample_rate,
+        res_type="polyphase",
+    )
+    return y_full, sample_rate
+
+
 def _build_window_tasks(
     duration_hint: float,
     window_size: int,
@@ -559,8 +602,26 @@ def scan_audio_events(
     )
     sys.stderr.flush()
     t_load = time.time()
+    # 2026-06-05 fast-path: ``soundfile.read`` + polyphase resample is
+    # ~5-7× faster than ``librosa.load(default=kaiser_best)`` on the
+    # rakai-class 3 h VOD (53 s → expected ~7-10 s). Fall back to
+    # ``librosa.load`` on any non-OOM failure so unusual codecs / bad
+    # audio files still complete the stage. MemoryError propagates to
+    # the same OOM handler from either path.
+    load_method = "librosa.load"
     try:
-        y_full, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
+        try:
+            y_full, sr = _load_audio_fast(audio_path, SAMPLE_RATE, librosa, np)
+            load_method = "soundfile+polyphase"
+        except MemoryError:
+            raise  # → outer OOM handler
+        except Exception as _fast_err:
+            print(
+                f"[AUDIO_EVENTS] fast-load fallback "
+                f"({type(_fast_err).__name__}: {_fast_err}); using librosa.load",
+                file=sys.stderr,
+            )
+            y_full, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
     except MemoryError:
         print(
             "[AUDIO_EVENTS] OOM loading full audio (VOD too long for in-memory scan); "
@@ -586,7 +647,8 @@ def scan_audio_events(
         return {"windows": 0, "backend": "librosa"}
     print(
         f"[AUDIO_EVENTS] loaded {len(y_full)/sr:.0f}s in {time.time()-t_load:.1f}s "
-        f"({len(y_full) * 4 // (1024*1024)} MB), scanning windows...",
+        f"({len(y_full) * 4 // (1024*1024)} MB, method={load_method}), "
+        f"scanning windows...",
         file=sys.stderr,
     )
     sys.stderr.flush()
