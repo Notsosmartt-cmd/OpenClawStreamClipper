@@ -56,6 +56,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/highlight-detection]] — Stage 4: keywords + LLM + Pass C re-rank (selection axes A/B/C/E) + Pass D rubric → Stage 5.5 [[entities/vision-judge]]
 - [[concepts/detection-walkthrough]] — **End-to-end walkthrough** of Stage 3 (segment) + Stage 4 (moment) detection and how they connect
 - [[concepts/detection-improvements]] — **Design answers**: finer segments, embedding keywords, stitched setup→payoff, length-neutral duration
+- [[concepts/detection-improvements-plan]] — **Detailed file:line-anchored implementation plans** for those 4 fixes (order 4→3→2→1)
 - [[concepts/clip-duration]] — How clip length is decided (no hard 30s clamp; default-fallback + length_penalty), chunk windowing, cross-chunk limits
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
