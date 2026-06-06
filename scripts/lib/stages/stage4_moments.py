@@ -47,6 +47,22 @@ except Exception as _e:
     GROUNDING_CONFIG = {}
     print(f"[GROUND] grounding module unavailable ({_e}); proceeding without cascade", file=sys.stderr)
 
+# 2026-06-06 regression fix: torchcodec is now pip-installed (for pyannote), and
+# this Stage 4 process's M3 callback detection imports torch-ecosystem libs that
+# eagerly probe torchcodec. torchcodec needs FFmpeg *shared* libs on the DLL
+# search path or it hard-fails ("Could not load libtorchcodec ... or one of its
+# dependencies"), which took out M3 entirely on the 6/6 run. speech.py already
+# does this for Stage 2; do it here too so the Stage 4 subprocess can load
+# torchcodec. Best-effort, idempotent, no-op off Windows. See
+# concepts/pass-b-false-negatives.md + clip-quality-remediation-2026-06.md Fix 4.
+try:
+    import ffmpeg_dll as _ffdll
+    _ffdir = _ffdll.enable_ffmpeg_dll_dir()
+    if _ffdir:
+        print(f"[STAGE4] FFmpeg shared libs on DLL path ({_ffdir}) — torchcodec can load", file=sys.stderr)
+except Exception as _ffe:
+    print(f"[STAGE4] ffmpeg_dll bootstrap skipped ({_ffe})", file=sys.stderr)
+
 # Phase 2: load chat features for hard-event ground truth (sub_count,
 # bit_count, raid_count, donation_count) consumed by the grounding cascade
 # in Pass B + Stage 6. Burst/emote scoring was removed 2026-05-01 — chat
