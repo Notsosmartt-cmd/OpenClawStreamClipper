@@ -85,7 +85,8 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/pipeline-optimizations-2026-06]] — Parallelization + RMS-gate + dead-chunk pre-filter sweep; implemented Stage 5/7 ffmpeg parallel + Pass B pre-filter + audio events RMS gate; ~1.6× combined wall-clock lift expected
 - [[concepts/self-consistency]] — Phase 5.2 N-candidate ranking for hallucination suppression
 - [[concepts/callback-detection]] — Tier-2 M3 architecture: cosine search + LLM judgment for cross-chunk arcs
-- [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection
+- [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection (+ §Evaluation: 15-word-summary weakness)
+- [[concepts/arc-aware-extraction]] — Plan: fix A1's 15-word bottleneck with structured "chunk cards" (Chain-of-Density + claim/prediction extraction); research-backed, phased
 - [[concepts/moment-discovery-upgrades]] — Tier-1/2/3 hub page: how Q1–Q5, M1–M3, A1–A3 fit together
 
 ## Sources
