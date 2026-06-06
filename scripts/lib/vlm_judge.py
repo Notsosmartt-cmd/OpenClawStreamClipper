@@ -20,6 +20,7 @@ import json
 import os
 import re
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -204,12 +205,22 @@ def swiss_tournament(
     max_comparisons: int = 30,
     on_compare: Optional[Callable[[Dict[str, Any], Dict[str, Any], Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    workers: int = 1,
 ) -> List[Dict[str, Any]]:
     """Seeded Swiss tournament. ``items`` are dicts already ordered best-first
     (seed). ``compare(a, b)`` returns a dict whose ``winner`` is ``"A"``,
     ``"B"`` or ``None`` (tie). Mutates each item with ``wins``/``games`` and
     returns them sorted by ``(wins desc, seed asc)``. Bounded by
     ``max_comparisons``; stops early if ``should_stop()`` is true.
+
+    ``workers > 1`` runs each round's pairings concurrently (Fix 2B). Pairings
+    are fixed from the round-start ranking, so the per-round comparisons are
+    mutually independent — each item appears at most once per round — and the
+    parallel result is identical to the serial path, just folded faster. The
+    standings only re-rank *between* rounds, which stays sequential. ``compare``
+    must therefore be safe to call from multiple threads (the real comparator
+    only issues an HTTP request + reads frame files; any shared-state mutation
+    in a ``compare`` wrapper must be locked by the caller).
     """
     n = len(items)
     for i, it in enumerate(items):
@@ -227,9 +238,12 @@ def swiss_tournament(
         return sorted(items, key=lambda x: (-x["wins"], x["_seed"]))
 
     for _r in range(max(1, rounds)):
+        if should_stop and should_stop():
+            return _rank()
         order = _rank()
         used: set = set()
         idx = 0
+        round_pairs: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
         while idx < n:
             a = order[idx]
             if kid(a) in used:
@@ -253,7 +267,27 @@ def swiss_tournament(
             used.add(kid(a))
             used.add(kid(b))
             played.add(frozenset((kid(a), kid(b))))
-            res = compare(a, b) or {}
+            round_pairs.append((a, b))
+            idx += 1
+
+        if not round_pairs:
+            break
+        # Respect the global comparison budget for this round.
+        budget = max_comparisons - comps
+        if budget <= 0:
+            return _rank()
+        if len(round_pairs) > budget:
+            round_pairs = round_pairs[:budget]
+
+        # Dispatch this round's independent comparisons (parallel when asked).
+        if workers > 1 and len(round_pairs) > 1:
+            with ThreadPoolExecutor(max_workers=min(workers, len(round_pairs))) as _pool:
+                results = list(_pool.map(lambda _ab: compare(*_ab) or {}, round_pairs))
+        else:
+            results = [compare(a, b) or {} for (a, b) in round_pairs]
+
+        # Fold results sequentially — race-free (each item is in one pair/round).
+        for (a, b), res in zip(round_pairs, results):
             comps += 1
             a["games"] += 1
             b["games"] += 1
@@ -267,7 +301,6 @@ def swiss_tournament(
                 b["wins"] += 0.5
             if on_compare:
                 on_compare(a, b, res)
-            if comps >= max_comparisons or (should_stop and should_stop()):
-                return _rank()
-            idx += 1
+        if comps >= max_comparisons or (should_stop and should_stop()):
+            return _rank()
     return _rank()

@@ -25,6 +25,7 @@ import json
 import math
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -76,6 +77,25 @@ def _rounds_for(n: int, cfg: Dict[str, Any]) -> int:
     return max(1, int(math.ceil(math.log2(max(2, n)))) + int(cfg.get("rounds_extra", 1)))
 
 
+def _resolve_judge_workers(cfg: Dict[str, Any]) -> int:
+    """Parallel pairwise-judge calls (Fix 2B). ``JUDGE_WORKERS`` env overrides
+    judge.json ``workers`` (default 2 — matches Stage 6's conservative cap for
+    the shared LM Studio vision model on the split GPU pool; the encoder may
+    serialize internally so >2-3 yields little)."""
+    raw = os.environ.get("JUDGE_WORKERS", "").strip()
+    if raw:
+        try:
+            v = int(raw)
+            if v >= 1:
+                return v
+        except ValueError:
+            pass
+    try:
+        return max(1, int(cfg.get("workers", 2)))
+    except (ValueError, TypeError):
+        return 2
+
+
 def run_judge(
     moments: List[Dict[str, Any]],
     *,
@@ -119,12 +139,18 @@ def run_judge(
                     if float(s.get("end", 0)) >= float(cs) and float(s.get("start", 0)) <= float(ce)]
             return " ".join((s.get("text", "") or "").strip() for s in segs)[:480]
 
+        _outage_lock = threading.Lock()
+
         def _cmp(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+            # Called concurrently when workers>1 (Fix 2B). compare_pair only
+            # reads a/b + issues an HTTP request, so the only shared state is
+            # the outage circuit-breaker counter — guard it.
             res = vlm_judge.compare_pair(a, b, work_dir=work_dir, transcript_fn=_tw, cfg=cfg)
-            if res.get("outage"):
-                outage_streak[0] += 1
-            elif res.get("ok"):
-                outage_streak[0] = 0
+            with _outage_lock:
+                if res.get("outage"):
+                    outage_streak[0] += 1
+                elif res.get("ok"):
+                    outage_streak[0] = 0
             return res
 
         compare = _cmp
@@ -150,11 +176,19 @@ def run_judge(
             "reason": (res.get("reason") or "")[:160],
         })
 
+    _judge_workers = _resolve_judge_workers(cfg)
+    print(
+        f"[JUDGE] Swiss tournament: {len(shortlist)} clips, "
+        f"<= {int(cfg.get('max_comparisons', 30))} comparisons, "
+        f"{_judge_workers} worker(s) (JUDGE_WORKERS to change)",
+        file=sys.stderr,
+    )
     ranked = vlm_judge.swiss_tournament(
         shortlist, compare,
         rounds=_rounds_for(len(shortlist), cfg),
         max_comparisons=int(cfg.get("max_comparisons", 30)),
         on_compare=_on, should_stop=_should_stop,
+        workers=_judge_workers,
     )
 
     total_games = sum(int(it.get("games", 0)) for it in ranked)
