@@ -45,14 +45,25 @@ if STREAM_TYPE_HINT:
     if hint_type:
         print(f"Stream type hint: '{hint_type}' — will bias segment classification", file=sys.stderr)
 
-# Chunk into ~10 minute windows for classification
-SEGMENT_CHUNK = 600  # 10 minutes
+# Chunk into windows for classification. Default 10 min (600s). Fix 1
+# (2026-06-06): the window size is now a knob — CLIP_SEGMENT_CHUNK=300 gives
+# finer granularity so a short off-type pocket (e.g. a 2-min debate inside a
+# gaming stream) gets its own label instead of being absorbed, at ~2x the
+# (cheap) classification calls. Default left at 600 on purpose (measure-first:
+# moment detection is already type-agnostic, so this mainly sharpens chunk-
+# sizing + Pass A thresholds — A/B 300 vs 600 via the env to decide).
+# CLIP_SEGMENT_OVERLAP adds read-context to each window without overlapping the
+# recorded (nominal, non-overlapping) segments. See detection-improvements-plan Fix 1.
+SEGMENT_CHUNK = int(os.environ.get("CLIP_SEGMENT_CHUNK", "600") or "600")
+SEGMENT_OVERLAP = int(os.environ.get("CLIP_SEGMENT_OVERLAP", "0") or "0")
 chunk_start = segments[0]["start"]
 raw_segments = []
 
 while chunk_start < max_time:
     chunk_end = chunk_start + SEGMENT_CHUNK
-    chunk_segs = [s for s in segments if s["start"] < chunk_end and s["end"] > chunk_start]
+    chunk_segs = [s for s in segments
+                  if s["start"] < chunk_end + SEGMENT_OVERLAP
+                  and s["end"] > chunk_start - SEGMENT_OVERLAP]
 
     if not chunk_segs:
         chunk_start += SEGMENT_CHUNK
