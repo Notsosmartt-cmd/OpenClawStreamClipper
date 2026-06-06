@@ -135,11 +135,21 @@ SUGGESTED_MODELS = {
     },
 }
 
+# Context-length dropdown tiers. The per-model "recommended" value is computed
+# dynamically by /api/models/context-recommendation (GGUF-exact KV cache + live
+# VRAM) and shown as a separate line under the dropdown — these labels are just
+# the selectable tiers and are intentionally model-AGNOSTIC (KV cache size
+# varies ~10x by architecture, so a fixed "~N GB" claim was misleading).
+#
+# 2026-06-06: removed the hardcoded "8192 ⭐ recommended" star — it was wrong.
+# 8192 is too small for Pass B (its prompt ~5k tokens + generation can exceed
+# 8192 on long chunks → silent truncation). 16384 is the practical floor.
 CONTEXT_LENGTH_GUIDE = [
-    {"value": 4096,  "label": "4096 — ~2 GB KV cache  (8 GB VRAM total)"},
-    {"value": 8192,  "label": "8192 — ~4 GB KV cache  (12 GB VRAM total) ⭐ recommended"},
-    {"value": 16384, "label": "16384 — ~8 GB KV cache (20 GB VRAM total)"},
-    {"value": 32768, "label": "32768 — ~16 GB KV cache (28 GB VRAM total)"},
+    {"value": 8192,   "label": "8192 — tight (⚠ risks Pass B truncation)"},
+    {"value": 16384,  "label": "16384 — Pass B safe floor"},
+    {"value": 32768,  "label": "32768 — comfortable (pipeline default)"},
+    {"value": 65536,  "label": "65536 — large (needs headroom)"},
+    {"value": 131072, "label": "131072 — very large (verify it fits)"},
 ]
 
 WHISPER_MODELS = [

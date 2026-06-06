@@ -114,6 +114,21 @@ Discord agent loads its own model on demand outside the pipeline stages — no V
 
 ---
 
+## Installed model quantizations (read from GGUF `general.file_type`, 2026-06-06)
+
+| Model | Quant | Weights | Notes |
+|---|---|---|---|
+| `qwen/qwen3.6-35b-a3b` | **Q4_K_M** | 22.1 GB | current text + vision |
+| `qwen/qwen3.6-27b` | Q4_K_M | 17.5 GB | |
+| `qwen/qwen3.5-9b` | Q4_K_M | 6.5 GB | |
+| `qwen/qwen3-vl-30b` | Q4_K_M | 19.6 GB | |
+| `qwen/qwen3-vl-8b` | Q4_K_M | 6.2 GB | |
+| `google/gemma-4-12b` / `26b-a4b` / `31b` | Q4_K_M | 7.6 / 18.0 / 19.9 GB | |
+| `openai/gpt-oss-20b` | **MXFP4** | 12.1 GB | native 4-bit MoE format |
+| `nvidia/nemotron-3-nano-4b` | **Q8_0** | 4.2 GB | 8-bit |
+
+All the main pipeline candidates are Q4_K_M. gpt-oss ships in its native MXFP4 (don't re-quant — degrades sharply). Read live with `python scripts/lib/gguf_meta.py <path.gguf>` (it surfaces `general.file_type`) or infer from the filename quant suffix.
+
 ## Per-stage `max_tokens` (output budget, independent of context)
 
 Each pipeline call to LM Studio has an output-token budget. These are **output limits, not context limits** — they cap how many tokens the LLM generates, NOT how much it can read. Increasing `context_length` doesn't require touching these. But if you reduce `context_length` to fit tight VRAM, you need to confirm `prompt_tokens + max_tokens ≤ context_length` at the chunk's call site.

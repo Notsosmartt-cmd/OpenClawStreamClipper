@@ -93,6 +93,7 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
 | BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips. **Narrowed 2026-06-04**: only the *API* `enable_thinking:false` param is ignored — LM Studio's app-side Custom Fields → Enable Thinking toggle DOES work on `qwen3.6-35b-a3b` (verified: `reasoning_tokens=0`). |
 | BUG 60 | Stage 6 vision dumps Pass B `why` field into `title` and `description` — clip filenames render as `Pattern socialcallout Friend roasts streamer for l.mp4` instead of a viral title. Grounding cascade misses this because the raw pattern text technically overlaps the transcript. Observed 2 of 10 clips on 2026-06-05 rakai run. Needs a post-process strip for `^Pattern <id>:\\s*` prefixes in `stage6_vision.py`. |
+| BUG 61 | Dashboard Context Window showed a hardcoded "8192 ⭐ recommended" static label (not GPU-aware) — and 8192 is actually too small for Pass B (prompt ~5k tokens + generation can exceed 8192 on long chunks → silent truncation). The user's `config/models.json` had drifted to `context_length: 8192`. Fixed: removed the static star (dynamic GGUF-exact recommendation replaces it), relabeled tiers honestly, restored config to 32768. |
 
 ### Pipeline / Rendering
 | # | Title |
@@ -122,6 +123,27 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 61 — Dashboard "8192 ⭐ recommended" was a misleading static label, and 8192 is too small for Pass B
+
+**Symptom**: 2026-06-06 — the dashboard's Context Window dropdown showed `8192 — ~4 GB KV cache (12 GB VRAM total) ⭐ recommended` as the recommended/selected value, even with `qwen/qwen3.6-35b-a3b` (a 22 GB model) loaded for both text and vision. The user's `config/models.json` had `context_length: 8192` (drifted from the documented 32768 default).
+
+**Cause** (two compounding issues):
+
+1. **The star was hardcoded.** `dashboard/_state.py::CONTEXT_LENGTH_GUIDE` had a static list where the 8192 entry's label literally contained `⭐ recommended`. It was never GPU-aware or model-aware — it claimed "recommended" regardless of the loaded model or available VRAM. The "~4 GB KV cache (12 GB VRAM total)" figures were generic and wrong: for qwen3.6-35b-a3b the KV cache at 8K is only ~640 MB and the model alone is 22.6 GB, so "12 GB VRAM total" was nonsense.
+
+2. **8192 is below the Pass B floor.** Pass B's prompt (transcript chunk ~2k tokens + pattern catalog ~1.5k + prior-context + instructions) runs ~5k prompt tokens, and `call_llm` sets `max_tokens=8000` for generation. While a non-thinking model usually generates only ~500 tokens (so 5k+0.5k = 5.5k fits in 8192 most of the time), a long chunk or a model that generates more can exceed 8192 → LM Studio truncates the prompt (losing transcript) or clips generation. **16384 is the practical floor; 32768 is the safe default** (see [[concepts/vram-budget]] §Per-stage max_tokens).
+
+**Fix** (2026-06-06):
+- Removed the hardcoded `⭐ recommended` from `CONTEXT_LENGTH_GUIDE`. The per-model recommendation is now the dynamic, GGUF-exact `/api/models/context-recommendation` line under the dropdown (shipped in `afe8591`).
+- Relabeled the static tiers model-agnostically and honestly: `8192 — tight (⚠ risks Pass B truncation)`, `16384 — Pass B safe floor`, `32768 — comfortable (pipeline default)`, plus new `65536` and `131072` tiers (the GGUF recommendation can suggest these — e.g. qwen3.6-35b-a3b fits 64K on the 28 GB pool).
+- Restored `config/models.json::context_length` from 8192 → 32768.
+
+**Note**: the dynamic recommendation only appears after the dashboard Flask process is restarted (new route) and the browser is hard-refreshed (new JS). Until then the dropdown shows the corrected static tiers.
+
+**Related**: [[concepts/vram-budget]] (per-stage max_tokens + context floor); `afe8591` (the GGUF-exact recommendation feature this corrects the static guide to defer to).
 
 ---
 
