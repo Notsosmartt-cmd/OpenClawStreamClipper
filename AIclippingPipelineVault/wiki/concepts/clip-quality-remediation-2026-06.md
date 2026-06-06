@@ -44,6 +44,9 @@ Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc p
 > - **Fix 1** ✅ — only **description** REGEN-fails now (4), zero title/hook — exactly the intended behaviour (description stays grounded; title/hook exempt).
 > - **❌ Same torchcodec failure recurred in a THIRD process** — `[MMR] sentence-transformers unavailable` (MMR diversity = `stage4_diversity.py`, its own subprocess). **Central fix:** `scripts/lib/sitecustomize.py` auto-runs the FFmpeg-DLL bootstrap at startup in *every* stage subprocess (scripts/lib is on `PYTHONPATH` via `child_env`). Verified the hook auto-loads `sentence_transformers`/`torchcodec` with no explicit call. See [[concepts/bugs-and-fixes#BUG 62]]. **Re-validate next run** (MMR + a fresh arc-guarantee case).
 
+> [!success] Validation run #3 2026-06-06 (`20260606_201401`) — CLEAN BILL OF HEALTH
+> 39m 20s, exit 0, 10 clips. **Zero torchcodec failures anywhere** (central sitecustomize fix confirmed). Both previously-broken processes recovered: **M3** found a real callback (`kept 1 callbacks … M3 added 1 callback moments`, a fulfillment arc), and **MMR** ran the real embedding diversity (`[MMR] Re-ordered 10 moments (lambda=0.7)`). **Arc path fully validated**: A1 produced **5 arcs**; the guarantee fired (irony T=11224, 0.977 over weakest 1.387) and that arc then **ranked #5/10 in the vision judge** — the Phase-3 decision rule is satisfied (see [[concepts/arc-aware-extraction]]). Everything else held: Fix 1 (only *description* REGEN-fails, zero title/hook; titles clean + scored 0.54–0.75), Fix 2B (judge 243s, churn **10/10 moved**), 73 cross-validated, de-tidy (chunk 5 → 5 moments). Re-queue dormant (no failures). **No regressions, no errors.** The session's whole fix sweep is now confirmed end-to-end.
+
 ---
 
 ## Fix 1 — Vision REGEN → ungrounded fallback titles (P1, quality)
