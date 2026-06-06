@@ -54,6 +54,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/clipping-pipeline]] — All stages (incl. optional 4.5 and 6.5) with detail, performance table, temp files
 - [[concepts/segment-detection]] — Stage 3: 5-type classification, stream profile, segment-aware weighting
 - [[concepts/highlight-detection]] — Stage 4: keywords + LLM + Pass C re-rank (selection axes A/B/C/E) + Pass D rubric → Stage 5.5 [[entities/vision-judge]]
+- [[concepts/clip-duration]] — How clip length is decided (no hard 30s clamp; default-fallback + length_penalty), chunk windowing, cross-chunk limits
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
 - [[concepts/captions]] — Subtitle style, hook card (top-of-video), per-clip palette/position randomization
