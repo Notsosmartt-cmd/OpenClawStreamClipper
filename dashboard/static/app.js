@@ -17,6 +17,7 @@ import {
 
 import {
     fetchModels, onModelChange, resetModel, saveModels,
+    applyRecommendedContext,
 } from "./modules/models-panel.js";
 
 import {
@@ -34,7 +35,7 @@ import {
 // Inline onclick= handlers in HTML need these on window.
 Object.assign(window, {
     selectVod,
-    onModelChange, resetModel,
+    onModelChange, resetModel, applyRecommendedContext,
     onHardwareDropdown,
     onFoldersChange, browseFolderFor, saveFolders,
     onOriginalityChange, browseMusicFolder, scanMusicLibrary, scanLibraries,

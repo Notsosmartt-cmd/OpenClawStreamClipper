@@ -6,16 +6,16 @@ sources: 3
 updated: 2026-06-05
 ---
 
-> [!success] Cross-vendor VRAM observability shipped 2026-06-05
-> `scripts/lib/vram_log.py` + `scripts/lib/model_registry.py` + `logtool vram` give per-stage VRAM trajectory across **both NVIDIA and AMD** cards on Windows, plus model-fit recommendations.
+> [!success] Cross-vendor VRAM observability + deterministic context prediction (2026-06-05)
+> Three modules + a dashboard feature give per-stage VRAM trajectory across **both NVIDIA and AMD** cards plus GGUF-exact context recommendations.
 >
 > - **NVIDIA**: `nvidia-smi` (total / used / free / util% / temp)
-> - **AMD on Windows**: PowerShell `Get-Counter '\GPU Adapter Memory(*)\Dedicated Usage'` for used + registry `HardwareInformation.qwMemorySize` for total
-> - **LM Studio**: `lms ps` + `lms ls` for loaded model IDs and on-disk sizes
-> - **Per-stage snapshots**: hooked into `common.set_stage()`; writes `{TEMP_DIR}/vram_log.json` and a one-line `[VRAM] …` entry to `pipeline.log`
-> - **Viewer**: `python scripts/logtool.py vram` shows current pool + last-run trajectory + per-model recommended context for both CUDA-single-card and Vulkan-pool fit modes
+> - **AMD on Windows**: PowerShell `Get-Counter '\GPU Adapter Memory(*)\Dedicated Usage'` for used + registry `HardwareInformation.qwMemorySize` for total (verified: RTX 5060 Ti 16311 MB + RX 6700 XT 12272 MB → 28583 MB pool)
+> - **Per-stage snapshots**: `vram_log.stage_snapshot()` hooked into `common.set_stage()`; writes `{TEMP_DIR}/vram_log.json` + a `[VRAM] …` line to `pipeline.log`
+> - **Viewer**: `python scripts/logtool.py vram` — current pool + last-run trajectory + per-model recommended context (CUDA-only + pool modes, with `gguf`/`heuristic` source flag)
+> - **Dashboard**: the Context Window card now shows a GPU-aware recommendation that updates whenever you change the text/vision model dropdown, with an "Apply" button. Calls `/api/models/context-recommendation`.
 >
-> Also: `python scripts/lib/model_registry.py recommend <model_id> <pool_mb>` computes the max context fitting weights + KV cache + 300 MB overhead + 500 MB safety margin on any hardware. Other users cloning the repo get the same prediction tooling for their adapters.
+> **The KV-cache math is now deterministic** (`scripts/lib/gguf_meta.py`): it reads the exact `block_count`, `head_count_kv`, `key_length`, `value_length`, and `sliding_window_pattern` from each model's GGUF header instead of a per-architecture rate guess. This corrected large errors — see the KV-cache section below.
 
 # VRAM Budget and Model Orchestration
 
@@ -29,23 +29,41 @@ Models are configured in `config/models.json` — the specific model ID and its 
 
 | Model | Weight VRAM | KV cache rate | Native max ctx |
 |---|---|---|---|
-| `qwen/qwen3.5-9b` (text or both slots), non-thinking | 6.5 GB (Q4) | ~130 KB/token | 256K |
-| `qwen/qwen3.6-27b` dense | 17.5 GB (Q4) | ~130 KB/token | 256K |
-| `qwen/qwen3.6-35b-a3b` MoE (~3B active) | 22.1 GB (Q4) | ~105 KB/token | 256K |
-| `qwen/qwen3-vl-8b` | 6.2 GB (Q4) | ~115 KB/token | 256K |
-| `qwen/qwen3-vl-30b` MoE | 19.6 GB (Q4) | ~110 KB/token | 256K |
-| `google/gemma-4-12b` multimodal | 7.6 GB (Q4) | **~390 KB/token** (large head_dim) | 128K |
-| `google/gemma-4-26b-a4b` MoE | 18.0 GB (Q4) | ~390 KB/token | 128K |
-| `google/gemma-4-31b` dense | 19.9 GB (Q4) | ~390 KB/token | 128K |
-| `openai/gpt-oss-20b` MXFP4 (~3B active MoE) | 12.1 GB | ~95 KB/token | 128K |
-| `nvidia/nemotron-3-nano-4b` hybrid | 4.2 GB (Q4) | ~60 KB/token | 32K |
+| `qwen/qwen3.5-9b` (text or both slots), non-thinking | 6.5 GB (Q4) | **128 KB/tok** (32L × 4kv × 256) | 256K |
+| `qwen/qwen3.6-27b` dense | 17.5 GB (Q4) | ~128 KB/tok | 256K |
+| `qwen/qwen3.6-35b-a3b` MoE (~3B active) | 22.1 GB (Q4) | **80 KB/tok** (40L × 2kv × 256) | 256K |
+| `qwen/qwen3-vl-8b` | 6.2 GB (Q4) | ~115 KB/tok | 256K |
+| `qwen/qwen3-vl-30b` MoE | 19.6 GB (Q4) | ~110 KB/tok | 256K |
+| `google/gemma-4-12b` multimodal | 7.6 GB (Q4) | **~36 KB/tok @ 32K** (SWA: 40/48 layers cap at 1024-tok window) | 256K |
+| `google/gemma-4-26b-a4b` MoE | 18.0 GB (Q4) | ~36 KB/tok @ 32K (SWA) | 256K |
+| `google/gemma-4-31b` dense | 19.9 GB (Q4) | ~36 KB/tok @ 32K (SWA) | 256K |
+| `openai/gpt-oss-20b` MXFP4 (~3B active MoE) | 12.1 GB | **48 KB/tok** (24L × 8kv × 64) | 128K |
+| `nvidia/nemotron-3-nano-4b` hybrid | 4.2 GB (Q4) | ~40 KB/tok (heuristic — GGUF not matched) | 32K |
 | [[entities/faster-whisper]] `large-v3-turbo` / `large-v3` | 3-4 / 6-7 GB | N/A (audio) | N/A |
 
-KV cache math (used by `model_registry.recommend_context`):
-`projected_total_mb = weights_mb + (ctx_tokens × kb_per_token / 1024) + 300 MB overhead + 500 MB safety`.
-Run `python scripts/lib/model_registry.py recommend <model> <pool_mb>` for the live calculation.
+> [!note] Gemma's "KB/tok" is context-dependent
+> Because Gemma's sliding-window layers cache a fixed 1024-token window, its effective KB/token DROPS as context grows: ~56 @ 16K, ~36 @ 32K, ~26 @ 65K, ~21 @ 131K. The Qwen/gpt-oss rates are flat (full attention on all layers). The recommendation tooling computes the exact piecewise value per context tier, so don't extrapolate a single rate for Gemma.
 
-**Key takeaway**: Gemma 4's KV cache is ~3× heavier per token than Qwen's due to its 256-dim head_dim. On the same 16 GB CUDA card, qwen3.5-9b fits ~65K context, but gemma-4-12b only fits ~16K. Pick the model first, then size context to fit.
+### KV-cache: deterministic from GGUF (corrected 2026-06-05)
+
+The KV-cache rates above are **measured from each model's GGUF header**, not estimated. `scripts/lib/gguf_meta.py::kv_cache_bytes()` reads `block_count × head_count_kv × (key_length + value_length) × 2 bytes` per token, and for sliding-window models (Gemma) it computes the SWA-aware cache exactly (most layers cap at the window, not the full context).
+
+**Why this matters — the old heuristic was wildly wrong for two architectures:**
+
+| Model @ 32K | Old flat-rate estimate | **GGUF-exact** | Error |
+|---|---|---|---|
+| qwen3.5-9b | 4160 MB | 4096 MB | +2% (lucky) |
+| qwen3.6-35b-a3b | 3360 MB | 2560 MB | +31% |
+| gpt-oss-20b | 3040 MB | 1536 MB | +98% |
+| **gemma-4-12b** | **12792 MB** | **1152 MB** | **+1010%** ⚠️ |
+
+Gemma 4's 11× error comes from its **sliding-window attention**: 40 of 48 layers only cache a 1024-token window, so its KV cache barely grows with context. The flat-rate heuristic treated all layers as full-attention. **Consequence**: the old tool said gemma-4-12b could only fit 16K context on a 16 GB card; the GGUF-exact math correctly says it fits the full **256K native** with room to spare.
+
+Projection formula: `total_mb = weights_mb + kv_cache_mb(ctx) + 300 MB overhead + 500 MB safety`.
+Live calculation: `python scripts/lib/model_registry.py recommend <model> <pool_mb>` or `predict <model> <ctx>`.
+Per-model GGUF dump: `python scripts/lib/gguf_meta.py <path_to.gguf> --context 32768`.
+
+**Model combos**: `model_registry.recommend_context_combo(text, vision, pool)` returns the SHARED context for a split config — the more-constrained of the two models, since `context_length` is a single config value but each model loads separately. When text==vision (consolidation), it's just that model.
 
 Whisper never co-resides with the LLM (the pipeline unloads LM Studio before Stage 2), so turbo's smaller footprint doesn't add LLM headroom — but it loads faster and transcribes ~2.5x quicker. See [[entities/faster-whisper]].
 

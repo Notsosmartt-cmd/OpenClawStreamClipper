@@ -533,9 +533,9 @@ def cmd_vram(args) -> int:
     print(_c("36",
         f"# Recommended context_length per installed LLM "
         f"(empty space in pool right now: {pool_free} MB)"))
-    print(f"  {'model':<26}  {'arch':<11}  {'wt':>5}  "
-          f"{'KV/tok':>7}  {'CUDA-only ctx':>13}  {'pool ctx':>10}  {'verdict':<14}")
-    print(f"  {'-'*26}  {'-'*11}  {'-'*5}  {'-'*7}  {'-'*13}  {'-'*10}  {'-'*14}")
+    print(f"  {'model':<26}  {'arch':<11}  {'wt GB':>5}  "
+          f"{'KVsrc':>9}  {'CUDA-only ctx':>13}  {'pool ctx':>10}  {'verdict':<15}")
+    print(f"  {'-'*26}  {'-'*11}  {'-'*5}  {'-'*9}  {'-'*13}  {'-'*10}  {'-'*15}")
     for m in models:
         # Skip embedding entries (they parse with weird fields)
         if "embed" in m["id"].lower() or "Nomic" in m.get("params", ""):
@@ -545,13 +545,15 @@ def cmd_vram(args) -> int:
         cuda_ctx = cuda_rec.get("recommended", 0) if "error" not in cuda_rec else 0
         pool_ctx = pool_rec.get("recommended", 0) if "error" not in pool_rec else 0
         fit_class = pool_rec.get("fit_class", "?")
-        verdict_color = ("32" if fit_class == "fits_easily" else
+        # 'gguf' = exact KV from model file metadata; 'heuristic' = rate table
+        kv_src = pool_rec.get("kv_source", "?") if "error" not in pool_rec else "?"
+        verdict_color = ("32" if fit_class in ("fits_easily", "fits_native_max") else
                           "33" if fit_class == "fits_tight" else
                           "31" if fit_class == "no_kv_room" else "0")
         cuda_str = f"{cuda_ctx:>5}" if cuda_ctx else "  N/A"
         line = (f"  {m['id']:<26}  {m['arch']:<11}  "
-                f"{m['size_gb']:>4.1f}  {m['arch'][:7]:>7}  "
-                f"{cuda_str:>13}  {pool_ctx:>10}  {fit_class:<14}")
+                f"{m['size_gb']:>5.1f}  {kv_src:>9}  "
+                f"{cuda_str:>13}  {pool_ctx:>10}  {fit_class:<15}")
         print(_c(verdict_color, line))
 
     print()
