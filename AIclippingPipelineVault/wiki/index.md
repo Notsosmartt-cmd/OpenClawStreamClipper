@@ -61,7 +61,8 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/originality-stack]] — TikTok 2025 defense: waves A (randomize) + B (framing) + C (groups) + D (TTS/music) + E (camera pan)
 
 ### System
-- [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence
+- [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence; GGUF-exact KV + per-stage max_tokens + "bigger context ≠ better"
+- [[concepts/vram-context-tooling]] — Cross-vendor VRAM observability + GGUF-exact context recommendation (vram_log / gguf_meta / model_registry / logtool vram / dashboard); engine-agnostic, workload-aware
 - [[concepts/context-management]] — Token compaction, session reset, history limit, compat flags
 - [[concepts/bare-metal-windows]] — **native Windows (no Docker)**: Python orchestrator, venv, dashboard + Discord native mode (2026-06-04)
 - [[concepts/deployment]] — Hardware requirements, LM Studio setup, Docker setup, step-by-step guide (legacy; superseded by bare-metal-windows)
