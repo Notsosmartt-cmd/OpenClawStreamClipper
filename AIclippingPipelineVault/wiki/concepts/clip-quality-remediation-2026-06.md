@@ -23,7 +23,7 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 | 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | ✅ **2B parallelized SHIPPED 2026-06-06** (~2×); 2A/2C documented |
 | 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | ✅ **3A SHIPPED 2026-06-06** (→ 0.83-0.96 spread); 3B deferred |
 | 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | ✅ **ACTUALLY FIXED 2026-06-06** (installed torchcodec 0.7.0 + FFmpeg-shared-lib discovery; warning-suppress kept as fallback) |
-| 5 | **A1 arcs don't win selection** — 5 arcs detected, 0 in final 10 | **P5 tuning (deferred)** | see [[concepts/arc-aware-extraction]] §Verified-in-production | Deferred to arc Phase 3 |
+| 5 | **A1 arcs don't win selection** — 5 arcs detected, 0 in final 10 | **P5 (was tuning — found a bug)** | see [[concepts/arc-aware-extraction]] §Verified-in-production | ✅ **SHIPPED 2026-06-06** (cross_validated strip bug + bounded arc guarantee) |
 
 Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc plan's Phase 3. Rationale: #1 is the only one a viewer sees; #2 is the biggest single time sink and partially a "should it even run?" question; #3/#4 are low-risk hygiene.
 
@@ -111,9 +111,11 @@ The deeper reason the raw range is itself narrow (1.33–1.54): the four selecti
 
 ---
 
-## Fix 5 — A1 arcs don't win selection (P5, deferred)
+## Fix 5 — A1 arcs don't win selection (P5)
 
-5 cross-chunk arcs were detected but none reached the final 10 (the 1.4× arc boost lost to keyword/LLM moments under the 1-clip-per-time-bucket distribution). This is **Phase 3 of [[concepts/arc-aware-extraction]]** — a precision/tuning question (boost weight vs bucket cap), explicitly gated behind the "quality > quantity" decision rule. Don't raise the arc boost blindly; measure via `judge_tournament` whether arc clips *win pairwise* first. Tracked there, not here.
+> [!success] SHIPPED 2026-06-06 (`stage4_moments.py`) — root cause was a bug, not just tuning
+> Investigation found the real reason 5 detected arcs reached 0 of the final 10: **(A)** arcs are created with `cross_validated=True` (skeleton-level evidence is high-signal) but the dedup loop's `m["cross_validated"] = False` (`:2240`) **hard-reset it** for any arc that didn't merge with a nearby keyword/LLM moment — i.e. every standalone arc — silently stripping its `×1.20` boost and contradicting the stated "first-class … cross_validated=True" intent. Also confirmed the `×1.4` creation boost is mostly **saturated away** by its `min(…,1.0)` cap, and `category="arc"` gets no style weight (though under `style=auto` no category does, so that's moot there).
+> **Fixes:** **(A)** `:2240` → `m.setdefault("cross_validated", False)` so arcs/callbacks keep their creation-time `True` (keyword/LLM still default False). **(D)** new **Phase 2.5** after bucket selection: if no arc won a slot, guarantee the single **highest-`final_score`** arc one — bounded to **one** swap, spacing-safe, behind a **quality floor** (`CLIP_ARC_GUARANTEE_MIN_RATIO`, default 0.6 — the arc must be ≥60% of the weakest selected clip's score so a weak arc can't evict a much stronger one). `CLIP_ARC_GUARANTEE=0` disables. Honors "a missed clip costs more than a false positive" without flooding. Unit-tested (swap-in / floor-reject / already-present no-op / spacing-skip / disabled). **Needs a validation run** + `logtool selection` / `judge_tournament` to confirm guaranteed arcs win pairwise (the original Phase-3 decision rule still applies — don't keep it if arc clips lose the vision-judge).
 
 ---
 

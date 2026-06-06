@@ -72,7 +72,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/style-profiles]] — Per-category AI editing profiles (zoom punches, freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues, kinetic captions, fingerprint perturbation); dispatched by Stage 7 when `chk-style-profiles` is on
 
 ### Reference
-- [[concepts/bugs-and-fixes]] — 60 bugs documented (latest: BUG 60 vestigial backtick fence-strip in stage4/stage6, BUG 59 HF symlink WinError); quick-nav by category
+- [[concepts/bugs-and-fixes]] — 61 bugs documented (latest: BUG 61 Pass C dedup strips A1 arcs' cross_validated, BUG 60 vestigial backtick fence-strip); quick-nav by category
 - [[concepts/open-questions]] — Score normalization, variable clip length, model switcher UI, known gaps
 - [[concepts/chat-signal]] — Phase 2 Pass A' architecture: Twitch chat → burst / emote density / hard event counts
 - [[concepts/speech-pipeline]] — Phase 3 Stage 2 architecture: WhisperX VAD + batched ASR + forced alignment, with faster-whisper fallback
