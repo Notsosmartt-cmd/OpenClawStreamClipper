@@ -77,12 +77,12 @@
                             <option value="2.0">2×</option>
                         </select>
                     </div>
-                    <div class="control-group" title="Pass B dead-chunk gate. Higher modes save time by skipping LLM calls on quiet chunks but risk false negatives. See logtool dead and the rakai Delaware case study.">
+                    <div class="control-group" title="Pass B dead-chunk gate. Higher modes skip the LLM on chunks judged 'dead' (no clip-worthy signal), saving time but risking false negatives (a missed clip). Ordered safest→fastest. sample = multi + a 1-in-N pass-through, so it skips a subset of multi → slower but safer. See logtool dead and the rakai Delaware case study.">
                         <label>Pass B gate</label>
                         <select id="sel-passb-gate">
                             <option value="off" selected>Off (default) — 0% faster, safest (zero false negatives)</option>
-                            <option value="multi">Multi — ~10% faster, very low false-negative risk</option>
-                            <option value="sample">Sample — ~22% faster, low false-negative risk</option>
+                            <option value="sample">Sample — ~10% faster, very low false-negative risk</option>
+                            <option value="multi">Multi — ~22% faster, low false-negative risk</option>
                             <option value="strict">Strict — ~28% faster, meaningful FN risk (legacy)</option>
                         </select>
                     </div>
