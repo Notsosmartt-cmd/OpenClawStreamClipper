@@ -942,6 +942,19 @@ else:
 # "score" when no raw is recorded (older entries / non-A2 paths).
 enriched.sort(key=lambda x: x.get("raw_score", x["score"]), reverse=True)
 
+# Item A (2026-06-06): spread the USER-FACING manifest score. Internally the
+# pipeline keeps raw_score (true magnitude) and a hard-clamped `score` for its
+# math (BUG 37/53), which pins multiple top clips at a visually-tied 1.000 in
+# the Discord card / dashboard. Recompute the final display `score` from
+# raw_score with the SAME soft-squash as Pass C (Fix 3A, _DISPLAY_SCALE=1.6)
+# so clips differentiate. Output-only: every score computation above already
+# ran on raw_score / the clamped score; this only reshapes the serialized
+# display value (Stage 7 reads m["score"]). See clip-quality-remediation Fix 3.
+_disp_scale = float(os.environ.get("CLIP_DISPLAY_SCORE_SCALE", "1.6") or "1.6") or 1.6
+for _e in enriched:
+    _rs = float(_e.get("raw_score", _e.get("score", 0.0)) or 0.0)
+    _e["score"] = round(min(max(_rs, 0.0) / _disp_scale, 1.0), 3)
+
 with open(f"{TEMP_DIR}/scored_moments.json", "w") as f:
     json.dump(enriched, f, indent=2)
 

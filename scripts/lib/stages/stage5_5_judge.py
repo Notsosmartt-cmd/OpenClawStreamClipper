@@ -63,6 +63,19 @@ def load_config() -> Dict[str, Any]:
         if isinstance(data, dict):
             cfg.update({k: v for k, v in data.items() if not k.startswith("_")})
             break
+    # Item B (2026-06-06): env overrides for the key speed/quality dials so a
+    # run can be tuned without editing judge.json (mirrors JUDGE_WORKERS).
+    for _env, _key in (
+        ("JUDGE_MAX_COMPARISONS", "max_comparisons"),
+        ("JUDGE_FRAMES_PER_CLIP", "frames_per_clip"),
+        ("JUDGE_SHORTLIST_MAX", "shortlist_max"),
+    ):
+        _v = os.environ.get(_env, "").strip()
+        if _v:
+            try:
+                cfg[_key] = int(_v)
+            except ValueError:
+                pass
     return cfg
 
 
@@ -217,8 +230,26 @@ def run_judge(
         it.pop("wins", None)
         it.pop("games", None)
 
+    # Item B (2026-06-06): rank-churn — how much did the judge actually reorder
+    # the incoming Pass C shortlist? This is the metric for deciding whether
+    # Stage 5.5 earns its (parallelized) cost: if churn is ~0 across runs, the
+    # tournament is re-deriving Pass C's order and you can skip it
+    # (judge.json enabled=false). `shortlist` is the incoming Pass C order;
+    # `ranked` holds the SAME dicts reordered, so id() matches.
+    _old_pos = {id(it): i for i, it in enumerate(shortlist)}
+    _moved = sum(1 for i, it in enumerate(ranked) if _old_pos.get(id(it)) != i)
+    _top_changed = bool(shortlist and ranked and id(shortlist[0]) != id(ranked[0]))
+    print(
+        f"[JUDGE] rank churn: {_moved}/{N} clips moved; "
+        f"#1 {'CHANGED' if _top_changed else 'unchanged'} "
+        f"({total_games} comparisons). If churn stays ~0 across runs, Stage 5.5 "
+        f"isn't earning its cost — set judge.json enabled=false to skip it.",
+        file=sys.stderr,
+    )
+
     moments_sorted = sorted(moments, key=_raw_of, reverse=True)
     return moments_sorted, {"status": "ok", "ranked": N, "games": total_games,
+                            "rank_churn": _moved, "top_changed": _top_changed,
                             "games_log": games_log}
 
 
