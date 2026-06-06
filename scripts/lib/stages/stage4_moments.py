@@ -424,6 +424,38 @@ SEGMENT_THRESHOLD = {
     "debate": 2,
 }
 
+# Fix 2 (2026-06-06): optional embedding-similarity category signal for Pass A.
+# The literal keyword match is brittle; an additive cosine-to-category-prototype
+# term catches semantically-relevant windows that lack the literal word. Reuses
+# the M3 sentence-transformers stack (callbacks.embed_segments). Additive,
+# capped, and GATED (CLIP_PASSA_EMBED, default OFF — it adds a model load to
+# Pass A and changes recall, so opt-in + validate). Failure-soft: if the stack
+# is unavailable, keywords still run. See concepts/detection-improvements-plan Fix 2.
+_PASSA_EMBED = os.environ.get("CLIP_PASSA_EMBED", "0").strip().lower() in ("1", "true", "yes", "on")
+# Empirically (2026-06-06) cosines between a 30s window and a one-line category
+# description run ~0.15-0.27 — short prototypes are only mildly discriminative
+# (the crudeness this fix targets is partly inherent to tiny prototypes). 0.20
+# fires on clear matches (hot_take/reactive ~0.26) while skipping ambiguous
+# ones. Richer prototypes (config/patterns.json signatures) are the follow-up
+# upgrade — see concepts/detection-improvements-plan.md Fix 2.
+_PASSA_EMBED_THRESHOLD = float(os.environ.get("CLIP_PASSA_EMBED_THRESHOLD", "0.20") or "0.20")
+_PASSA_EMBED_WEIGHT = float(os.environ.get("CLIP_PASSA_EMBED_WEIGHT", "2.5") or "2.5")
+_PASSA_EMBED_CAP = 1.0
+# One-line semantic prototype per category (1:1 with KEYWORD_SETS keys), lifted
+# from the legacy Pass B prompt so Pass A + that prompt share one source.
+_CATEGORY_DESCRIPTIONS = {
+    "hype": "exciting, intense, clutch plays, celebrations",
+    "funny": "comedy, fails, awkward moments, ironic situations",
+    "emotional": "vulnerable, heartfelt, real talk, genuine moments",
+    "hot_take": "unpopular opinions, bold claims that viewers will debate",
+    "storytime": "narrative buildup with payoff, anecdotes, storytelling",
+    "reactive": "strong reactions to something, rage, shock, disbelief",
+    "dancing": "physical performance, dancing, moves, physical comedy",
+    "controversial": "drama, call-outs, edgy statements, tea-spilling, beef",
+}
+_CATEGORY_ORDER = list(_CATEGORY_DESCRIPTIONS.keys())
+
+
 def keyword_scan(segments):
     """Segment-aware keyword scan with dynamic thresholds."""
     WINDOW_SIZE = 30
@@ -434,6 +466,41 @@ def keyword_scan(segments):
         return flagged
 
     max_time = max(s["end"] for s in segments)
+
+    # Fix 2: pre-embed every window's text + the category prototypes in ONE
+    # batched call (reuse the M3 stack), then cosine-compare per window below.
+    # Gated + failure-soft; _proto_emb stays None when disabled/unavailable.
+    _win_emb = {}
+    _proto_emb = None
+    if _PASSA_EMBED:
+        try:
+            import callbacks as _cb
+            _wins = []
+            _wt = segments[0]["start"]
+            while _wt < max_time:
+                _wsegs = [s for s in segments if s["start"] < _wt + WINDOW_SIZE and s["end"] > _wt]
+                if _wsegs:
+                    _wins.append({"start": _wt, "text": " ".join(s["text"] for s in _wsegs)})
+                _wt += STEP
+            if _wins:
+                _proto_docs = [{"text": _CATEGORY_DESCRIPTIONS[c]} for c in _CATEGORY_ORDER]
+                _res = _cb.embed_segments(
+                    _proto_docs + _wins,
+                    cache_dir=os.environ.get("CALLBACKS_CACHE_DIR"),
+                )
+                if _res is not None:
+                    _emb, _ = _res
+                    _n = len(_CATEGORY_ORDER)
+                    _proto_emb = _emb[:_n]
+                    for _i, _w in enumerate(_wins):
+                        _win_emb[_w["start"]] = _emb[_n + _i]
+                    print(f"[PASS A] embedding signal active ({len(_wins)} windows, "
+                          f"{_n} category prototypes)", file=sys.stderr)
+        except Exception as _ee:
+            print(f"[PASS A] embedding signal unavailable ({type(_ee).__name__}: {_ee}); "
+                  "keywords only", file=sys.stderr)
+            _proto_emb = None
+
     t = segments[0]["start"]
 
     while t < max_time:
@@ -462,6 +529,24 @@ def keyword_scan(segments):
                     weighted = cat_signals * weight
                     categories_found[cat] = weighted
                     total_signals += weighted
+
+            # Fix 2: additive embedding-similarity term (semantic recall) — a
+            # window that's clearly e.g. "storytime" by meaning but lacks the
+            # literal keywords still scores. Capped + segment-weighted so it
+            # augments the keyword count without dominating it.
+            if _proto_emb is not None:
+                _wv = _win_emb.get(window_start)
+                if _wv is not None:
+                    for _ci, _cat in enumerate(_CATEGORY_ORDER):
+                        _sim = float((_wv * _proto_emb[_ci]).sum())
+                        if _sim >= _PASSA_EMBED_THRESHOLD:
+                            _term = min(
+                                (_sim - _PASSA_EMBED_THRESHOLD) * _PASSA_EMBED_WEIGHT
+                                * weights.get(_cat, 1.0),
+                                _PASSA_EMBED_CAP,
+                            )
+                            categories_found[_cat] = categories_found.get(_cat, 0) + _term
+                            total_signals += _term
 
             # Universal signals
             excl_count = sum(1 for t_text in texts if t_text.endswith("!") or "!!" in t_text)
