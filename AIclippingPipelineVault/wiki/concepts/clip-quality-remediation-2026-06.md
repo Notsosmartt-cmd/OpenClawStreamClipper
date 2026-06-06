@@ -20,7 +20,7 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 | # | Issue | Severity | Evidence (this run) | Status |
 |---|---|---|---|---|
 | 1 | **Vision REGEN → ungrounded fallback titles** — clips ship raw pattern-name titles like `"Pattern setupexternalcontradiction Streamer claims"` | **P1 quality (user-visible)** | many `REGEN still fails for title/hook (judge_low_weighted)`; final manifest title byte-identical to the garbage string | ✅ **SHIPPED 2026-06-06** (Fix 1A-D) |
-| 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | Plan below |
+| 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | ✅ **2B parallelized SHIPPED 2026-06-06** (~2×); 2A/2C documented |
 | 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | Plan below |
 | 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | Plan below |
 | 5 | **A1 arcs don't win selection** — 5 arcs detected, 0 in final 10 | **P5 tuning (deferred)** | see [[concepts/arc-aware-extraction]] §Verified-in-production | Deferred to arc Phase 3 |
@@ -59,6 +59,11 @@ When the single REGEN retry (`stage_6_retry_count=1`, `stage6_vision.py:605-668`
 ---
 
 ## Fix 2 — Stage 5.5 vision-judge tournament cost (P2, perf)
+
+> [!success] SHIPPED 2026-06-06 (`vlm_judge.py`, `stage5_5_judge.py`, `config/judge.json`)
+> **2B (parallelize) — the main win.** `swiss_tournament()` gained a `workers` param: each Swiss round now collects its (independent) pairings and dispatches the `compare()` calls through a `ThreadPoolExecutor`, folding results sequentially; rounds still re-rank between themselves. Verified by unit test that parallel and serial produce **identical rankings** (pairings are fixed from the round-start order, each item plays once per round, so it's race-free). `stage5_5_judge.py` resolves `JUDGE_WORKERS` env → `judge.json:workers` (default **2**, matching Stage 6's cap for the shared LM Studio vision model on the split pool) and locks the `outage_streak` circuit-breaker. Expected ~1.8-2× → **620 s ≈ 320-340 s** at 2 workers.
+> **2A (gate).** The investigation confirmed Stage 5.5 only **re-orders/re-weights a set that renders in full** (`stage6.py:40`), so the existing `judge.json:enabled=false` is already the correct hard off-switch — documented in the config `_workers_note`. Not defaulted off (it still orders the clips); the user can disable after measuring whether the re-rank earns its (now-halved) cost.
+> **2C (dials).** `max_comparisons` / `frames_per_clip` / `shortlist_max` were already config-tunable; `workers` added alongside. No default changes (avoids quality regression) — the parallelization is the win.
 
 ### Root cause (confirmed, file:line)
 Stage 5.5 is a **seeded Swiss tournament** (`vlm_judge.py:199-273`) re-ranking the top `min(shortlist_max=12, n)` Pass-C moments. It issues up to `max_comparisons=30` pairwise vision calls (`config/judge.json:9`; empirically **24** this run), each sending **2 clips × 4 frames = 8 inlined JPEGs** + transcript blocks to the 35b (`vlm_judge.py:148-196`). At **~25.8 s/call, strictly serial**, that's the 620 s.

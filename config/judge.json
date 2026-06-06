@@ -11,5 +11,7 @@
   "per_pair_timeout_seconds": 60,
   "max_tokens": 1200,
   "stage_timeout_seconds": 600,
-  "fail_streak_limit": 3
+  "fail_streak_limit": 3,
+  "workers": 2,
+  "_workers_note": "Fix 2B (2026-06-06): parallel pairwise-judge calls within each Swiss round (rounds still re-rank sequentially). 2 matches Stage 6's cap for the shared LM Studio vision model on the split NVIDIA+AMD pool; the encoder may serialize so >2-3 yields little. JUDGE_WORKERS env overrides. To skip Stage 5.5 entirely (it only re-orders a set that renders in full), set enabled=false."
 }

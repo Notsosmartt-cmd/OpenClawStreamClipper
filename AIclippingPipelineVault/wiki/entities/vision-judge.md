@@ -3,7 +3,7 @@ title: "Vision Judge (Stage 5.5)"
 type: entity
 tags: [vision-judge, stage-5-5, tournament, swiss, pairwise, multimodal, selection, reranking, plan-1a, module]
 sources: 1
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Vision Judge (Stage 5.5)
@@ -11,6 +11,9 @@ updated: 2026-06-04
 The stage that finally lets the **multimodal model decide *which* moments win**, not just title them. Built 2026-06-04 as **Phase 1.a** of [[concepts/clipping-quality-overhaul]] — the shared substrate the five selection axes (A-E) plug into.
 
 Runs **between Stage 5 (frame extraction) and Stage 6 (vision enrichment)**, after the vision model is already loaded, so it adds **no extra model load**. Wired in `scripts/pipeline/stages/stage6.py` via `common.run_module("stages/stage5_5_judge.py", check=False)` (failure-soft).
+
+> [!success] Parallelized 2026-06-06 (Fix 2B) — was the run's #2 time sink (620 s)
+> `swiss_tournament()` now dispatches each round's independent pairings through a `ThreadPoolExecutor` (`workers` param; `JUDGE_WORKERS` env / `judge.json:workers`, default 2), folding results sequentially. Rounds still re-rank between themselves, and pairings are fixed from the round-start order so each item plays once per round — the parallel result is **identical to the serial path** (unit-verified), just ~2× faster. Note Stage 5.5 only **re-orders a set that renders in full** ([[concepts/clip-quality-remediation-2026-06]] Fix 2): set `judge.json:enabled=false` to skip it entirely if the re-rank isn't worth even the halved cost.
 
 > [!note] Why a *tournament*, not an absolute score
 > Research (BLITZRANK, Vote-in-Context) and the [[concepts/clipping-intelligence]] evaluation agree: VLMs are weak at absolute 0-10 scoring but strong at **relative "which of these two is better"**. So the judge ranks by **pairwise comparison**, deliberately *not* reproducing the opaque-absolute "virality score" of commercial clippers ([[concepts/clipping-quality-overhaul]] differentiation stance).
