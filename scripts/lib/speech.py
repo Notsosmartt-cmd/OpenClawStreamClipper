@@ -34,8 +34,25 @@ import json
 import os
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Fix 4 (2026-06-06): pyannote.audio 4.x emits a one-time UserWarning at import
+# ("torchcodec is not installed correctly ...") and falls back to torchaudio/
+# soundfile for audio decoding. On this Windows host the fallback is the
+# CORRECT path, not a degradation: torchcodec needs FFmpeg *shared* libraries,
+# but the installed FFmpeg (C:\ffmpeg\bin) is a STATIC build with no av*.dll, so
+# torchcodec can never load here — and Stage 2 pre-extracts audio to WAV, which
+# soundfile decodes perfectly, so torchcodec would add nothing. Silence ONLY
+# this benign message (regex-scoped, not a blanket ignore) so diarization logs
+# stay clean. (?s) lets .* cross the leading newline in the warning text.
+# See concepts/clip-quality-remediation-2026-06.md Fix 4.
+warnings.filterwarnings(
+    "ignore",
+    message=r"(?s).*torchcodec is not installed correctly",
+    category=UserWarning,
+)
 
 DEFAULT_SPEECH_CONFIG = Path(
     os.environ.get("CLIP_SPEECH_CONFIG", "/root/.openclaw/speech.json")

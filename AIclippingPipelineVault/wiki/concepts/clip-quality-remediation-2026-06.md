@@ -22,7 +22,7 @@ Derived from the 2026-06-06 review of the `20260606_071210_20260424_2xRaKai` ses
 | 1 | **Vision REGEN → ungrounded fallback titles** — clips ship raw pattern-name titles like `"Pattern setupexternalcontradiction Streamer claims"` | **P1 quality (user-visible)** | many `REGEN still fails for title/hook (judge_low_weighted)`; final manifest title byte-identical to the garbage string | ✅ **SHIPPED 2026-06-06** (Fix 1A-D) |
 | 2 | **Stage 5.5 vision-judge tournament cost** — 620 s (~18% of wall-clock), serial | **P2 perf** | `Stage 5.5/8 — Vision Judge: 620.0s`; 24 comparisons × ~25.8 s, sequential | ✅ **2B parallelized SHIPPED 2026-06-06** (~2×); 2A/2C documented |
 | 3 | **Pass C score display saturates at 1.000** — all 10 finals show `score=1.000` | **P3 clarity (cosmetic)** | raw 1.33–1.54 → displayed 1.000; selection itself is correct | ✅ **3A SHIPPED 2026-06-06** (→ 0.83-0.96 spread); 3B deferred |
-| 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | Plan below |
+| 4 | **torchcodec not installed** — diarization on fallback decoder | **P4 robustness** | `torchcodec is not installed correctly…`; still got 4621/4706 segments | ✅ **SHIPPED 2026-06-06** (warning suppressed; install infeasible — static FFmpeg) |
 | 5 | **A1 arcs don't win selection** — 5 arcs detected, 0 in final 10 | **P5 tuning (deferred)** | see [[concepts/arc-aware-extraction]] §Verified-in-production | Deferred to arc Phase 3 |
 
 Sequencing recommendation: **1 → 2 → 3 → 4**, with 5 folded into the arc plan's Phase 3. Rationale: #1 is the only one a viewer sees; #2 is the biggest single time sink and partially a "should it even run?" question; #3/#4 are low-risk hygiene.
@@ -105,7 +105,9 @@ The deeper reason the raw range is itself narrow (1.33–1.54): the four selecti
 
 ## Fix 4 — torchcodec / diarization robustness (P4)
 
-`pyannote` warns `torchcodec is not installed correctly so built-in audio decoding will fail` and falls back (it still labeled 4621/4706 segments, so M1 works, just fragile + noisy). **Plan:** install a torchcodec build matching the venv's torch/CUDA in `.venv`, or pin a known-good version in the requirements; confirm the warning disappears and diarization coverage holds. Low effort, low risk, pure robustness. See [[entities/diarization]].
+> [!success] SHIPPED 2026-06-06 (`speech.py`) — but NOT by installing torchcodec
+> **Investigation overturned the original plan.** Installing torchcodec is **infeasible and pointless on this host**: (1) the venv is `torch 2.8.0+cu128` / py3.12 and the only available torchcodec wheels start at 0.7.0 (ABI-matched to a different torch — a mismatch risks breaking the `torch` the *entire* pipeline depends on); (2) more fundamentally, **`C:\ffmpeg\bin` is a STATIC FFmpeg build with no `av*.dll` shared libraries**, which torchcodec *requires* — so even a successful pip install would fail at runtime with "can't load libavcodec". And it would buy nothing: **Stage 2 pre-extracts audio to WAV**, which `soundfile`/`torchaudio` (both present) decode perfectly. The `pyannote` fallback path is the *correct* path here, not a degradation (it labeled 4621/4706 segments).
+> **Fix shipped:** a **regex-scoped** `warnings.filterwarnings` at the top of `speech.py` silences *only* the benign `torchcodec is not installed correctly` UserWarning (uses `(?s)` to cross the message's leading newline; unit-verified it suppresses that message while letting unrelated warnings through). Diarization logs are now clean; coverage is unchanged. See [[entities/diarization]].
 
 ---
 
