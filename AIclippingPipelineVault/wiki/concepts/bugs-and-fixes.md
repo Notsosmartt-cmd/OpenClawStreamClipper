@@ -92,6 +92,7 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 53 | Stage 6 vision boost saturated at 1.0 — read clamped score not raw, so `transcript_score × 1.15` re-clamped to 1.000 → "vision BOOST: 1.000 -> 1.000" no-op |
 | BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
 | BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips. **Narrowed 2026-06-04**: only the *API* `enable_thinking:false` param is ignored — LM Studio's app-side Custom Fields → Enable Thinking toggle DOES work on `qwen3.6-35b-a3b` (verified: `reasoning_tokens=0`). |
+| BUG 60 | Stage 6 vision dumps Pass B `why` field into `title` and `description` — clip filenames render as `Pattern socialcallout Friend roasts streamer for l.mp4` instead of a viral title. Grounding cascade misses this because the raw pattern text technically overlaps the transcript. Observed 2 of 10 clips on 2026-06-05 rakai run. Needs a post-process strip for `^Pattern <id>:\\s*` prefixes in `stage6_vision.py`. |
 
 ### Pipeline / Rendering
 | # | Title |
@@ -121,6 +122,49 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
 | BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
 | REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+
+---
+
+## BUG 60 — Stage 6 vision leaks Pass B "Pattern <id>:" reasoning text into clip title and description
+
+**Symptom**: 2026-06-05 17:06 rakai run produced two final clips with malformed user-facing fields:
+
+```
+title:        "Pattern socialcallout Friend roasts streamer for l"
+description:  "Pattern social_callout: Friend roasts streamer for looking like 'Mike Jackson'"
+filename:     Pattern_socialcallout_Friend_roasts_streamer_for_l.mp4
+```
+
+```
+title:        "The Fake Blood Reveal"     (← OK)
+description:  "Pattern social_callout: Streamer aggressively calls out the group for 'playing games with my sis' an"     (← Pass B `why` field copied in)
+```
+
+These look broken when surfaced in Discord summaries / clip galleries because they expose the LLM's internal pattern-catalog reasoning to the end user.
+
+**Cause**: Stage 6's vision VLM occasionally returns its raw Pass B `why` text in the `title` and/or `description` fields of its JSON output. The Pass B `why` for these patterns starts with `Pattern <id>: <description>`. The Stage 6 grounding cascade (Tier-1 word-overlap + main-model judge) reads these fields and checks whether they're grounded in the transcript — but a pattern-reasoning string like `"Pattern social_callout: Friend roasts streamer for looking like 'Mike Jackson'"` literally contains the words "roasts streamer Mike Jackson" which DO overlap the transcript. So the grounding cascade considers it grounded and passes it through.
+
+Result: the title field is filled with a pattern-catalog signature instead of a viral hook, and the description field carries the LLM's internal classification reasoning. Both compound: Stage 7 uses `title` as the filename (sanitized to alphanumeric + spaces) so `Pattern_socialcallout_Friend_roasts_streamer_for_l.mp4` is what lands on disk.
+
+**Fix** (not yet shipped — flagged 2026-06-05 18:00): add a post-process step in `scripts/lib/stages/stage6_vision.py` after the VLM call and before the grounding cascade:
+
+```python
+_PATTERN_PREFIX = re.compile(r"^\s*Pattern[\s_]+\w+\s*[:\-—]\s*", re.IGNORECASE)
+for _field in ("title", "description", "hook"):
+    _v = parsed.get(_field)
+    if isinstance(_v, str):
+        _stripped = _PATTERN_PREFIX.sub("", _v).strip()
+        if _stripped and _stripped != _v:
+            parsed[_field] = _stripped
+```
+
+If the stripped title is empty (LLM returned literally just `"Pattern social_callout"`), fall back to `_derive_baseline_title(transcript_why, transcript_category, T)` which builds a clean "Funny moment at 12:34"-style title.
+
+**Defense in depth**: tighten the Stage 6 vision prompt to explicitly forbid `Pattern <id>:` prefixes in the title/description/hook fields. The prompt already says "short viral title rooted in the payoff and transcript" — adding "do NOT include catalog signatures like 'Pattern social_callout:' in the title; that's internal reasoning, not the user-facing label" should help. The regex strip is the belt; the prompt update is the suspenders.
+
+**Verification when shipped**: run on the rakai VOD; confirm the T=7749 and T=9985 clips render with clean titles (e.g. "Friend Roasts Streamer Looking Like Mike Jackson") and descriptions that don't start with `Pattern <id>:`.
+
+**Related**: [[concepts/vision-enrichment]] (Stage 6 design); [[entities/grounding]] (the 2-tier cascade that should have caught this but doesn't because the text technically overlaps the transcript); [[#BUG 26]] (vision hallucinates Twitch jargon — same family of "vision output needs more guardrails").
 
 ---
 

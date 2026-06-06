@@ -192,6 +192,76 @@ Real-world wall-clock verification requires a full VOD run.
 
 ---
 
+## Observations from the 2026-06-05 17:06 rakai run (post-shipment review)
+
+Production review of the rakai re-run that ran with everything from rounds 1-4 + BLAS-pin + audio fast-load (commits up to `2e4aca8`). Five findings worth tracking for the next session — none blocking, but each represents a discrete quality or tuning opportunity.
+
+### 1. Title pollution from Pass B reasoning text → [[concepts/bugs-and-fixes]] §BUG 60
+
+Two of ten final clips had their `title` or `description` filled with the LLM's raw `Pattern <id>: ...` Pass B output. Visible as filenames like `Pattern_socialcallout_Friend_roasts_streamer_for_l.mp4`. The grounding cascade misses this because the pattern-reasoning text technically overlaps the transcript. Fix: regex strip of `^Pattern[\s_]+\w+\s*[:\-—]\s*` in `stage6_vision.py` post-process step + prompt-side prohibition. Selection-neutral quality fix, ~10 lines. See [[concepts/bugs-and-fixes]] §BUG 60 for full details.
+
+### 2. Global axis-multiplier clamp is binding 100% of candidates
+
+`axis_report` from this run: `global_clamp: {floor: 0.8, ceil: 1.35, bound_count: 253}` over `candidates: 253`. Every single Pass C candidate had its accumulated axis-multiplier product clamped to the [0.8, 1.35] window. The four axes' individual ceilings each top out at ~1.10-1.18; their product theoretically reaches ~1.9, so clamping is doing its safety job. But 100% bind rate suggests the per-axis ceilings are too aggressive for the product to remain naturally bounded.
+
+Implication for the Delaware case (see [[concepts/case-rap-battle-missed]] §2026-06-05): rare patterns that DON'T trigger the axes get crushed by candidates that hit the ceiling. Either lower per-axis ceilings so the natural product fits the clamp, raise the global ceiling, or add pattern-aware compensation (Phase 2 rare-pattern bonus). The `logtool selection` tool shipped 2026-06-05 will show the per-axis breakdown for the next run so this can be tuned empirically.
+
+### 3. Chat features disabled — selection signal loss
+
+`dependencies.chat_features: False` because `vods/.chat/<vod>.jsonl` doesn't exist and chat auto-fetch is disabled. Effects:
+- Pass A loses chat hard-events (sub/raid/donation) for boost
+- Pass B prompts run without chat context
+- Stage 6 can't verify sub/raid/donation claims against actual chat (grounding hard-event check no-ops)
+- Pass C `engagement` axis is degraded (relies on sustained chat discussion as a signal)
+
+Not a bug — auto-fetch is explicit user config. But enabling [[entities/chat-fetch]] auto-fetch (anonymous Twitch GraphQL + TwitchDownloader importer) would improve every VOD where chat is fetchable. **Next session idea**: surface an auto-fetch checkbox in the dashboard clip controls so the operator can toggle per-clip without editing config.
+
+### 4. Stage 7 render parallelization under-scaled (analog of the audio_events BLAS issue)
+
+Observed: 412.9 s for 10 clips with `STAGE7_WORKERS=4`. Implied per-clip wall-clock: ~41 s. Serial baseline was ~67 s/clip × 10 = ~670 s. So **1.6× speedup** instead of the predicted 3-4×.
+
+Different mechanism from audio_events — Stage 7 isn't BLAS-bound; it's ffmpeg subprocesses. Likely contributors:
+- Each ffmpeg uses ~6 internal threads → 4 workers × 6 = 24 threads on 24 cores → kernel scheduling overhead
+- ffmpeg has serial-ish phases (init, seek, finalize) that don't parallelize
+- The `originality.py` subprocess per clip may add a sequential portion not parallelized by `STAGE7_WORKERS`
+
+**Tuning candidates for the next session** (no code change, just env-var experiments):
+- `STAGE7_WORKERS=6` (oversubscribed but each ffmpeg gets less thread share — measure)
+- `STAGE7_WORKERS=3` and bound each ffmpeg explicitly with `-threads 8` (sums to 24 = full CPU)
+- Profile a single clip render with `time` to see how much is ffmpeg vs. ancillary subprocesses
+
+### 5. Pass B chunk timing is steady at ~37s/chunk — Pass B parallel HTTP would help less now
+
+Per-chunk timings across all 25 chunks:
+
+```
+Chunks 1-10:   36.7 / 38.7 / 39.6 / 36.8 / 37.3 / 35.4 / 38.1 / 36.0 / 36.3 / 36.3
+Chunks 11-20:  35.5 / 37.5 / 36.5 / 36.7 / 36.7 / 34.7 / 37.3 / 41.1 / 37.7 / 38.6
+```
+
+Standard deviation ~1.5 s, mean ~37 s. **The qwen3.6-35b-a3b MoE w/ thinking-off on Vulkan pool is delivering consistent throughput** with no slow-chunk outliers (which used to happen on hybrid-thinking builds due to BUG 20 token exhaustion).
+
+Math: ~37 s × 25 chunks = 925 s of LLM time + ~165 s of axis/shape/summary work = ~1090 s total (matches observed Stage 4 timing).
+
+**Implication for the deferred Pass B parallel HTTP item**: with each chunk at 37 s instead of the old ~90+ s, the relative impact of parallelization is smaller. 4-way parallel HTTP would cut Pass B from ~18 min → ~6 min (12 min savings), still worth pursuing but no longer the dominant share of the run.
+
+### 6. Grounding regen fired on 4 of 10 final clips (40%)
+
+Tier-3 grounding cascade caught ungrounded fields on T=5798 (description), T=2895 (description), T=8326 (hook), T=8023 (description) — retried each with a stricter prompt. Working as designed.
+
+If this 40% rate is consistent across runs, the first-pass Stage 6 prompt is letting through more ungrounded text than it should. Tightening the first-pass prompt with the explicit `Pattern <id>:` prohibition from BUG 60 might also reduce regens — many regens are likely fixing the same pattern-text leak.
+
+### Recommended priority order for the next session
+
+1. **Strip `Pattern <id>:` prefixes** (BUG 60) — 10 lines, selection-neutral, quality positive
+2. **Verify BLAS-pin + audio fast-load actually delivered** on the next run (look for `method=soundfile+polyphase` and `parallel x8 6-8 win/s` in the log)
+3. **Verify `logtool selection` populates** on the next run
+4. **Phase 2 rare-pattern bonus** — only after Phase 1 trace confirms axis-gap reproduces
+5. **Stage 7 worker-count A/B** — env-var-only experiment
+6. **Chat auto-fetch toggle** in dashboard — moderate effort, ongoing benefit
+
+---
+
 ## Dashboard UI (added round 4, 2026-06-04)
 
 The Pass B dead-chunk gate mode is exposed as a dropdown in the dashboard's clip control panel — `Pass B gate` next to the Speed dropdown. Options match the env var values: `Off` (default — no skips, safest), `Multi` (6-signal), `Sample` (multi + 1-in-3 pass-through), `Strict` (legacy 2-signal). The selected mode is forwarded to the pipeline as `CLIP_PASSB_DEAD_GATE` in both Docker (`docker exec -e`) and bare-metal (`Popen env=`) paths. The other knobs in the env-var table below remain env-only — they're tuner knobs more than user-facing modes.
