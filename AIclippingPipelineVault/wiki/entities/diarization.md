@@ -3,7 +3,7 @@ title: "Speaker diarization (Tier-2 M1)"
 type: entity
 tags: [diarization, whisperx, pyannote, hf-token, pass-a, pass-c, tier-2, m1, module, stage-2, stage-4, audio, signals]
 sources: 1
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Speaker diarization
@@ -11,6 +11,9 @@ updated: 2026-06-04
 WhisperX + pyannote-audio integration that assigns a `speaker` label (e.g. `SPEAKER_00`, `SPEAKER_01`) to every Whisper segment after alignment. Lets the pipeline distinguish a 60 s solo monologue from 60 s of streamer + friend banter — different content profiles that previously looked identical to Pass A keyword scanning.
 
 Introduced 2026-04-27 as Tier-2 M1 of the [[concepts/moment-discovery-upgrades]]. Lives inside [[entities/speech-module]] (`_maybe_diarize()` helper); not a separate file because it's a thin WhisperX wrapper.
+
+> [!note] torchcodec warning is benign (2026-06-06, Fix 4)
+> `pyannote.audio` 4.x logs `torchcodec is not installed correctly so built-in audio decoding will fail` and falls back to `soundfile`/`torchaudio`. On this Windows host that fallback is **correct, not degraded**: torchcodec needs FFmpeg *shared* libraries but `C:\ffmpeg\bin` is a static build, and Stage 2 pre-extracts audio to WAV (which `soundfile` reads natively). The warning is now suppressed by a regex-scoped `warnings.filterwarnings` in `speech.py`. Coverage is unaffected (4621/4706 segments on the 6/6 rakai run). See [[concepts/clip-quality-remediation-2026-06]] Fix 4.
 
 ---
 
