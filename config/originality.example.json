@@ -1,14 +1,14 @@
 {
   "framing": "blur_fill",
   "originality": true,
-  "stitch": true,
-  "arc_stitch": true,
+  "stitch": false,
+  "arc_stitch": false,
   "jump_cuts": "off",
-  "flash_cuts": true,
+  "flash_cuts": false,
   "narrative": true,
   "camera_pan": false,
   "tts_vo": false,
   "music_bed": "",
   "music_tier_c": false,
-  "style_profiles": true
+  "style_profiles": false
 }

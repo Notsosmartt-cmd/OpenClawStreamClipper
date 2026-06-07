@@ -28,6 +28,9 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 
 New panel driving the [[concepts/originality-stack]]. Every control posts to `PUT /api/originality` on change (persisted to `config/originality.json`) and is forwarded as `CLIP_*` env vars when the pipeline spawns.
 
+> [!note] `config/originality.json` is git-ignored runtime state (2026-06-07)
+> This file is **rewritten by the dashboard on every toggle**, so it was untracked + added to `.gitignore` — otherwise each settings change showed as a `config/` modification and tripped the wiki Stop-hook. The committed default is **`config/originality.example.json`**; the loader (`config_io.load_originality_config`) falls back to `_state.DEFAULT_ORIGINALITY` when the file is absent and `save_originality_config` recreates it on first save, so a fresh clone needs nothing.
+
 | Control | `CLIP_*` env | Effect |
 |---|---|---|
 | Framing mode | `CLIP_FRAMING` + `CLIP_CAMERA_PAN` | `blur_fill` (legacy) or `camera_pan` (face track). Picking `camera_pan` sets *both* env vars — consolidated 2026-05-02; was previously a dropdown + separate "Face-tracked camera pan" checkbox where the two had to agree manually. |

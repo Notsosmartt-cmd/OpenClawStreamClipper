@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-06-07] update | Untrack + gitignore config/originality.json (stop the recurring Stop-hook trip)
+Fixed the recurring papercut from the previous entry: `config/originality.json` is dashboard runtime state (rewritten on every Originality-panel toggle) yet was git-tracked, so each settings change registered as a `config/` modification and blocked the wiki Stop-hook. **`git rm --cached`** it (kept on disk — user settings preserved) and added it to **`.gitignore`**. Shipped **`config/originality.example.json`** (generated from `_state.DEFAULT_ORIGINALITY`, the canonical default) as the committed reference. Verified safe: `config_io.load_originality_config` already falls back to `DEFAULT_ORIGINALITY` when the file is absent and `save_originality_config` recreates it on first save, so a fresh clone needs nothing. Dashboard toggles will no longer trip the hook. Files: `.gitignore`, `config/originality.example.json` (new), `config/originality.json` (untracked). Pages: [[entities/dashboard]].
+
 ## [2026-06-07] update | config/originality.json — dashboard runtime toggles (Stop-hook bypass)
 `config/originality.json` shows `arc_stitch:true`, `flash_cuts:true`, `jump_cuts:"off"` — runtime state persisted by the dashboard Originality panel when the user toggled those controls, NOT a code/behavior change. The features themselves are already documented ([[concepts/transition-animations]], [[concepts/originality-stack]], [[concepts/bugs-and-fixes]] BUG 63/64), so no further wiki page needs editing. Logged per the check-wiki Stop-hook bypass for runtime config writes. Note: this file is *tracked* yet the dashboard rewrites it on every toggle, so it trips the wiki hook on each settings change — a candidate to `.gitignore` (left tracked for now; it ships a sensible default).
 

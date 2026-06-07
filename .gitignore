@@ -5,6 +5,12 @@
 config/openclaw.json
 config/openclaw.json.bak*
 config/exec-approvals.json
+# Dashboard runtime state — the Originality panel rewrites this on every toggle,
+# so tracking it turned each settings change into a spurious "config change" that
+# tripped the wiki Stop-hook. The committed default lives in
+# config/originality.example.json; the dashboard falls back to DEFAULT_ORIGINALITY
+# (dashboard/_state.py) when the file is absent and recreates it on first save.
+config/originality.json
 
 # ============================================================
 # VODs — large video files (multi-GB each)
