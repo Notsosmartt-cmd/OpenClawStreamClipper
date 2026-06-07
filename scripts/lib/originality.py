@@ -60,17 +60,21 @@ def main() -> int:
         use_shake = rng.random() < 0.35
         shake_amp = round(rng.uniform(1.2, 2.5), 2) if use_shake else 0.0
 
+        # Each palette: box bg, text color, box padding (border_w), and a
+        # CONTRAST-AWARE text outline (bdr/bdr_w). White text gets a black
+        # outline (crisp, matches the CapCut captions); black text gets none
+        # (the box already provides contrast — a black outline just muddies it).
         hook_palettes = [
-            {"box": "white@0.92",     "fg": "black", "border_w": 22},
-            {"box": "black@0.88",     "fg": "white", "border_w": 20},
-            {"box": "0xFFE85D@0.95",  "fg": "black", "border_w": 24},
-            {"box": "0xFF3B6B@0.92",  "fg": "white", "border_w": 22},
-            {"box": "0x00D9A7@0.90",  "fg": "black", "border_w": 20},
-            {"box": "0xFFFFFF@0.96",  "fg": "0x111111", "border_w": 26},
+            {"box": "black@0.62",     "fg": "white", "border_w": 26, "bdr": "black", "bdr_w": 5},
+            {"box": "white@0.95",     "fg": "black", "border_w": 24, "bdr": "white", "bdr_w": 0},
+            {"box": "0xFFE85D@0.96",  "fg": "black", "border_w": 24, "bdr": "black", "bdr_w": 0},
+            {"box": "0xFF3B6B@0.95",  "fg": "white", "border_w": 22, "bdr": "black", "bdr_w": 4},
+            {"box": "0x00D9A7@0.94",  "fg": "black", "border_w": 22, "bdr": "black", "bdr_w": 0},
+            {"box": "black@0.72",     "fg": "white", "border_w": 22, "bdr": "black", "bdr_w": 4},
         ]
         hook_pal = rng.choice(hook_palettes)
-        hook_y = rng.randint(45, 130)
-        hook_fontsize = rng.randint(36, 46)
+        hook_y = rng.randint(45, 120)
+        hook_fontsize = rng.randint(42, 52)
 
         sub_palettes = [
             {"primary": "&H00FFFFFF", "outline": "&H00000000", "outline_w": 2, "font_size": 11, "margin_v": 40},
@@ -97,9 +101,9 @@ def main() -> int:
         use_vignette = False
         use_shake = False
         shake_amp = 0.0
-        hook_pal = {"box": "white@0.92", "fg": "black", "border_w": 22}
+        hook_pal = {"box": "black@0.62", "fg": "white", "border_w": 26, "bdr": "black", "bdr_w": 5}
         hook_y = 55
-        hook_fontsize = 40
+        hook_fontsize = 48
         sub_pal = {"primary": "&H00FFFFFF", "outline": "&H00000000",
                    "outline_w": 2, "font_size": 11, "margin_v": 40}
         transition = "fade"
@@ -121,6 +125,8 @@ def main() -> int:
     out.append(f"HOOK_BOX_COLOR='{hook_pal['box']}'")
     out.append(f"HOOK_FG_COLOR='{hook_pal['fg']}'")
     out.append(f"HOOK_BOX_BORDER={hook_pal['border_w']}")
+    out.append(f"HOOK_BORDER_COLOR='{hook_pal['bdr']}'")
+    out.append(f"HOOK_BORDER_W={hook_pal['bdr_w']}")
     out.append(f"HOOK_Y={hook_y}")
     out.append(f"HOOK_FONTSIZE={hook_fontsize}")
     out.append(f"SUB_PRIMARY='{sub_pal['primary']}'")

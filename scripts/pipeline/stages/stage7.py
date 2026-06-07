@@ -53,7 +53,11 @@ def _resolve_font() -> str:
     cand = os.environ.get("CLIP_HOOK_FONT")
     if cand and Path(cand).exists():
         return cand
-    for f in (r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\arial.ttf"):
+    # Bundled Montserrat Black first — matches the CapCut subtitle captions.
+    bundled = Path(__file__).resolve().parents[3] / "assets" / "fonts" / "Montserrat-Black.ttf"
+    if bundled.is_file():
+        return str(bundled)
+    for f in (r"C:\Windows\Fonts\seguibl.ttf", r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\arial.ttf"):
         if Path(f).exists():
             return f
     return r"C:\Windows\Fonts\arial.ttf"
@@ -247,6 +251,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
             f",drawtext=textfile='{_ff(hook_file)}':fontsize={orig['HOOK_FONTSIZE']}:"
             f"fontcolor={orig['HOOK_FG_COLOR']}:fontfile='{_ff(HOOK_FONT)}':box=1:"
             f"boxcolor={orig['HOOK_BOX_COLOR']}:boxborderw={orig['HOOK_BOX_BORDER']}:"
+            f"borderw={orig['HOOK_BORDER_W']}:bordercolor={orig['HOOK_BORDER_COLOR']}@0.9:"
             f"x=(w-text_w)/2:y={orig['HOOK_Y']}:line_spacing=8")
 
     if ctx.captions_enabled:
@@ -303,7 +308,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
 
 def _wrap_hook(hook: str) -> str:
     import textwrap
-    lines = textwrap.wrap(hook.strip(), 22)[:3]
+    lines = textwrap.wrap(hook.strip(), 18)[:3]
     return "\n".join(lines) if lines else hook[:60]
 
 

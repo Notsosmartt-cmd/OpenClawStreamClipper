@@ -63,6 +63,22 @@ import style_profiles as sp             # type: ignore
 import zoom_punch as zp                 # type: ignore
 
 
+# Hook-card font: bundled Montserrat Black (matches the CapCut captions). The
+# old hard-coded Linux DejaVu path doesn't exist on Windows and silently fell
+# back to an ugly default face.
+def _resolve_hook_font() -> str:
+    for c in (_HERE.parent.parent / "assets" / "fonts" / "Montserrat-Black.ttf",
+              Path(r"C:\Windows\Fonts\seguibl.ttf"),
+              Path(r"C:\Windows\Fonts\arialbd.ttf"),
+              Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")):
+        if c.is_file():
+            return str(c)
+    return str(_HERE.parent.parent / "assets" / "fonts" / "Montserrat-Black.ttf")
+
+
+_HOOK_FONT = _resolve_hook_font()
+
+
 def _log(msg: str) -> None:
     print(f"[profile_render] {msg}", file=sys.stderr, flush=True)
 
@@ -459,9 +475,10 @@ def render(*,
         hook_file_path.write_text(_wrap_hook(hook_text), encoding="utf-8")
         chain_parts.append(
             f"[{cur}]drawtext=textfile='{_ffesc(str(hook_file_path))}':"
-            f"fontsize=46:fontcolor=white:"
-            f"fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"box=1:boxcolor=black@0.85:boxborderw=22:x=(w-text_w)/2:y=80:line_spacing=8"
+            f"fontsize=50:fontcolor=white:"
+            f"fontfile='{_ffesc(_HOOK_FONT)}':"
+            f"borderw=5:bordercolor=black@0.92:"
+            f"box=1:boxcolor=black@0.6:boxborderw=26:x=(w-text_w)/2:y=80:line_spacing=10"
             f"[v_hook]"
         )
         cur = "v_hook"
@@ -612,7 +629,7 @@ def _wrap_hook(text: str) -> str:
     text = (text or "").strip()
     if not text:
         return text
-    lines = textwrap.wrap(text, 22)[:3]
+    lines = textwrap.wrap(text, 18)[:3]
     return "\n".join(lines) if lines else text[:60]
 
 
