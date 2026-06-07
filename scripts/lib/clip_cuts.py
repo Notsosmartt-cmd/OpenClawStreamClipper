@@ -233,11 +233,32 @@ def remap_srt_file(srt_in: str, srt_out: str, keep_spans: list[Span],
 # Flash filter
 # ─────────────────────────────────────────────────────────────────────────────
 
+def white_flash_boxes(t: float, style: str = "soft") -> list[str]:
+    """A TRANSIENT full-frame white flash centered at `t`, built from
+    `drawbox`+`enable` filters (rise → peak → fall within a ~0.16 s window).
+
+    > [!warning] Do NOT use `fade=t=out/in:color=white` for this. `fade` HOLDS
+    > the colour outside its ramp window (`out` stays white after; `in` shows
+    > white before), so chaining them paints the WHOLE clip white — that was the
+    > BUG 64 all-white regression. `drawbox` with `enable=between(t,a,b)` only
+    > draws inside the window, so the flash is genuinely transient."""
+    peak = 0.9 if style == "hard" else 0.78
+    h = 0.05 if style == "hard" else 0.08           # half-width (s)
+    s = max(0.0, t - h)
+    box = ("drawbox=x=0:y=0:w=iw:h=ih:t=fill:color=white@{a:.2f}"
+           ":enable='between(t,{a0:.3f},{a1:.3f})'")
+    return [
+        box.format(a=peak * 0.45, a0=s,             a1=t - h * 0.35),
+        box.format(a=peak,        a0=t - h * 0.35,  a1=t + h * 0.35),
+        box.format(a=peak * 0.45, a0=t + h * 0.35,  a1=t + h),
+    ]
+
+
 def white_flash_vf(flashes: list[dict], keep_spans: list[Span], clip_start: float,
                    fade: float = 0.0) -> str:
-    """Build a comma-joined `fade` chain that pops the framed video to white and
-    back at each flash time. Flash `t` is absolute; remapped onto the (possibly
-    compressed) clip timeline. Returns '' when there's nothing to draw."""
+    """Comma-joined `drawbox` flash filters, one transient white pop per flash
+    time. Flash `t` is absolute; remapped onto the (possibly compressed) clip
+    timeline. Returns '' when there's nothing to draw."""
     parts: list[str] = []
     seen: list[float] = []
     for fl in flashes or []:
@@ -250,11 +271,7 @@ def white_flash_vf(flashes: list[dict], keep_spans: list[Span], clip_start: floa
         if any(abs(rel - s) < 0.4 for s in seen):
             continue  # de-dupe near-coincident flashes
         seen.append(rel)
-        d = float(fl.get("dur", 0.12))
-        style = str(fl.get("style", "soft"))
-        half = max(0.03, (d / 2.0) if style == "soft" else (d / 3.0))
-        parts.append(f"fade=t=out:st={rel:.3f}:d={half:.3f}:color=white")
-        parts.append(f"fade=t=in:st={rel + half:.3f}:d={half:.3f}:color=white")
+        parts.extend(white_flash_boxes(rel, str(fl.get("style", "soft"))))
     return ",".join(parts)
 
 
@@ -405,9 +422,9 @@ def _build_filter(keep_rel: list[Span], flash_rel: list[float], fade: float, fps
         vcur, acur = "v0", "a0"
     flparts: list[str] = []
     for ft in flash_rel:
-        h = 0.06
-        flparts.append(f"fade=t=out:st={ft:.3f}:d={h:.3f}:color=white")
-        flparts.append(f"fade=t=in:st={ft + h:.3f}:d={h:.3f}:color=white")
+        # TRANSIENT drawbox flash — NOT fade (fade holds white outside its window
+        # and paints the whole clip white; that was BUG 64).
+        flparts.extend(white_flash_boxes(ft, "soft"))
     fc.append(f"[{vcur}]" + (",".join(flparts) if flparts else "null") + "[vout]")
     fc.append(f"[{acur}]anull[aout]")
     return ";".join(fc)
@@ -550,7 +567,9 @@ def _selftest() -> int:
 
     # flash remap + filter
     vf = white_flash_vf([{"t": 120.0, "dur": 0.12, "style": "soft"}], spans, 100.0, fade=0.0)
-    check("flash builds fade filter", "fade=t=out:st=12.0" in vf and "color=white" in vf)
+    check("flash builds TRANSIENT drawbox (not fade)",
+          "drawbox=" in vf and "white@" in vf and "enable='between(t," in vf
+          and "fade=" not in vf)
     vf2 = white_flash_vf([{"t": 114.0}], spans, 100.0, fade=0.0)
     check("flash in dropped gap skipped", vf2 == "")
 

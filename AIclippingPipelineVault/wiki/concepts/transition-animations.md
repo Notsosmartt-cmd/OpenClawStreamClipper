@@ -10,7 +10,7 @@ updated: 2026-06-06
 
 Two TikTok-style editing effects, both optional, flag-gated, and failure-soft:
 
-1. **White flashes** — brief white pops (`fade` to white and back) layered on a clip for engagement / pattern-interrupt. No content removed.
+1. **White flashes** — brief, TRANSIENT white pops (full-frame `drawbox` gated by `enable='between(t,a,b)'`, rise→peak→fall over ~0.16 s) layered on a clip for engagement / pattern-interrupt. No content removed. **Must NOT use `fade=…:color=white`** — `fade` holds the colour outside its ramp window and paints the whole clip white (BUG 64).
 2. **Jump-cuts** — DROP spans of dead air / rambling and concatenate the kept spans with `xfade=fadewhite`, so the clip skips to the payoff faster. The white fade masks each cut.
 
 Both are driven by the per-moment **`edit_plan`** ([[concepts/captions]] neighbours; schema in `scripts/lib/edit_plan.py`) plus rule-based generators, and applied by a single Stage-7 post-pass.
@@ -45,10 +45,10 @@ Pure, testable helpers (`python clip_cuts.py --selftest`):
 | `remap_time` / `remap_srt` | map absolute VOD time → compressed timeline (kept for completeness / future live-timeline use) |
 | `gaps_to_cuts(segments, …)` | rule-based: drop SILENCES (gaps between speech) — the safest cut |
 | `flash_cadence(start, end, seed)` | rule-based: deterministic engagement flashes at a seeded cadence (no LLM) |
-| `apply_transitions(in, out, keep_rel, flash_rel)` | the FFmpeg: `trim`+`xfade=fadewhite` for cuts, `fade`-to-white for flashes, NVENC via `venc.py` |
+| `apply_transitions(in, out, keep_rel, flash_rel)` | the FFmpeg: `trim`+`xfade=fadewhite` for cuts, **transient `drawbox`+`enable`** white pops for flashes (`white_flash_boxes`), NVENC via `venc.py` |
 | `process_clip_transitions(clip_path, …)` | orchestrator entry: combine rule + LLM picks, apply in place, return True if modified |
 
-**Verified** with FFmpeg render tests: a 12 s clip with a 3–6 s drop renders to exactly 7.70 s with the content jump + white fade at the join; a flash frame measures `YAVG=235/255` (near-white); cut+flash combined = 7.78 s.
+**Verified** with FFmpeg render tests: a 12 s clip with a 3–6 s drop renders to exactly 7.70 s with the content jump + white fade at the join. The flash is checked with a **control frame** — before-flash `YAVG=122` (normal), flash `209` (bright), after-flash `121` (normal) — i.e. ONLY the flash window is white (the original chained-`fade` flash was white *everywhere*; see [[concepts/bugs-and-fixes]] BUG 64).
 
 ---
 
