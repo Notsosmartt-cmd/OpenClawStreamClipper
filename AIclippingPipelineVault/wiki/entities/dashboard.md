@@ -35,6 +35,8 @@ New panel driving the [[concepts/originality-stack]]. Every control posts to `PU
 | Narrative merge | `CLIP_NARRATIVE` | Wave C long-form storytime arcs |
 | Stitch short moments | `CLIP_STITCH` | Wave C multi-segment posts |
 | **Stitch setup→payoff arcs** | `CLIP_ARC_STITCH` **+** `CLIP_ARC_GUARANTEE_MIN_RATIO` | Fix 3 — renders A1/M3 cross-chunk arcs as a 2-part "Earlier: … → payoff" jump-cut. Enabling the checkbox **also loosens the arc-guarantee floor 0.6→0.45** (`config_io.py`) so the top arc actually reaches the final selection — otherwise arc-stitch has no arc to act on (on rich VODs strong Pass B moments out-score the dedicated arcs at 0.6). Off by default. See [[concepts/arc-aware-extraction]]. |
+| **White-flash transitions** | `CLIP_FLASH_CUTS` | Brief white pops for engagement (seeded cadence + any model-picked beats). Off by default. See [[concepts/transition-animations]]. |
+| **Jump-cut compression** | `CLIP_JUMP_CUTS` (off/gaps/on) | Drop dead air / rambling and jump-cut to the payoff with a white fade. Silence-only (safe) or Smart+silence (adds LLM-inferred cuts). Applied to the finished clip so captions stay in sync. Off by default. See [[concepts/transition-animations]]. |
 | Voiceover layer | `CLIP_TTS_VO` | Wave D Piper TTS mix |
 | Music bed folder | `CLIP_MUSIC_BED` | Wave D music path |
 | Tier C music matching | `CLIP_MUSIC_TIER_C` | Wave D librosa scoring |

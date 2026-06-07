@@ -73,6 +73,8 @@ DEFAULT_ORIGINALITY = {
     "originality": True,
     "stitch": False,
     "arc_stitch": False,
+    "jump_cuts": "off",
+    "flash_cuts": False,
     "narrative": True,
     "camera_pan": False,
     "tts_vo": False,
