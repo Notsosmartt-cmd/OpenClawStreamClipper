@@ -33,6 +33,11 @@ import sys
 import textwrap
 from pathlib import Path
 
+# scripts/lib is normally on PYTHONPATH via run_module, but insert this module's
+# own dir too so `import venc` works regardless of how the subprocess is launched.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import venc  # shared NVENC/libx264 selection
+
 CLIPS_DIR = Path(os.environ.get("CLIPS_DIR_ENV", "/root/VODs/Clips_Ready"))
 TEMP_DIR = Path(os.environ.get("TEMP_DIR_ENV", "/tmp/clipper"))
 VOD_PATH = os.environ.get("VOD_PATH_ENV", "")
@@ -128,7 +133,7 @@ def render_member(member: dict, moment: dict, out_path: Path) -> bool:
         "-t", f"{dur:.2f}",
         "-i", VOD_PATH,
         "-vf", frame_vf,
-        "-c:v", "libx264", "-crf", "20", "-preset", "fast",
+        *venc.video_args(crf=20, preset_libx264="fast"),
         "-profile:v", "high", "-level", "4.2",
         "-pix_fmt", "yuv420p", "-r", "30",
         "-c:a", "aac", "-b:a", "192k",
@@ -176,7 +181,7 @@ def concat_members(members: list[Path], out_path: Path, transition: str) -> bool
         rc = subprocess.call([
             "ffmpeg", "-nostdin", "-y", "-f", "concat", "-safe", "0",
             "-i", str(list_file),
-            "-c:v", "libx264", "-crf", "20", "-preset", "fast",
+            *venc.video_args(crf=20, preset_libx264="fast"),
             "-profile:v", "high", "-level", "4.2",
             "-pix_fmt", "yuv420p", "-r", "30",
             "-c:a", "aac", "-b:a", "192k",
@@ -208,7 +213,7 @@ def concat_members(members: list[Path], out_path: Path, transition: str) -> bool
         "ffmpeg", "-nostdin", "-y", *inputs,
         "-filter_complex", filter_complex,
         "-map", f"[{current}]", "-map", f"[{a_current}]",
-        "-c:v", "libx264", "-crf", "20", "-preset", "fast",
+        *venc.video_args(crf=20, preset_libx264="fast"),
         "-profile:v", "high", "-level", "4.2",
         "-pix_fmt", "yuv420p", "-r", "30",
         "-c:a", "aac", "-b:a", "192k",
@@ -239,7 +244,7 @@ def apply_overlays(in_path: Path, out_path: Path, hook_text: str,
     cmd = [
         "ffmpeg", "-nostdin", "-y", "-i", str(in_path),
         "-vf", vf,
-        "-c:v", "libx264", "-crf", "20", "-preset", "slow",
+        *venc.video_args(crf=20, preset_libx264="slow"),
         "-profile:v", "high", "-level", "4.2",
         "-pix_fmt", "yuv420p", "-r", "30",
         "-c:a", "aac", "-b:a", "192k",

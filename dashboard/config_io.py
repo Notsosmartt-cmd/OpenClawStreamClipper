@@ -47,6 +47,12 @@ def originality_to_env(orig: dict) -> dict:
         "CLIP_MUSIC_BED": str(orig.get("music_bed", "") or ""),
         "CLIP_MUSIC_TIER_C": "true" if orig.get("music_tier_c") else "false",
         "CLIP_STYLE_PROFILES": "true" if orig.get("style_profiles") else "false",
+        # Fix 3 arc setup->payoff stitch. Enabling it also LOOSENS the arc
+        # guarantee floor (0.6 -> 0.45) so the top A1/M3 arc actually reaches the
+        # final selection — otherwise arc-stitch has no arc to act on (on rich
+        # VODs strong Pass B moments out-score the dedicated arcs at 0.6).
+        "CLIP_ARC_STITCH": "true" if orig.get("arc_stitch") else "false",
+        "CLIP_ARC_GUARANTEE_MIN_RATIO": "0.45" if orig.get("arc_stitch") else "0.6",
     }
 
 
@@ -117,7 +123,7 @@ def extract_originality_fields(data: dict) -> dict | None:
     mention originality still uses the persisted config.
     """
     disk = load_originality_config()
-    keys = ("framing", "originality", "stitch", "narrative",
+    keys = ("framing", "originality", "stitch", "arc_stitch", "narrative",
             "camera_pan", "tts_vo", "music_bed", "music_tier_c",
             "style_profiles")
     touched = False

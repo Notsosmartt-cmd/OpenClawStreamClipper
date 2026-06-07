@@ -72,6 +72,7 @@ DEFAULT_ORIGINALITY = {
     "framing": "blur_fill",
     "originality": True,
     "stitch": False,
+    "arc_stitch": False,
     "narrative": True,
     "camera_pan": False,
     "tts_vo": False,
