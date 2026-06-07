@@ -63,29 +63,27 @@ If vision enrichment fails, the clip title is used as fallback.
 ### FFmpeg filter
 
 ```
-drawtext=textfile='/tmp/clipper/clip_{T}_hook.txt'
-  :fontsize=40
-  :fontcolor=black
-  :fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
-  :box=1
-  :boxcolor=white@0.92
-  :boxborderw=22
-  :x=(w-text_w)/2
-  :y=55
-  :line_spacing=8
+drawtext=textfile='…/clip_{T}_hook.txt'
+  :fontsize=<42–52, per-clip>
+  :fontcolor=<palette fg: white|black>
+  :fontfile=assets/fonts/Montserrat-Black.ttf      # bundled, matches captions
+  :borderw=<0|4|5>:bordercolor=<palette>@0.9        # contrast-aware outline
+  :box=1:boxcolor=<palette box>:boxborderw=<22–26>
+  :x=(w-text_w)/2 :y=<45–120> :line_spacing=8
 ```
 
-The hook text is written to a per-clip temp file (avoids shell quoting issues with apostrophes). `textwrap.wrap(hook, 22)` wraps to max 3 lines of 22 chars each.
+The hook text is written to a per-clip temp file (avoids shell quoting issues with apostrophes). `textwrap.wrap(hook, 18)` wraps to max 3 lines (tightened from 22 — Montserrat Black is wider).
 
-> [!note] Font requirement
-> `fonts-dejavu-core` must be installed in the Docker image. Added to `Dockerfile` as of 2026-04-20. Requires a container rebuild (`docker compose up -d --build`).
+> [!note] Font — Montserrat Black (2026-06-06)
+> The hook card now uses the **bundled `assets/fonts/Montserrat-Black.ttf`** (same face as the CapCut subtitle captions), resolved by `stage7._resolve_font()` and `profile_render._resolve_hook_font()` with installed-bold fallbacks (Segoe UI Black → Arial Bold → DejaVu). This fixed a real bug: `profile_render.py` hard-coded the **Linux** path `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf`, which doesn't exist on the Windows bare-metal host, so the hook silently fell back to an ugly default face. (`fonts-dejavu-core` is still only relevant to the in-Docker render path.)
 
 ### Per-clip palette randomization (Wave A)
 
-When `CLIP_ORIGINALITY=true`, hook rendering varies per clip:
-- **6 color combinations**: black-on-white, yellow, pink, mint, etc.
-- **Y position**: 45–130 px (randomized)
-- **Font size**: 36–46 pt (randomized)
+When `CLIP_ORIGINALITY=true`, hook rendering varies per clip (`scripts/lib/originality.py`):
+- **6 box/text combinations**: white text on dark box, black on white/yellow/teal, white on pink, etc.
+- **Contrast-aware text outline** (2026-06-06): white text → black outline (4–5 px, crisp like the captions); black text → **no outline** (the box already gives contrast; a black outline on black text just muddies the glyphs). Emitted as `HOOK_BORDER_COLOR` / `HOOK_BORDER_W`.
+- **Y position**: 45–120 px (randomized)
+- **Font size**: 42–52 pt (randomized; bumped from 36–46 for more punch)
 
 ### Toggle
 
