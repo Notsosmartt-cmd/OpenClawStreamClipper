@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Web Dashboard
@@ -31,6 +31,7 @@ New panel driving the [[concepts/originality-stack]]. Every control posts to `PU
 | Per-clip randomization | `CLIP_ORIGINALITY` | Wave A blur/eq/mirror/hook/subtitle variance |
 | Narrative merge | `CLIP_NARRATIVE` | Wave C long-form storytime arcs |
 | Stitch short moments | `CLIP_STITCH` | Wave C multi-segment posts |
+| **Stitch setup→payoff arcs** | `CLIP_ARC_STITCH` **+** `CLIP_ARC_GUARANTEE_MIN_RATIO` | Fix 3 — renders A1/M3 cross-chunk arcs as a 2-part "Earlier: … → payoff" jump-cut. Enabling the checkbox **also loosens the arc-guarantee floor 0.6→0.45** (`config_io.py`) so the top arc actually reaches the final selection — otherwise arc-stitch has no arc to act on (on rich VODs strong Pass B moments out-score the dedicated arcs at 0.6). Off by default. See [[concepts/arc-aware-extraction]]. |
 | Voiceover layer | `CLIP_TTS_VO` | Wave D Piper TTS mix |
 | Music bed folder | `CLIP_MUSIC_BED` | Wave D music path |
 | Tier C music matching | `CLIP_MUSIC_TIER_C` | Wave D librosa scoring |

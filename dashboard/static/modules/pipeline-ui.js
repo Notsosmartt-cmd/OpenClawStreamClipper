@@ -17,6 +17,7 @@ export function collectOriginality() {
         framing,
         originality:    !!q("chk-originality")?.checked,
         stitch:         !!q("chk-stitch")?.checked,
+        arc_stitch:     !!q("chk-arc-stitch")?.checked,
         narrative:      !!q("chk-narrative")?.checked,
         // The framing dropdown is the single source of truth — picking
         // "Camera pan (face track)" enables the face-tracking compute step
@@ -46,6 +47,7 @@ export async function fetchOriginality() {
         if (q("chk-originality")) q("chk-originality").checked = cfg.originality !== false;
         if (q("chk-narrative")) q("chk-narrative").checked = cfg.narrative !== false;
         if (q("chk-stitch")) q("chk-stitch").checked = !!cfg.stitch;
+        if (q("chk-arc-stitch")) q("chk-arc-stitch").checked = !!cfg.arc_stitch;
         if (q("chk-tts-vo")) q("chk-tts-vo").checked = !!cfg.tts_vo;
         if (q("inp-music-bed")) q("inp-music-bed").value = cfg.music_bed || "";
         if (q("chk-music-tier-c")) q("chk-music-tier-c").checked = !!cfg.music_tier_c;

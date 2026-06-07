@@ -49,6 +49,8 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 
+import venc  # shared NVENC/libx264 selection (after path insert above)
+
 import chat_overlay as co               # type: ignore
 import edit_plan as ep                  # type: ignore
 import freeze_frame as ff               # type: ignore
@@ -509,7 +511,7 @@ def render(*,
         *inputs,
         "-filter_complex", filter_complex,
         "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-crf", str(crf), "-preset", "slow",
+        *venc.video_args(crf=crf, preset_libx264="slow"),
         "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p",
         "-r", "30",
         "-g", str(gop),
