@@ -8,7 +8,7 @@ updated: 2026-06-06
 
 # Web Dashboard
 
-A Flask-based single-page web app for controlling the clip pipeline without Discord. Port 5001 (entrypoint banner says 5000, code uses 5001 — long-standing mismatch unrelated to modularization). **Studio theme** (2026-06-06): zinc-dark surfaces + teal accent (`#14b8a6`/`#2dd4bf`), Plus Jakarta Sans UI font + JetBrains Mono for code/logs, rounded panels, a thin teal top accent line, and pill-style status/docker badges. (Was dark + purple `#7c5cfc` before.)
+A Flask-based single-page web app for controlling the clip pipeline without Discord. Port **5001 by default**, overridable via `DASHBOARD_PORT` (or `PORT`). If the preferred port is already taken — e.g. a background service squatting on it — `app.py` now **auto-rolls to the next free port** (scans 5001→5012) and prints `Dashboard ready at http://127.0.0.1:<port>`, so a port collision no longer crashes startup with the Windows `WSAEACCES` "An attempt was made to access a socket … forbidden" error. (Docker/`entrypoint.sh` still uses 5000.) The startup banner also reports the real run mode now — `native (bare-metal)` vs `docker exec` vs `inside container` — instead of always saying "docker exec". **Studio theme** (2026-06-06): zinc-dark surfaces + teal accent (`#14b8a6`/`#2dd4bf`), Plus Jakarta Sans UI font + JetBrains Mono for code/logs, rounded panels, a thin teal top accent line, and pill-style status/docker badges. (Was dark + purple `#7c5cfc` before.)
 
 Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 - `dashboard/app.py` — 78-line Flask bootstrap + blueprint registration

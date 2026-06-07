@@ -16,6 +16,7 @@ response is byte-identical.
 from __future__ import annotations
 
 import os
+import socket
 import sys
 
 # Allow running as either `python3 dashboard/app.py` (script) or
@@ -76,11 +77,40 @@ def create_app() -> Flask:
 app = create_app()
 
 
+def _resolve_port(preferred: int, tries: int = 12) -> int:
+    """Return `preferred` if it can be bound, else the next free port (scanning
+    up to `tries`). Tests the bind exactly as Flask will (IPv4 INADDR_ANY) so a
+    port held by another app — e.g. a stale dashboard, or a background service
+    squatting on 5001 — makes us roll forward instead of crashing with the
+    Windows 'access to a socket … forbidden' (WSAEACCES) / address-in-use error.
+    Pin a specific port with DASHBOARD_PORT (or PORT)."""
+    for p in range(preferred, preferred + tries):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("", p))
+            return p
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return preferred  # nothing free in range — let Flask surface the real error
+
+
 if __name__ == "__main__":
-    print(f"Dashboard mode: {'Docker (local)' if _state.INSIDE_DOCKER else 'Windows host → docker exec'}")
+    mode = ("Docker (inside container)" if _state.INSIDE_DOCKER
+            else "Windows host → docker exec" if use_docker_exec()
+            else "Windows host → native (bare-metal)")
+    print(f"Dashboard mode: {mode}")
     print(f"VODs dir: {_state.VODS_DIR}")
     print(f"Clips dir: {_state.CLIPS_DIR}")
     if use_docker_exec():
         c = get_docker_container()
         print(f"Docker container: {c or 'NOT FOUND — start Docker first!'}")
-    app.run(host="0.0.0.0", port=5001, threaded=True)
+
+    preferred = int(os.environ.get("DASHBOARD_PORT") or os.environ.get("PORT") or 5001)
+    port = _resolve_port(preferred)
+    if port != preferred:
+        print(f"  [port] {preferred} is in use (another app is on it) — "
+              f"using {port} instead. Set DASHBOARD_PORT to pin a port.")
+    print(f"  Dashboard ready at http://127.0.0.1:{port}")
+    app.run(host="0.0.0.0", port=port, threaded=True)
