@@ -12,7 +12,7 @@ import {
 } from "./modules/pipeline-ui.js";
 
 import {
-    fetchVods, fetchClips, fetchStages, selectVod,
+    fetchVods, fetchClips, fetchStages, toggleVod, toggleAllVods,
 } from "./modules/vods-panel.js";
 
 import {
@@ -34,7 +34,7 @@ import {
 
 // Inline onclick= handlers in HTML need these on window.
 Object.assign(window, {
-    selectVod,
+    toggleVod, toggleAllVods,
     onModelChange, resetModel, applyRecommendedContext,
     onHardwareDropdown,
     onFoldersChange, browseFolderFor, saveFolders,

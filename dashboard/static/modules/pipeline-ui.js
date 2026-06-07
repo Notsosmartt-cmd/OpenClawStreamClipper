@@ -201,7 +201,8 @@ export function startLogStream() {
 // --- Pipeline lifecycle (start / stop / clip-all) ---
 
 export async function startClip() {
-    if (!state.selectedVod || state.pipelineRunning) return;
+    const vods = state.selectedVods.slice();
+    if (!vods.length || state.pipelineRunning) return;
     const style = document.getElementById("sel-style").value;
     const type = document.getElementById("inp-type").value.trim();
     const force = document.getElementById("chk-force").checked;
@@ -214,15 +215,17 @@ export async function startClip() {
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     const originality = collectOriginality();
 
-    const { ok, data } = await apiPost("/api/clip", {
-        vod: state.selectedVod, style, type, force, captions, hook_caption, speed,
+    // One or many — the batch endpoint runs them sequentially in selection order.
+    const { ok, data } = await apiPost("/api/clip-batch", {
+        vods, style, type, force, captions, hook_caption, speed,
         passb_dead_gate,
         ...originality,
     });
     if (ok) {
         state.pipelineRunning = true;
         updateControls();
-        updateStatusBadge(true, "Starting...");
+        updateStatusBadge(true, vods.length > 1
+            ? `Starting ${vods.length} VODs...` : "Starting...");
         clearLog();
         startLogStream();
     } else {

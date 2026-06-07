@@ -3,7 +3,8 @@
 // Extracted from app.js as part of Phase D.
 
 export const state = {
-    selectedVod: null,
+    // Multi-select: array of VOD stems the user has checked (order = check order).
+    selectedVods: [],
     pipelineRunning: false,
     evtSource: null,
 };

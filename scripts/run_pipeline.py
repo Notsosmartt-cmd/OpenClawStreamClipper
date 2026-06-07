@@ -133,6 +133,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="OpenClaw Stream Clipper pipeline")
     ap.add_argument("--style", default="auto")
     ap.add_argument("--vod", default="")
+    ap.add_argument("--vods", default="",
+                    help="comma-separated VOD names/stems to process sequentially (dashboard multi-select)")
     ap.add_argument("--type", default="")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--force", action="store_true")
@@ -200,7 +202,11 @@ def main(argv: list[str]) -> int:
 
     # Persistent timestamped log (survives work-dir cleanup).
     stamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
-    slug = "".join(c for c in Path(ctx.target_vod or "unknown").stem
+    _slug_base = (ctx.target_vod
+                  or (args.vods.split(",")[0].strip() if args.vods else "")
+                  or ("all" if args.all else "")
+                  or "unknown")
+    slug = "".join(c for c in Path(_slug_base).stem
                    if c.isalnum() or c in "_-")[:40] or "unknown"
     persistent_log = p.persistent_log_dir / f"{stamp}_{slug}.log"
 
@@ -236,8 +242,16 @@ def main(argv: list[str]) -> int:
             pass
 
     try:
-        if args.all and not ctx.list_mode:
-            targets = _discover_all(ctx)
+        if (args.all or args.vods) and not ctx.list_mode:
+            if args.vods:
+                # Explicit multi-select (dashboard): process exactly these,
+                # respecting the caller's --force (re-transcribe) choice.
+                targets = [s.strip() for s in args.vods.split(",") if s.strip()]
+                batch_force = ctx.force
+            else:
+                # --all: every (unprocessed) VOD, each reprocessed fresh.
+                targets = _discover_all(ctx)
+                batch_force = True
             if not targets:
                 log.log("No VODs to process.")
             for i, vod_name in enumerate(targets):
@@ -246,7 +260,7 @@ def main(argv: list[str]) -> int:
                 log.line(f"=== Clipping {vod_name} ({i + 1}/{len(targets)}) ===")
                 vctx = Ctx(argparse.Namespace(
                     style=args.style, vod=vod_name, type=args.type,
-                    list=False, force=True, all=False))
+                    list=False, force=batch_force, all=False))
                 vctx.log = log
                 rc = _execute_stages(vctx, log)
                 exit_code = rc or exit_code

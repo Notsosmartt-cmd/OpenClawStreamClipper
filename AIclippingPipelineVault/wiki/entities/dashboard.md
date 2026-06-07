@@ -66,8 +66,8 @@ Dashboard starts automatically inside the container on port 5000 (via `entrypoin
 
 | Feature | Description |
 |---|---|
-| **VOD Library** | All VODs with size, duration, processed status, transcription cache indicator |
-| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox (re-runs from selection AND re-transcribes, replacing the cached transcript — see [[concepts/bugs-and-fixes]] BUG 58) |
+| **VOD Library** | All VODs with size, duration, processed status, transcription cache indicator. **Multi-select (2026-06-06):** a checkbox per row + a header **select-all** checkbox (indeterminate when a subset is picked). Clicking anywhere on a row also toggles it; selection state lives in `state.selectedVods` (array of stems). |
+| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox (re-runs from selection AND re-transcribes, replacing the cached transcript — see [[concepts/bugs-and-fixes]] BUG 58). **"Clip Selected (N)"** runs the checked VODs sequentially via `/api/clip-batch` (label shows the count; disabled when none checked). **"Clip All"** still clips every VOD via `/api/clip-all` regardless of checkboxes. |
 | **Pipeline Monitor** | 8-stage progress dots, real-time log streaming via SSE, stage history with timestamps |
 | **Clips Gallery** | In-browser video preview, download links |
 | **Docker Status** | Green/red badge showing Docker container connectivity |
@@ -83,7 +83,8 @@ Dashboard starts automatically inside the container on port 5000 (via `entrypoin
 |---|---|---|
 | `/api/vods` | GET | List all VODs with metadata |
 | `/api/status` | GET | Pipeline running/idle + Docker connectivity + `ollama_ok` flag |
-| `/api/clip` | POST | Start clipping a specific VOD |
+| `/api/clip` | POST | Start clipping a specific VOD (single `vod` stem) |
+| `/api/clip-batch` | POST | Clip a chosen subset sequentially — `vods: [stem, …]`, validated against on-disk files, preserves selection order. Maps to `run_pipeline.py --vods a,b,c` (respects the Force checkbox; `--all` always forces). |
 | `/api/clip-all` | POST | Clip all VODs sequentially |
 | `/api/stop` | POST | Stop the running pipeline |
 | `/api/clips` | GET | List generated clips |

@@ -162,6 +162,84 @@ def api_clip_all():
     return jsonify({"status": "started", "mode": "all"}), 202
 
 
+@bp.route("/api/clip-batch", methods=["POST"])
+def api_clip_batch():
+    """Clip a specific subset of VODs sequentially (dashboard multi-select).
+
+    Accepts `vods`: a list of VOD stems. Validated against the VODs actually on
+    disk (drops typos AND guards the docker shell loop against injection),
+    preserving the caller's selection order. A 1-element list is fine — it just
+    runs that one VOD through the same sequential loop."""
+    data = request.get_json(force=True)
+    requested = data.get("vods") or []
+    if isinstance(requested, str):
+        requested = [requested]
+    requested = [str(v).strip() for v in requested if str(v).strip()]
+    style = data.get("style", "auto").strip() or "auto"
+    type_hint = data.get("type", "").strip()
+    force = data.get("force", False)
+    captions = data.get("captions", True)
+    speed = str(data.get("speed", "1.0"))
+    hook_caption = data.get("hook_caption", True)
+    passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
+    if passb_dead_gate not in ("off", "multi", "sample", "strict"):
+        passb_dead_gate = "off"
+    orig_override = extract_originality_fields(data)
+
+    if not requested:
+        return jsonify({"error": "No VODs selected"}), 400
+
+    # Keep only selections that exist on disk, in the user's chosen order.
+    on_disk = {
+        f.stem for f in sorted(_state.VODS_DIR.iterdir())
+        if f.is_file() and f.suffix.lower() in (".mp4", ".mkv", ".avi", ".mov", ".webm")
+    }
+    vods = [v for v in requested if v in on_disk]
+    if not vods:
+        return jsonify({"error": "None of the selected VODs were found on disk"}), 400
+
+    with _state.pipeline_lock:
+        if is_pipeline_running():
+            return jsonify({"error": "Pipeline already running"}), 409
+
+        for f in [_state.LOG_FILE, _state.STAGE_FILE, _state.STAGES_LOG]:
+            if f.exists():
+                f.unlink()
+
+        if use_docker_exec():
+            force_flag = " --force" if force else ""
+            type_flag = f" --type {type_hint}" if type_hint else ""
+            steps = []
+            for v in vods:
+                safe = v.replace("'", "'\\''")  # validated stem; single-quote anyway
+                steps.append(
+                    f'echo "=== Clipping {safe} ==="; '
+                    f'bash {_state.DOCKER_PIPELINE_SCRIPT} --style {style}{force_flag}{type_flag} --vod \'{safe}\''
+                )
+            cmd = ["bash", "-c", "; ".join(steps)]
+        else:
+            cmd = [sys.executable, _state.PIPELINE_SCRIPT,
+                   "--style", style, "--vods", ",".join(vods)]
+            if force:
+                cmd.append("--force")
+            if type_hint:
+                cmd.extend(["--type", type_hint])
+
+        try:
+            _state.pipeline_process = spawn_pipeline(
+                cmd, captions=captions, speed=speed,
+                hook_caption=hook_caption, originality=orig_override,
+                passb_dead_gate=passb_dead_gate,
+            )
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
+
+        _state.pipeline_vod_name = (vods[0] if len(vods) == 1
+                                    else f"{len(vods)} VODs")
+
+    return jsonify({"status": "started", "count": len(vods), "vods": vods}), 202
+
+
 @bp.route("/api/stop", methods=["POST"])
 def api_stop():
     """Stop the running pipeline."""
