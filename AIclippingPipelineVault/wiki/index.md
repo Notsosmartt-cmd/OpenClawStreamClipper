@@ -61,6 +61,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
 - [[concepts/captions]] — Subtitle style, hook card (top-of-video), per-clip palette/position randomization
+- [[concepts/transition-animations]] — White flashes + LLM/rule jump-cut compression (Stage 7d.5); flag-gated
 - [[concepts/speed-control]] — Dashboard speed dropdown (1×–1.5×), setpts + rubberband, SRT rescaling
 - [[concepts/originality-stack]] — TikTok 2025 defense: waves A (randomize) + B (framing) + C (groups) + D (TTS/music) + E (camera pan)
 

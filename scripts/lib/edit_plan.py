@@ -22,7 +22,11 @@ Schema (all fields optional except `profile`):
       "sfx_cues":         [{"t": <s>, "kind": "whoosh|impact|scratch|ding|riser"}, ...],
       "caption_emphasis": [<word_idx>, ...],
       "caption_preset":   "neon" | "bouncy" | "clean" | "news" | "soft" | null,
-      "chat_overlay":     true | false
+      "chat_overlay":     true | false,
+      "flashes":          [{"t": <s>, "dur": <0.05..0.30>, "style": "soft|hard"}, ...]
+                          OR [<float>, ...]   (white pop at t; engagement beat),
+      "cuts":             [{"drop_start": <s>, "drop_end": <s>}, ...]
+                          (ABSOLUTE VOD seconds to DROP — jump-cut to compress to the payoff)
     }
 
 The validator coerces sloppy inputs (lone numbers → t-only objects, strings
@@ -150,6 +154,55 @@ def _norm_sfx(raw: Any) -> list[dict]:
     return out
 
 
+def _norm_flashes(raw: Any) -> list[dict]:
+    """White-flash transition beats. Lone numbers → t with defaults."""
+    out: list[dict] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if isinstance(item, (int, float)):
+            t = _to_float(item)
+            if t is not None and t >= 0:
+                out.append({"t": round(t, 3), "dur": 0.12, "style": "soft"})
+        elif isinstance(item, dict):
+            t = _to_float(item.get("t"))
+            if t is None or t < 0:
+                continue
+            dur = _to_float(item.get("dur"), None)
+            if dur is None:
+                dur = _to_float(item.get("duration"), 0.12)
+            dur = max(0.05, min(dur or 0.12, 0.30))
+            style = str(item.get("style") or "soft").strip().lower()
+            if style not in ("soft", "hard"):
+                style = "soft"
+            out.append({"t": round(t, 3), "dur": round(dur, 3), "style": style})
+    return out[:6]  # hard cap — sporadic, not strobing
+
+
+def _norm_cuts(raw: Any) -> list[dict]:
+    """Drop-spans (ABSOLUTE VOD seconds) for jump-cut compression. Merges
+    overlaps; the keep-span computation (clip_cuts.py) enforces the budget."""
+    out: list[dict] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        a = _to_float(item.get("drop_start", item.get("start")))
+        b = _to_float(item.get("drop_end", item.get("end")))
+        if a is None or b is None or b <= a:
+            continue
+        out.append({"drop_start": round(a, 3), "drop_end": round(b, 3)})
+    out.sort(key=lambda d: d["drop_start"])
+    merged: list[dict] = []
+    for c in out:
+        if merged and c["drop_start"] <= merged[-1]["drop_end"] + 0.05:
+            merged[-1]["drop_end"] = max(merged[-1]["drop_end"], c["drop_end"])
+        else:
+            merged.append(c)
+    return merged[:12]
+
+
 def _norm_emphasis(raw: Any) -> list[int]:
     if not isinstance(raw, list):
         return []
@@ -187,6 +240,8 @@ def normalize(plan: Any) -> dict[str, Any]:
         "caption_emphasis": _norm_emphasis(plan.get("caption_emphasis")),
         "caption_preset":   preset,
         "chat_overlay":     bool(plan.get("chat_overlay")) if "chat_overlay" in plan else None,
+        "flashes":          _norm_flashes(plan.get("flashes")),
+        "cuts":             _norm_cuts(plan.get("cuts")),
     }
 
 
@@ -202,6 +257,8 @@ EMPTY_PLAN: dict[str, Any] = {
     "caption_emphasis": [],
     "caption_preset":   None,
     "chat_overlay":     None,
+    "flashes":          [],
+    "cuts":             [],
 }
 
 

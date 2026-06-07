@@ -20,6 +20,7 @@ Uses [[entities/ffmpeg]] and [[entities/faster-whisper]] (for captions). Runs af
 2. **Extract clip audio** — single FFmpeg pass extracts variable-length audio segments for all clips.
 3. **Batch caption transcription** — single Whisper model load; transcribes all clip audio segments; outputs individual SRT files with word-level timestamps.
 4. **Render solo + narrative clips** — per-clip FFmpeg pipeline with randomized params, framing mode, optional TTS voiceover + music bed. Stitch-group members are deferred to step 5.
+4.5. **Transition animations (7d.5)** — optional, gated post-pass over the FINISHED clips: white-flash beats + jump-cut compression (drop dead air, `xfade=fadewhite`). Path-agnostic + caption-safe (captions are already burned). `scripts/lib/clip_cuts.py`, flags `CLIP_FLASH_CUTS` / `CLIP_JUMP_CUTS`. Off by default. See [[concepts/transition-animations]].
 5. **Stage 7e — stitch render** — `scripts/lib/stitch_render.py` concatenates each stitch group's members with `xfade` transitions into one composite clip.
 6. Unload Whisper, proceed to Stage 8.
 

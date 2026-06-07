@@ -166,6 +166,18 @@
                 <label for="chk-arc-stitch" title="Render A1/M3 setup→payoff arcs as a 2-part clip (short 'Earlier:' setup snippet jump-cut to the payoff). Also loosens the arc-guarantee so the top arc reaches the final selection.">Stitch arcs</label>
             </div>
             <div class="checkbox-group">
+                <input type="checkbox" id="chk-flash-cuts" onchange="onOriginalityChange()">
+                <label for="chk-flash-cuts" title="White-flash transition beats layered on clips for engagement (deterministic cadence + any model-picked beats). Pattern-interrupt — no content removed.">White-flash transitions</label>
+            </div>
+            <div class="control-group" style="margin-top: 6px;">
+                <label class="field-label" title="Jump-cut to the payoff with a white fade by DROPPING dead air/rambling. 'Silence' is safe (drops only pauses); 'Smart' adds LLM-inferred cuts of filler (needs AI editing profiles / vision). Captions stay in sync — the cut is applied to the finished clip.">Jump-cut compression</label>
+                <select id="sel-jump-cuts" onchange="onOriginalityChange()">
+                    <option value="off" selected>Off</option>
+                    <option value="gaps">Silence only (safe)</option>
+                    <option value="on">Smart + silence</option>
+                </select>
+            </div>
+            <div class="checkbox-group">
                 <input type="checkbox" id="chk-tts-vo" onchange="onOriginalityChange()">
                 <label for="chk-tts-vo" title="Mix a Piper (local) voiceover line generated during vision enrichment.">Voiceover (TTS)</label>
             </div>

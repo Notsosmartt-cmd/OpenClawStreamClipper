@@ -532,6 +532,46 @@ def run(ctx) -> None:
                 except Exception as e:  # noqa: BLE001
                     log.warn(f"render error for T={row['t']}: {e}")
 
+    # 7d.5 — transition animations (jump-cuts + white flashes), gated + failure-
+    # soft. Runs on the FINISHED clips so burned captions/effects stay in sync
+    # (they're pixels by now — no SRT remap needed). CLIP_JUMP_CUTS=off|gaps|llm|on,
+    # CLIP_FLASH_CUTS=off|on. See scripts/lib/clip_cuts.py + concepts/transition-animations.
+    _jump_mode = os.environ.get("CLIP_JUMP_CUTS", "off").strip().lower()
+    _flash_mode = os.environ.get("CLIP_FLASH_CUTS", "off").strip().lower()
+    if _jump_mode not in ("", "off") or _flash_mode not in ("", "off"):
+        try:
+            import clip_cuts
+            import edit_plan as _ep
+            _moments_by_t = {
+                int(round(float(_m.get("timestamp", -1)))): _m
+                for _m in json.loads(p.scored_moments.read_text(encoding="utf-8"))
+            }
+            _n_mod = 0
+            for row in rows:
+                clip_file = p.clips_dir / f"{row['title']}.mp4"
+                if not clip_file.exists():
+                    continue
+                try:
+                    cs = (float(row["clip_start"]) if row["clip_start"] != ""
+                          else max(0.0, float(row["t"]) - 15))
+                    dur = float(row["clip_duration"]) if row["clip_duration"] != "" else 30.0
+                except (TypeError, ValueError):
+                    continue
+                _plan = _ep.normalize(
+                    _moments_by_t.get(int(round(float(row["t"]))), {}).get("edit_plan") or {})
+                if clip_cuts.process_clip_transitions(
+                        str(clip_file), cuts=_plan.get("cuts", []),
+                        flashes=_plan.get("flashes", []), clip_start=cs, duration=dur,
+                        temp_dir=str(p.work_dir), jump_mode=_jump_mode,
+                        flash_mode=_flash_mode, seed=int(round(float(row["t"]))),
+                        category=row["category"], log=log.log):
+                    _n_mod += 1
+            if _n_mod:
+                log.log(f"  [transitions] applied to {_n_mod}/{len(rows)} clip(s) "
+                        f"(jump={_jump_mode} flash={_flash_mode})")
+        except Exception as e:  # noqa: BLE001
+            log.warn(f"transitions pass failed (clips unaffected): {e}")
+
     # 7e — stitch groups (regular stitch + Fix 3 arc-stitch share this renderer)
     groups_file = p.work("moment_groups.json")
     if (ctx.stitch or ctx.arc_stitch) and groups_file.exists():

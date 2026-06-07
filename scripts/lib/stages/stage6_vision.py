@@ -89,6 +89,14 @@ except:
 with open(f"{TEMP_DIR}/hype_moments.json") as f:
     moments = json.load(f)
 
+# Transition-animation inference (gated). Only ask the vision model for
+# cuts/flashes when the matching Stage-7 mode is on; otherwise the prompt is
+# byte-identical to before — zero risk to normal runs. Rule-based modes
+# (CLIP_JUMP_CUTS=gaps, the flash cadence) don't need the model at all.
+_EDIT_LLM_CUTS = os.environ.get("CLIP_JUMP_CUTS", "off").strip().lower() in ("llm", "on")
+_EDIT_LLM_FLASH = os.environ.get("CLIP_FLASH_CUTS", "off").strip().lower() in ("on",)
+_EDIT_INFER = _EDIT_LLM_CUTS or _EDIT_LLM_FLASH
+
 # EVERY moment that survived detection WILL be rendered.
 # Vision only enriches with titles/descriptions and can boost the score.
 enriched = []
@@ -346,6 +354,7 @@ def _process_moment(moment):
         # back to T±8 is preserved for the (rare) case where clip_start /
         # clip_end aren't on the moment, e.g. legacy callers.
         local_transcript = ""
+        local_transcript_ts = ""
         try:
             with open(f"{TEMP_DIR}/transcript.json") as _tf:
                 _tr = json.load(_tf)
@@ -358,6 +367,10 @@ def _process_moment(moment):
             window = [seg for seg in _tr
                       if seg.get("end", 0) >= _start and seg.get("start", 0) <= _end]
             local_transcript = " ".join(s.get("text", "").strip() for s in window)[:500]
+            if _EDIT_INFER:
+                local_transcript_ts = " ".join(
+                    f"[{float(s.get('start', 0)):.1f}-{float(s.get('end', 0)):.1f}] "
+                    f"{s.get('text', '').strip()}" for s in window)[:1100]
         except Exception:
             pass
 
@@ -458,6 +471,23 @@ def _process_moment(moment):
                     "explicitly (e.g. \"earlier they bragged X, now Y\"). If frames 1-2 show a "
                     "different person/scene than 3+, the callback is weaker — say so in description.\n"
                 )
+            edit_directive = ""
+            edit_json = ""
+            if _EDIT_INFER and local_transcript_ts:
+                _ed = ["\nEDIT DECISIONS — use the ABSOLUTE-timestamped transcript below:\n",
+                       f'"""{local_transcript_ts}"""\n']
+                _jf = []
+                if _EDIT_LLM_CUTS:
+                    _ed.append("- cuts: spans of DEAD AIR / rambling / false-starts to DROP so the clip "
+                               "reaches the payoff faster. KEEP the setup and the punchline; never drop the "
+                               "last few seconds; total dropped < 40%. Empty list if it's already tight.\n")
+                    _jf.append('"cuts": [{"drop_start": <abs s>, "drop_end": <abs s>}]')
+                if _EDIT_LLM_FLASH:
+                    _ed.append("- flashes: 0-2 absolute timestamps for a quick white-flash beat right before "
+                               "a punchline or a hard topic shift (engagement). Empty list if none fit.\n")
+                    _jf.append('"flashes": [{"t": <abs s>, "style": "soft"}]')
+                edit_directive = "".join(_ed)
+                edit_json = (",\n  " + ",\n  ".join(_jf)) if _jf else ""
             base_prompt = f"""Analyze this sequence of time-ordered frames from a livestream around a detected highlight moment, together with what the streamer is ACTUALLY saying.
 
 Context: {context_hint}
@@ -484,7 +514,7 @@ Tier-4 Phase 4.5 — also identify the INTERACTION SHAPE the frames depict:
 - pattern_match: which catalog pattern the frames best support — "setup_external_contradiction", "challenge_and_fold", "reading_chat_reaction", "storytelling_arc", "hot_take_pushback", "informational_ramble", "interview_revelation", "rap_battle_freestyle", "social_callout", "unexpected_topic_shift", or null.
 - pattern_match_strength: 0.0-1.0 — confidence the frames support pattern_match.
 - gaze_direction: "at-camera" / "at-chat" / "at-screen" / "at-guest" / "off-screen" / "down".
-
+{edit_directive}
 Respond ONLY with JSON: {{
   "score": 1-10,
   "category": "comedy/skill/reaction/controversy/emotional/irl",
@@ -497,7 +527,7 @@ Respond ONLY with JSON: {{
   "interaction_shape": "monologue|reading-chat|dialog-with-on-screen-guest|dialog-with-off-screen-voice|gameplay-with-commentary|silent-gameplay|multi-speaker-stage|media-pause-commentary",
   "pattern_match": "<pattern_id or null>",
   "pattern_match_strength": 0.0-1.0,
-  "gaze_direction": "at-camera|at-chat|at-screen|at-guest|off-screen|down"{("," + chr(10) + "  " + chr(34) + "callback_confirmed" + chr(34) + ": 0-10 (Tier-3 A2 — does the visual continuity between setup frames 1-2 and payoff frames 3+ support the claimed callback? 0=different scene/person, 5=ambiguous, 10=same person/scene clearly drives both halves)") if a2_active else ""}
+  "gaze_direction": "at-camera|at-chat|at-screen|at-guest|off-screen|down"{("," + chr(10) + "  " + chr(34) + "callback_confirmed" + chr(34) + ": 0-10 (Tier-3 A2 — does the visual continuity between setup frames 1-2 and payoff frames 3+ support the claimed callback? 0=different scene/person, 5=ambiguous, 10=same person/scene clearly drives both halves)") if a2_active else ""}{edit_json}
 }}"""
 
             def _vision_call(_prompt_text):
@@ -790,6 +820,17 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                     "tone": str(vo.get("tone", "deadpan") or "deadpan")[:12],
                     "duration_estimate_s": float(vo.get("duration_estimate_s", 3.0) or 3.0),
                 }
+        # Transition animations (jump-cut + flash). Store the model's raw picks
+        # on edit_plan; Stage 7's transition pass normalizes + budget-caps them.
+        _ep_cuts = best_vision_result.get("cuts")
+        _ep_flashes = best_vision_result.get("flashes")
+        if isinstance(_ep_cuts, list) or isinstance(_ep_flashes, list):
+            _plan = dict(entry.get("edit_plan") or {})
+            if isinstance(_ep_cuts, list):
+                _plan["cuts"] = _ep_cuts
+            if isinstance(_ep_flashes, list):
+                _plan["flashes"] = _ep_flashes
+            entry["edit_plan"] = _plan
         # Tier-4 Phase 4.5 — vision-as-shape-detector. Stamp the four new
         # fields onto the entry so Stage 7 (manifest sort) can compute
         # cross_validated_full when Pass B primary_pattern + Pass D
