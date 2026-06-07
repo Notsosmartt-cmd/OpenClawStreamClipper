@@ -74,6 +74,20 @@ Adds a grouping layer between [[concepts/highlight-detection]] and [[concepts/cl
 
 See [[concepts/clip-rendering]] §Stitch rendering for the FFmpeg concat details.
 
+### Verifying / debugging grouping (2026-06-07)
+
+All three builders in `scripts/lib/moment_groups.py` now emit `[GROUPS]` lines to the pipeline log (stitch + arc since BUG 63; **narrative added 2026-06-07**) — so a run never groups silently. They report per-category eligibility, the exact skip reason (`<3 needed`, `over 28s`, `setup too close`, etc.), and every `FORMED` group with its member timestamps. Grep a run: `grep '\[GROUPS\]' <log>`.
+
+A **dry-run tool** reports what WOULD form (all 3 types, forced on) against any saved moments file, without a pipeline run or any writes:
+
+```
+python scripts/lib/moment_groups.py --explain --moments <hype_moments.json|scored_moments.json>
+```
+
+It prints the category + duration distribution, then `WOULD FORM -> narrative=N stitch=N arc-stitch=N | solo=N`, with the builders' `[GROUPS]` detail on stderr. Use it to tune thresholds / sift qualification.
+
+**Reading false negatives vs "just didn't qualify":** most VODs legitimately won't trigger **stitch** — it needs **≥3** short (`≤28 s`) moments of the *same* `{funny/hype/reactive/dancing}` category, and a typical selection has only 1–2 per category (the log's `eligible {...}` shows this). That's expected, not a bug. **narrative** needs ≥2 adjacent `{storytime/emotional/hot_take}` within 120 s (merged ≤90 s). **arc-stitch** needs an A1/M3 arc/callback with a far-earlier `setup_time` — confirmed firing in production (`FORMED … setup_T→payoff_T`). To make stitch fire more often, the levers are `STITCH_MIN_MEMBERS`, `STITCH_ELIGIBLE_MAX_DUR`, and `STITCHABLE_CATEGORIES` — but loosening them trades toward **false positives** (stitch bundles top-scored same-category beats, *not* thematically-linked ones, so a looser pool can montage unrelated bits). Eyeball the `FORMED … T=[…]` timestamps to judge coherence.
+
 ---
 
 ## Wave D — Voiceover + Music bed
