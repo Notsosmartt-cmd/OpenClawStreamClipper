@@ -15,6 +15,14 @@ whisper_model = os.environ.get("CLIP_WHISPER_MODEL", "large-v3")
 whisper_device = os.environ.get("CLIP_WHISPER_DEVICE", "cuda")
 whisper_compute = os.environ.get("CLIP_WHISPER_COMPUTE", "float16" if whisper_device == "cuda" else "int8")
 
+
+def _ts(t):
+    """Seconds -> SRT timestamp HH:MM:SS,mmm."""
+    h, r = divmod(max(0.0, float(t)), 3600)
+    m, s = divmod(r, 60)
+    return f"{int(h):02d}:{int(m):02d}:{s:06.3f}".replace(".", ",")
+
+
 # Load Whisper ONCE for all clips
 if whisper_device == "cuda":
     try:
@@ -42,20 +50,30 @@ for audio_path in audio_files:
 
         srt_lines = []
         idx = 1
+        # Emit ONE SRT block per WORD (word_timestamps=True) so the caption
+        # renderer can highlight/box each word in turn (CapCut-style karaoke).
+        # Falls back to a whole-segment block when a segment has no word timing.
         for seg in segments:
-            start_h, start_r = divmod(seg.start, 3600)
-            start_m, start_s = divmod(start_r, 60)
-            end_h, end_r = divmod(seg.end, 3600)
-            end_m, end_s = divmod(end_r, 60)
-            srt_lines.append(f"{idx}")
-            srt_lines.append(
-                f"{int(start_h):02d}:{int(start_m):02d}:{start_s:06.3f}".replace(".", ",") +
-                " --> " +
-                f"{int(end_h):02d}:{int(end_m):02d}:{end_s:06.3f}".replace(".", ",")
-            )
-            srt_lines.append(seg.text.strip())
-            srt_lines.append("")
-            idx += 1
+            words = getattr(seg, "words", None) or []
+            emitted = False
+            for w in words:
+                wt = (getattr(w, "word", "") or "").strip()
+                if not wt:
+                    continue
+                srt_lines.append(f"{idx}")
+                srt_lines.append(f"{_ts(w.start)} --> {_ts(w.end)}")
+                srt_lines.append(wt)
+                srt_lines.append("")
+                idx += 1
+                emitted = True
+            if not emitted:
+                stext = seg.text.strip()
+                if stext:
+                    srt_lines.append(f"{idx}")
+                    srt_lines.append(f"{_ts(seg.start)} --> {_ts(seg.end)}")
+                    srt_lines.append(stext)
+                    srt_lines.append("")
+                    idx += 1
 
         with open(srt_path, "w") as f:
             f.write("\n".join(srt_lines))

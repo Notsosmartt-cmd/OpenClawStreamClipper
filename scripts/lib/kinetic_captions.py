@@ -196,6 +196,104 @@ def _group_words(words: list[dict], group_size: int = 3) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CapCut-style "word box" captions (the default)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def resolve_font() -> tuple[str, str]:
+    """Return (ass_fontname, fontsdir) for the caption font. Prefer the bundled
+    Montserrat Black (assets/fonts) so the look is identical on any machine;
+    fall back to a heavy installed sans so captions never render in a thin
+    default face. fontsdir is passed to FFmpeg's subtitles filter so libass
+    finds the bundled TTF even though it isn't installed system-wide."""
+    fonts_dir = ASSETS_ROOT / "fonts"
+    if (fonts_dir / "Montserrat-Black.ttf").is_file():
+        return "Montserrat Black", str(fonts_dir)
+    win = Path(r"C:\Windows\Fonts")
+    for fname, ass in (("seguibl.ttf", "Segoe UI Black"), ("ariblk.ttf", "Arial Black")):
+        if (win / fname).is_file():
+            return ass, str(win)
+    return "Arial", str(fonts_dir)
+
+
+_ACCENT_NAMED = {
+    "yellow": "FFD400", "green": "00E676", "red": "FF2D2D",
+    "pink": "FE2C55", "orange": "FF7A00", "cyan": "00E5FF", "white": "FFFFFF",
+}
+
+
+def _accent_bgr(s: str) -> str:
+    """Accent name or RRGGBB hex -> ASS &H00BBGGRR color."""
+    s = (s or "yellow").strip().lower()
+    hexcol = _ACCENT_NAMED.get(s, s.lstrip("#"))
+    if len(hexcol) != 6 or any(c not in "0123456789abcdef" for c in hexcol):
+        hexcol = "FFD400"
+    r, g, b = hexcol[0:2], hexcol[2:4], hexcol[4:6]
+    return f"&H00{b}{g}{r}".upper()
+
+
+def _capcut_header(font: str, fontsize: int, accent_bgr: str, margin_v: int,
+                   outline: int) -> str:
+    """ASS header with two styles: Default (white text + black outline + soft
+    shadow) and Box (dark text on an opaque accent box, BorderStyle=3). The
+    renderer switches to Box for the active word via the \\rBox inline tag."""
+    return (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n"
+        "ScaledBorderAndShadow: yes\nWrapStyle: 2\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Default,{font},{fontsize},&H00FFFFFF,&H00FFFFFF,&H00000000,"
+        f"&H64000000,1,0,1,{outline},2,2,90,90,{margin_v},1\n"
+        f"Style: Box,{font},{fontsize},&H00000000,&H00000000,{accent_bgr},"
+        f"&H00000000,1,0,3,{max(outline + 4, 8)},0,2,90,90,{margin_v},1\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
+        "Effect, Text\n"
+    )
+
+
+def render_box(words: list[dict], font: str = "Montserrat Black",
+               accent: str = "yellow", caps: bool = False,
+               fontsize: int = 84, margin_v: int = 220, outline: int = 4,
+               group_size: int = 3) -> str:
+    """CapCut-style captions: a short phrase is on screen and the currently
+    spoken word sits in a colored box that advances word-by-word.
+
+    Emits one Dialogue event per word (the whole phrase shown, that word in the
+    Box style), tiling each phrase's time span with no gaps so the line stays
+    put while the box moves."""
+    accent_bgr = _accent_bgr(accent)
+    header = _capcut_header(font, fontsize, accent_bgr, margin_v, outline)
+    lines: list[str] = [header.rstrip(), ""]
+    chunks = _group_words([dict(w) for w in words], group_size=group_size)
+    for ch in chunks:
+        ws = ch["words"]
+        n = len(ws)
+        for j in range(n):
+            seg_start = ws[j]["start"]
+            seg_end = ws[j + 1]["start"] if j + 1 < n else ch["end"]
+            if seg_end <= seg_start:
+                seg_end = seg_start + 0.05
+            parts: list[str] = []
+            for k, ww in enumerate(ws):
+                txt = ww["text"]
+                txt = txt.upper() if caps else txt
+                txt = _ass_escape(txt)
+                if k == j:
+                    parts.append("{\\rBox}" + txt + "{\\r}")
+                else:
+                    parts.append(txt)
+            text = " ".join(parts)
+            lines.append(
+                f"Dialogue: 0,{_ass_time(seg_start)},{_ass_time(seg_end)},"
+                f"Default,,0,0,0,,{text}"
+            )
+    return "\n".join(lines) + "\n"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Render
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -276,13 +374,23 @@ def render_ass(words: list[dict], preset: str = "clean",
 
 
 def srt_to_ass(srt_path: Path, ass_path: Path,
-               preset: str = "clean",
-               emphasis_indices: list[int] | None = None) -> int:
-    """Read SRT, write ASS. Returns 0 on success, 1 if SRT was empty."""
+               preset: str = "capcut",
+               emphasis_indices: list[int] | None = None,
+               font: str = "", accent: str = "yellow", caps: bool = False,
+               fontsize: int = 0, margin_v: int = 0) -> int:
+    """Read SRT, write ASS. Returns 0 on success, 1 if SRT was empty.
+
+    preset='capcut' (default) renders the word-box karaoke style; the older
+    named presets (neon/bouncy/clean/news/soft) use the legacy reveal."""
     words = parse_srt(srt_path)
     if not words:
         return 1
-    ass = render_ass(words, preset=preset, emphasis_indices=emphasis_indices)
+    if preset == "capcut":
+        ass = render_box(words, font=(font or resolve_font()[0]), accent=accent,
+                         caps=caps, fontsize=(fontsize or 84),
+                         margin_v=(margin_v or 220))
+    else:
+        ass = render_ass(words, preset=preset, emphasis_indices=emphasis_indices)
     ass_path.parent.mkdir(parents=True, exist_ok=True)
     ass_path.write_text(ass, encoding="utf-8")
     return 0
@@ -293,12 +401,20 @@ def _cli() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--srt", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--preset", default="clean")
+    ap.add_argument("--preset", default="capcut")
+    ap.add_argument("--font", default="")
+    ap.add_argument("--accent", default="yellow")
+    ap.add_argument("--caps", default="false")
+    ap.add_argument("--fontsize", type=int, default=0)
+    ap.add_argument("--margin-v", type=int, default=0)
     ap.add_argument("--emphasis", default="",
-                    help="comma-separated word indices to emphasize")
+                    help="comma-separated word indices to emphasize (legacy presets)")
     args = ap.parse_args()
     emph = [int(x) for x in args.emphasis.split(",") if x.strip().isdigit()]
-    rc = srt_to_ass(Path(args.srt), Path(args.out), args.preset, emph)
+    caps = str(args.caps).strip().lower() in ("1", "true", "yes")
+    rc = srt_to_ass(Path(args.srt), Path(args.out), preset=args.preset,
+                    emphasis_indices=emph, font=args.font, accent=args.accent,
+                    caps=caps, fontsize=args.fontsize, margin_v=args.margin_v)
     if rc != 0:
         print(f"# kinetic_captions: SRT empty or unreadable: {args.srt}", file=sys.stderr)
     return rc

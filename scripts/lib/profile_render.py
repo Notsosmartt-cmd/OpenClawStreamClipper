@@ -466,18 +466,27 @@ def render(*,
         )
         cur = "v_hook"
 
-    # Kinetic captions
+    # Kinetic captions (CapCut-style word box by default; shares the bundled
+    # font + accent/case dials with the solo render path in stage7.py).
     if captions:
         srt_p = Path(srt)
         if srt_p.is_file():
             ass_path = Path(temp_dir) / f"prof_caps_{int(clip_start)}.ass"
             try:
-                rc = kc.srt_to_ass(srt_p, ass_path,
-                                   preset=plan["caption_preset"] or "clean",
-                                   emphasis_indices=plan["caption_emphasis"] or None)
+                cap_font, cap_fonts_dir = kc.resolve_font()
+                preset = os.environ.get("CLIP_CAPTION_PRESET", "capcut") or "capcut"
+                rc = kc.srt_to_ass(
+                    srt_p, ass_path, preset=preset,
+                    emphasis_indices=plan["caption_emphasis"] or None,
+                    font=cap_font,
+                    accent=os.environ.get("CLIP_CAPTION_ACCENT", "yellow"),
+                    caps=os.environ.get("CLIP_CAPTION_CAPS", "false").strip().lower()
+                         in ("1", "true", "yes"),
+                )
                 if rc == 0 and ass_path.is_file():
                     chain_parts.append(
-                        f"[{cur}]subtitles='{_ffesc(str(ass_path))}'[v_caps]"
+                        f"[{cur}]subtitles='{_ffesc(str(ass_path))}'"
+                        f":fontsdir='{_ffesc(cap_fonts_dir)}'[v_caps]"
                     )
                     cur = "v_caps"
             except Exception as e:
