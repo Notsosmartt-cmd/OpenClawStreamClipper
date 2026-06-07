@@ -1695,6 +1695,23 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
+## BUG 64 — White-flash transitions painted the ENTIRE clip white (every flash clip ruined)
+
+> [!success] Resolved 2026-06-06
+
+**Symptom**: with **White-flash transitions** (`CLIP_FLASH_CUTS=on`) enabled, every clip that got a flash came out **completely white for its whole duration** — audio intact, video pure white (measured `YAVG≈235/255` at *every* timestamp, not just the flash). First full run with flashes on (`20260607_093740_FirstFullAudio4-20`, `flash=on jump=off`) ruined all flashed clips.
+
+**Cause**: the flash was built from chained `fade` filters — `fade=t=out:st=T:d=0.06:color=white` then `fade=t=in:st=T+0.06:d=0.06:color=white`. But **FFmpeg's `fade` HOLDS the colour outside its ramp window**: `fade=out:color=white` ramps to white and **stays white forever after**; `fade=in:color=white` shows **white before** its start. Chained, they cover the entire timeline → the whole clip is white. `fade` is only meaningful at the clip's start/end, never as a mid-clip transient. **Testing gap that let it ship:** the pre-merge FFmpeg test only sampled the flash frame (correctly white) and never a non-flash frame, so the all-white-everywhere behaviour was invisible.
+
+**Fix** (`scripts/lib/clip_cuts.py`): replace the chained `fade` with a genuinely **transient** flash — `white_flash_boxes(t, style)` builds `drawbox=x=0:y=0:w=iw:h=ih:t=fill:color=white@<a>:enable='between(t,a,b)'` filters (rise→peak→fall within ~0.16 s). `drawbox` with `enable=between(t,…)` only draws inside the window, so the flash is a true pop. Both call sites fixed (`_build_filter` — the live render path — and the `white_flash_vf` helper). **Verified the right way this time:** before-flash YAVG 122 (normal), flash 209 (bright), after-flash 121 (normal) — only the flash window is white. Self-test asserts `drawbox`+`enable` and the absence of any `fade=`.
+
+> [!warning] Existing white clips are unrecoverable — re-render needed
+> The transition pass overwrites the clip in place (`os.replace`), so the pre-flash (good) render is gone for already-produced clips. **Re-run the pipeline** to regenerate them correctly (flashes now transient, or leave `CLIP_FLASH_CUTS=off`).
+
+**Lesson**: never use `fade=…:color=…` for a mid-clip transient — it holds the colour outside its ramp. And ALWAYS sample a control frame (outside the effect window), not just the effect frame, when verifying a time-localized video filter.
+
+---
+
 ## BUG 63 — "Stitch short clips" could never form a group (budget vs min-members arithmetic)
 
 > [!success] Resolved 2026-06-06
