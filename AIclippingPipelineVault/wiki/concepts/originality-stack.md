@@ -3,7 +3,7 @@ title: "Originality Stack (TikTok 2025 defense)"
 type: concept
 tags: [originality, rendering, fingerprinting, tiktok, framing, stitch, tts, music, camera-pan, stage-7, video, hub]
 sources: 1
-updated: 2026-04-22
+updated: 2026-06-06
 ---
 
 # Originality Stack
@@ -64,7 +64,8 @@ Adds a grouping layer between [[concepts/highlight-detection]] and [[concepts/cl
 
 - **`solo`** — single-moment clip, same behavior as before. Default when neither `CLIP_STITCH` nor `CLIP_NARRATIVE` is set (the stage 4.5 call short-circuits).
 - **`narrative`** — 2+ adjacent moments in categories `{storytime, emotional, hot_take}` within 120 s of each other. Merged into one long clip (45–90 s). Solves the user-reported need for storytime clips that span multiple segments.
-- **`stitch`** — 3–4 short moments in `{funny, hype, reactive, dancing}`, each capped at 12 s, total target ≈28 s. Rendered by `scripts/lib/stitch_render.py` which produces each member through the same framing pipeline (with its own randomized per-segment params), then concatenates with `xfade` transitions (picked from a 7-element pool: fade / wiperight / slideup / circlecrop / distance / slideleft / radial), then applies the hook overlay.
+- **`stitch`** — 3–4 short moments in `{funny, hype, reactive, dancing}`. Each beat is **peak-centered** on its punchline (`T`) and capped at `STITCH_MAX_MEMBER_DUR=10 s`; eligibility is decoupled (`STITCH_ELIGIBLE_MAX_DUR=28 s` — a longer moment still contributes a capped beat); budget `STITCH_TOTAL_TARGET=36 s` (+4 slack). Rendered by `scripts/lib/stitch_render.py` which produces each member through the same framing pipeline (own randomized per-segment params), concatenates with `xfade` transitions (7-element pool: fade / wiperight / slideup / circlecrop / distance / slideleft / radial), then applies the hook overlay.
+  - > [!warning] BUG 63 (fixed 2026-06-06): with the old `cap=12 / target=28 / min=3`, `3×12=36 > 28+4=32` made a 3-member group **arithmetically impossible** — stitch silently produced 0 groups on every run. Constants now satisfy `target+4 ≥ min×cap`; beats are peak-centered (was: first N s from `clip_start`, i.e. the setup); `build_stitch_groups`/`build_arc_stitch_groups` now log per-category eligibility + skip reasons. See [[concepts/bugs-and-fixes]] BUG 63.
 
 ### Stage-7 behavior
 
