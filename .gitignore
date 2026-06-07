@@ -136,3 +136,6 @@ config/plugin-runtime-deps/
 # ============================================================
 OpenClawStreamClipper/
 OpenClaw_Stream_Clipper_Summary.md
+
+# Imported design handoff staging (screenshots, zip, source mockups)
+_design_handoff/
