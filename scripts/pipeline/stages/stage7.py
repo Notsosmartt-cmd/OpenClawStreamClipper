@@ -62,6 +62,27 @@ def _resolve_font() -> str:
 HOOK_FONT = _resolve_font()
 
 
+def _resolve_caption_font() -> tuple[str, str]:
+    """(ass_fontname, fontsdir) for CapCut-style captions. Prefer the bundled
+    Montserrat Black so output is identical anywhere; else a heavy installed
+    sans. fontsdir lets libass find the bundled TTF (not system-installed)."""
+    fonts_dir = Path(__file__).resolve().parents[3] / "assets" / "fonts"
+    if (fonts_dir / "Montserrat-Black.ttf").is_file():
+        return "Montserrat Black", str(fonts_dir)
+    for path, ass in ((r"C:\Windows\Fonts\seguibl.ttf", "Segoe UI Black"),
+                      (r"C:\Windows\Fonts\ariblk.ttf", "Arial Black")):
+        if Path(path).exists():
+            return ass, str(Path(path).parent)
+    return "Arial", str(fonts_dir)
+
+
+# CapCut-style captions: bold font + bundled fonts dir + accent/case dials.
+CAPTION_FONT, CAPTION_FONTS_DIR = _resolve_caption_font()
+CAPTION_PRESET = os.environ.get("CLIP_CAPTION_PRESET", "capcut").strip() or "capcut"
+CAPTION_ACCENT = os.environ.get("CLIP_CAPTION_ACCENT", "yellow").strip() or "yellow"
+CAPTION_CAPS = os.environ.get("CLIP_CAPTION_CAPS", "false").strip() or "false"
+
+
 def _ff(path) -> str:
     """Escape a filesystem path for use *inside* an FFmpeg filtergraph value
     (forward slashes + escaped drive colon)."""
@@ -229,10 +250,23 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
             f"x=(w-text_w)/2:y={orig['HOOK_Y']}:line_spacing=8")
 
     if ctx.captions_enabled:
-        render_vf += (
-            f",subtitles='{_ff(clip_srt_render)}':force_style='FontSize={orig['SUB_FONTSIZE']},"
-            f"Bold=1,PrimaryColour={orig['SUB_PRIMARY']},OutlineColour={orig['SUB_OUTLINE_COL']},"
-            f"Outline={orig['SUB_OUTLINE']},Alignment=2,MarginV={orig['SUB_MARGIN_V']}'")
+        # CapCut-style word-box captions: build an ASS from the word-level SRT
+        # and burn it with the bundled font dir so libass finds Montserrat.
+        clip_ass = p.work(f"clip_{T}.ass")
+        cap = common.run_module(log, "kinetic_captions.py", [
+            "--srt", str(clip_srt_render), "--out", str(clip_ass),
+            "--preset", CAPTION_PRESET, "--font", CAPTION_FONT,
+            "--accent", CAPTION_ACCENT, "--caps", CAPTION_CAPS,
+        ], env=env, check=False)
+        if cap.returncode == 0 and clip_ass.exists():
+            render_vf += (f",subtitles='{_ff(clip_ass)}'"
+                          f":fontsdir='{_ff(CAPTION_FONTS_DIR)}'")
+        else:
+            # ASS generation failed (e.g. empty SRT) — fall back to a flat burn.
+            render_vf += (
+                f",subtitles='{_ff(clip_srt_render)}':force_style='FontSize={orig['SUB_FONTSIZE']},"
+                f"Bold=1,PrimaryColour={orig['SUB_PRIMARY']},OutlineColour={orig['SUB_OUTLINE_COL']},"
+                f"Outline={orig['SUB_OUTLINE']},Alignment=2,MarginV={orig['SUB_MARGIN_V']}'")
 
     # --- audio layers ------------------------------------------------------
     vo_wav = ""

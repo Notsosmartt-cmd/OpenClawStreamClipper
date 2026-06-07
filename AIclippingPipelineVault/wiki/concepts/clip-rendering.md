@@ -68,7 +68,7 @@ Stage 6.5 emits a `crop=w:h:x='<piecewise-linear expr over t>':y='<expr>',scale=
 | Frame rate | 30 fps (CFR) |
 | Audio codec | AAC, 192 kbps |
 | Duration | Per-category variable: hype/reactive 18–25 s, funny 20–30 s, emotional 40–55 s, storytime 50–80 s (narrative groups up to 90 s) |
-| Subtitles | Burned-in (not soft subtitles) |
+| Subtitles | Burned-in (not soft). **CapCut word-box style by default** (bold Montserrat Black, white + black outline, active word in a yellow box advancing word-by-word) — see [[concepts/captions]] |
 
 The old defaults (CRF 23, preset medium, 128 kbps audio) are still used by the legacy fallback render path when the primary render fails.
 
@@ -121,7 +121,13 @@ Music-bed path is chosen via `scripts/lib/music_pick.py` (tier A folder conventi
 
 ## Captions and hook text
 
-Subtitle style (ASS font/color/margin), per-clip palette randomization, and the AI-generated hook card rendered at the top of the video are all covered in [[concepts/captions]].
+The default caption is a **CapCut-style word box** — bold **Montserrat Black** (bundled in `assets/fonts`, burned via `fontsdir`), white text + black outline, with the currently-spoken word in a **yellow box that advances word-by-word**. Built by `scripts/lib/kinetic_captions.py` (`render_box`) → ASS → FFmpeg `subtitles`; both the solo (`stage7.py`) and AI-profile (`profile_render.py`) render paths use it. Dials: `CLIP_CAPTION_ACCENT`, `CLIP_CAPTION_CAPS`, `CLIP_CAPTION_PRESET`. Full detail — incl. the four bugs this fixed and the legacy `force_style` fallback — in [[concepts/captions]].
+
+Sample (FFmpeg burn test, the active word boxed):
+
+```
+        but don't ┃worry┃        ← "worry" in a yellow box, white outlined text
+```
 
 ---
 
