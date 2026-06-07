@@ -39,8 +39,16 @@ NARRATIVE_MAX_GAP_SEC = 120
 NARRATIVE_MAX_DURATION = 90
 STITCH_MIN_MEMBERS = 3
 STITCH_MAX_MEMBERS = 4
-STITCH_MAX_MEMBER_DUR = 12  # short sub-segments
-STITCH_TOTAL_TARGET = 28    # aim for ~28 s total (under the <30 s research bar)
+STITCH_MAX_MEMBER_DUR = 10  # per-beat cap (was 12 — see the budget invariant below)
+# BUG fix (2026-06-06): the budget MUST fit MIN_MEMBERS beats at the cap, else a
+# 3-member group can NEVER form. Old values: 3*12=36 > 28+4=32 budget, so the 3rd
+# beat always overflowed and stitch silently produced 0 groups on every run.
+# Invariant: STITCH_TOTAL_TARGET + 4 >= STITCH_MIN_MEMBERS * STITCH_MAX_MEMBER_DUR.
+STITCH_TOTAL_TARGET = 36    # ~36-40 s budget: fits 3 beats (30) or 4 (40) at <=10 s each
+# Moments up to this long can still CONTRIBUTE a (peak-centered, capped) beat —
+# decoupled from the beat cap so longer funny/hype moments aren't excluded outright
+# (the old `dur > cap*2` filter dropped everything over 24 s, shrinking the pool).
+STITCH_ELIGIBLE_MAX_DUR = 28
 STITCHABLE_CATEGORIES = {"funny", "hype", "reactive", "dancing"}
 
 # Fix 3 (2026-06-06): arc/callback moments carry a far-earlier setup_time; render
@@ -54,6 +62,12 @@ ARC_MIN_GAP = 10          # setup must be >= this many seconds before the payoff
 
 def new_group_id() -> str:
     return "g_" + uuid.uuid4().hex[:8]
+
+
+def _log(msg: str) -> None:
+    """Diagnostic to stderr (tee'd into the pipeline log). Stitch/arc grouping
+    used to fail SILENTLY — these lines surface WHY a group did or didn't form."""
+    print(f"[GROUPS] {msg}", file=sys.stderr)
 
 
 def build_narrative_groups(moments: list[dict]) -> list[dict]:
@@ -119,63 +133,91 @@ def build_narrative_groups(moments: list[dict]) -> list[dict]:
 
 
 def build_stitch_groups(moments: list[dict], enabled: bool) -> list[dict]:
-    """Pick 3-4 short same-category moments and bundle them as one stitch post."""
+    """Pick 3-4 short same-category moments and bundle them as one stitch post.
+
+    Each beat is peak-centered (captures the punchline, not the lead-in setup)
+    and capped at STITCH_MAX_MEMBER_DUR; the budget is sized so MIN..MAX beats at
+    the cap actually fit (see the invariant on the constants)."""
     if not enabled:
+        _log("stitch: disabled (CLIP_STITCH off)")
         return []
 
     groups: list[dict] = []
     by_cat: dict[str, list[dict]] = {}
+    n_claimed = n_wrongcat = n_toolong = 0
     for m in moments:
         if m.get("group_id"):
-            continue  # already claimed by narrative
+            n_claimed += 1
+            continue
         cat = m.get("category", "")
         if cat not in STITCHABLE_CATEGORIES:
+            n_wrongcat += 1
             continue
-        dur = m.get("clip_duration", 30)
-        if dur > STITCH_MAX_MEMBER_DUR * 2:
+        dur = float(m.get("clip_duration", 30) or 30)
+        if dur > STITCH_ELIGIBLE_MAX_DUR:
+            n_toolong += 1
             continue
         by_cat.setdefault(cat, []).append(m)
 
+    elig = {c: len(p) for c, p in by_cat.items()}
+    _log(f"stitch: {len(moments)} moments -> eligible {elig or '{}'} "
+         f"(skipped {n_claimed} already-grouped, {n_wrongcat} non-stitchable category, "
+         f"{n_toolong} over {STITCH_ELIGIBLE_MAX_DUR}s); need >={STITCH_MIN_MEMBERS} "
+         f"same-cat, budget {STITCH_TOTAL_TARGET + 4:.0f}s, beat cap {STITCH_MAX_MEMBER_DUR}s")
+
     for cat, pool in by_cat.items():
         if len(pool) < STITCH_MIN_MEMBERS:
+            _log(f"  stitch[{cat}]: {len(pool)} eligible < {STITCH_MIN_MEMBERS} needed -> skip")
             continue
         # Rank by score descending, pick top N under the total budget
         pool.sort(key=lambda m: m.get("score", 0), reverse=True)
         chosen: list[dict] = []
         total = 0.0
         for m in pool:
-            member_dur = min(STITCH_MAX_MEMBER_DUR, m.get("clip_duration", 10))
-            if total + member_dur > STITCH_TOTAL_TARGET + 4:
+            beat_dur = min(STITCH_MAX_MEMBER_DUR, float(m.get("clip_duration", 10) or 10))
+            if total + beat_dur > STITCH_TOTAL_TARGET + 4:
                 continue
             chosen.append(m)
-            total += member_dur
+            total += beat_dur
             if len(chosen) >= STITCH_MAX_MEMBERS:
                 break
         if len(chosen) < STITCH_MIN_MEMBERS:
+            _log(f"  stitch[{cat}]: only {len(chosen)} of {len(pool)} fit the "
+                 f"{STITCH_TOTAL_TARGET + 4:.0f}s budget (< {STITCH_MIN_MEMBERS}) -> skip")
             continue
 
         gid = new_group_id()
+        members = []
+        for m in chosen:
+            t_peak = float(m.get("timestamp", 0) or 0)
+            dur = float(m.get("clip_duration", 10) or 10)
+            cs = float(m.get("clip_start", max(0.0, t_peak - dur / 2.0)) or 0.0)
+            ce = cs + dur
+            beat_dur = min(STITCH_MAX_MEMBER_DUR, dur)
+            # peak-center the beat on the punchline (T), clamped to the clip window
+            bstart = max(cs, min(t_peak - beat_dur / 2.0, ce - beat_dur))
+            bstart = max(0.0, bstart)
+            members.append({
+                "timestamp": m["timestamp"],
+                "start": round(bstart, 2),
+                "end": round(bstart + beat_dur, 2),
+                "duration": round(beat_dur, 2),
+                "role": "beat",
+                "hook": m.get("hook") or m.get("why", "")[:60],
+            })
         groups.append({
             "group_id": gid,
             "kind": "stitch",
             "category": cat,
             "segment_type": chosen[0].get("segment_type"),
             "total_duration": round(total, 1),
-            "members": [
-                {
-                    "timestamp": m["timestamp"],
-                    "start": m.get("clip_start"),
-                    "end": m.get("clip_start", m["timestamp"])
-                           + min(STITCH_MAX_MEMBER_DUR, m.get("clip_duration", 10)),
-                    "duration": min(STITCH_MAX_MEMBER_DUR, m.get("clip_duration", 10)),
-                    "role": "beat",
-                    "hook": m.get("hook") or m.get("why", "")[:60],
-                }
-                for m in chosen
-            ],
+            "members": members,
             "score": round(sum(m.get("score", 0) for m in chosen) / len(chosen), 3),
         })
+        _log(f"  stitch[{cat}]: FORMED {gid} — {len(members)} beats ~{total:.0f}s "
+             f"T={[int(mm['timestamp']) for mm in members]}")
 
+    _log(f"stitch: {len(groups)} group(s) formed")
     return groups
 
 
@@ -190,22 +232,29 @@ def build_arc_stitch_groups(moments: list[dict], enabled: bool) -> list[dict]:
     ``member["start"]``). Skips moments whose setup is too close to (or inside)
     the payoff window — those already show the setup in a single clip."""
     if not enabled:
+        _log("arc-stitch: disabled (CLIP_ARC_STITCH off)")
         return []
     groups: list[dict] = []
+    n_arc = n_claimed = n_nosetup = n_tooclose = 0
     for m in moments:
         if m.get("group_id"):
+            if m.get("category") in ARC_STITCH_CATEGORIES:
+                n_claimed += 1
             continue  # already claimed by narrative/stitch
         if m.get("category") not in ARC_STITCH_CATEGORIES:
             continue
+        n_arc += 1
         setup_t = m.get("setup_time")
         payoff_t = m.get("timestamp")
         if setup_t is None or payoff_t is None:
+            n_nosetup += 1
             continue
         setup_t, payoff_t = int(setup_t), int(payoff_t)
         payoff_start = int(m.get("clip_start", payoff_t - 12))
         # Setup must be genuinely earlier than the payoff window, else a single
         # clip already contains it.
         if setup_t >= payoff_start - ARC_MIN_GAP:
+            n_tooclose += 1
             continue
         payoff_dur = min(ARC_PAYOFF_MAX, int(m.get("clip_duration", 25)) or 25)
         setup_start = max(0, setup_t - 2)
@@ -242,6 +291,11 @@ def build_arc_stitch_groups(moments: list[dict], enabled: bool) -> list[dict]:
             ],
             "score": round(m.get("score", 0), 3),
         })
+        _log(f"  arc-stitch: FORMED {gid} setup_T={setup_t} -> payoff_T={payoff_t} "
+             f"({m.get('arc_kind') or m.get('category')})")
+    _log(f"arc-stitch: {len(groups)} group(s) from {n_arc} arc/callback moment(s) "
+         f"(skipped {n_claimed} already-grouped, {n_nosetup} no setup_time, "
+         f"{n_tooclose} setup too close to payoff)")
     return groups
 
 

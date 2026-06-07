@@ -1695,6 +1695,24 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
+## BUG 63 — "Stitch short clips" could never form a group (budget vs min-members arithmetic)
+
+> [!success] Resolved 2026-06-06
+
+**Symptom**: the dashboard **"Stitch short clips"** toggle never produced a stitched montage — every run logged `stitch_groups: 0`, even when the selection clearly had enough short same-category moments. The 20260607_025810 Lacy run had **4 eligible short funny clips** (15/20/21/24 s) — well past the 3-member minimum — yet still emitted 0 groups.
+
+**Cause**: a self-contradictory constant set in `scripts/lib/moment_groups.py`. Each beat was capped at `STITCH_MAX_MEMBER_DUR=12` s, the budget was `STITCH_TOTAL_TARGET(28)+4 = 32` s, and the minimum was `STITCH_MIN_MEMBERS=3`. But **3 × 12 = 36 > 32**, so the 3rd beat always overflowed the budget and was skipped → only 2 chosen → below the minimum → no group, *every time*. A 3-member stitch at the cap was arithmetically impossible. It had been broken since the constants were set; **Fix 4 (length-neutral, longer clips)** made it worse by shrinking the `dur > cap*2` (>24 s) eligible pool. And it failed **silently** — `build_stitch_groups` just returned `[]` with no log of the pool or the reason, so it was never noticed. (Separately, **"Stitch arcs"** had simply never been enabled in any run, and even when on needs the loosened arc-guarantee to reach selection — see [[concepts/arc-aware-extraction]].)
+
+**Fix** (`scripts/lib/moment_groups.py`):
+- **Budget invariant** — `STITCH_MAX_MEMBER_DUR 12→10`, `STITCH_TOTAL_TARGET 28→36` so `target+4 (40) ≥ MIN_MEMBERS×cap (30)` and 3–4 beats actually fit (3×10=30, 4×10=40).
+- **Decoupled eligibility** — new `STITCH_ELIGIBLE_MAX_DUR=28` replaces the `dur > cap*2` filter, so a longer funny moment can still contribute a (capped) beat instead of being dropped outright.
+- **Peak-centered beats** — each beat is now centered on the moment's peak `T` (clamped to its window) so the montage shows the *punchline*, not the lead-in setup (the old code took the first N s from `clip_start`).
+- **Extensive diagnostics** — `_log()` prints per-category eligible counts, the exact skip reason (already-grouped / non-stitchable category / over-length / too-few / over-budget), and FORMED groups with their member timestamps; arc-stitch logs arc/callback counts + skip reasons (no `setup_time`, setup too close to payoff). No more silent zero.
+
+**Verified**: with the old failing input (4 funny @ 15/20/21/24 s) the builder now forms one 4-beat ~40 s group; beats are peak-centered; arc-stitch forms 2 setup→payoff groups. See [[concepts/originality-stack]] §Wave C.
+
+---
+
 ## Related
 - [[entities/dashboard]] — BUGs 3, 5, 6, 7, 8, 10 are dashboard-specific
 - [[entities/lm-studio]] — BUGs 15, 16, 17, 19 are LM Studio / pipeline integration bugs
