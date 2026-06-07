@@ -8,7 +8,7 @@ updated: 2026-06-06
 
 # Web Dashboard
 
-A Flask-based single-page web app for controlling the clip pipeline without Discord. Port 5001 (entrypoint banner says 5000, code uses 5001 — long-standing mismatch unrelated to modularization). Dark-themed, purple accent (`#7c5cfc`).
+A Flask-based single-page web app for controlling the clip pipeline without Discord. Port 5001 (entrypoint banner says 5000, code uses 5001 — long-standing mismatch unrelated to modularization). **Studio theme** (2026-06-06): zinc-dark surfaces + teal accent (`#14b8a6`/`#2dd4bf`), Plus Jakarta Sans UI font + JetBrains Mono for code/logs, rounded panels, a thin teal top accent line, and pill-style status/docker badges. (Was dark + purple `#7c5cfc` before.)
 
 Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 - `dashboard/app.py` — 78-line Flask bootstrap + blueprint registration
@@ -19,7 +19,10 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 - `dashboard/templates/index.html` — single-page UI; uses `<script type="module">`
 - `dashboard/static/app.js` — 67-line entry module wiring window.* handlers + DOMContentLoaded
 - `dashboard/static/modules/*.js` — 8 ES modules (util, state, pipeline-ui, vods-panel, models-panel, hardware-panel, folders-panel, assets-panel)
-- `dashboard/static/style.css` — dark theme styles
+- `dashboard/static/style.css` — Studio theme (~420 lines), teal/zinc, written to match the existing JS class names
+
+> [!note] Studio theme redesign (2026-06-06)
+> `templates/index.html` + `static/style.css` were replaced from an imported design package (Anthropic design artifact → `_design_handoff/`, git-ignored). The HTML was **merged, not overwritten** — every functional `id`/handler was preserved (all `btn-*` `addEventListener` targets, `vod-select-all` + the multi-VOD checkbox column, `chk-arc-stitch`, the originality controls, models/hardware/folders/assets panels, stage dots, SSE log). Verified all 11 `app.js` wired IDs exist and no statically-referenced JS id is missing. Retained on top of the design: the detailed **Pass B gate** option labels + tooltip, and hover **tooltips** on the originality controls. Emoji `iconMap` in `models-panel.js` blanked (the theme hides `.model-card-icon`). Fonts load via Google `@import` (graceful fallback to `system-ui`/monospace offline). A green-terminal alternative theme also shipped in the package but the Studio (teal) variant is the one implemented.
 
 ### Originality & Render panel (added April 2026)
 

@@ -43,10 +43,12 @@ function renderModels(roles) {
         vision_model: ["Stage 6 — Vision"],
         whisper_model: ["Stage 2 — Transcription", "Stage 7 — Captions"],
     };
+    // Emoji icons removed — the Studio theme hides .model-card-icon (display:none)
+    // and uses text labels only. Kept as a lookup so the render code is unchanged.
     const iconMap = {
-        text_model: "\u{1F4DD}",
-        vision_model: "\u{1F441}",
-        whisper_model: "\u{1F3A4}",
+        text_model: "",
+        vision_model: "",
+        whisper_model: "",
     };
 
     const modelCards = roleOrder.map(key => {

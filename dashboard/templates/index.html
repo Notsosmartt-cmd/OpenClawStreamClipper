@@ -3,295 +3,329 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream Clipper Dashboard</title>
+    <title>OpenClaw — Stream Clipper</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <header>
-        <h1><span>Stream Clipper</span> Dashboard</h1>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span id="docker-badge" class="badge badge-gray" style="display: none; font-size: 0.7rem;"></span>
-            <div id="status-badge" class="status-badge">
-                <div class="status-dot"></div>
-                <span id="status-label">Idle</span>
-            </div>
-        </div>
-    </header>
 
-    <div class="dashboard">
-        <!-- VOD Browser -->
-        <div class="panel" style="grid-column: 1 / -1">
-            <div class="panel-header">
-                <span>VOD Library</span>
-                <button id="btn-refresh-vods" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
-            </div>
-            <div class="panel-body" style="padding: 0;">
-                <table class="vod-table">
-                    <thead>
-                        <tr>
-                            <th style="width:36px; text-align:center;">
-                                <input type="checkbox" id="vod-select-all" title="Select all VODs"
-                                       onchange="toggleAllVods(this.checked)">
-                            </th>
-                            <th>VOD Name</th>
-                            <th>Size</th>
-                            <th>Duration</th>
-                            <th>Status</th>
-                            <th>Transcription</th>
-                        </tr>
-                    </thead>
-                    <tbody id="vod-tbody">
-                        <tr><td colspan="6" class="empty-state">Loading VODs...</td></tr>
-                    </tbody>
-                </table>
-            </div>
+<header>
+    <div class="header-left">
+        <div class="logo-mark">
+            <svg viewBox="0 0 15 15" fill="none">
+                <path d="M3.5 2.5C3.5 2.5 5 4 7.5 4C10 4 11.5 2.5 11.5 2.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+                <path d="M2 7C3.5 5.5 5.5 4.5 7.5 4.5C9.5 4.5 11.5 5.5 13 7" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+                <circle cx="7.5" cy="10" r="2.5" fill="white"/>
+            </svg>
         </div>
-
-        <!-- Clip Controls -->
-        <div class="panel">
-            <div class="panel-header">Clip Controls</div>
-            <div class="panel-body">
-                <div class="controls">
-                    <div class="control-group">
-                        <label>Style</label>
-                        <select id="sel-style">
-                            <option value="auto">Auto</option>
-                            <option value="funny">Funny</option>
-                            <option value="hype">Hype</option>
-                            <option value="emotional">Emotional</option>
-                            <option value="hot_take">Hot Take</option>
-                            <option value="storytime">Storytime</option>
-                            <option value="reactive">Reactive</option>
-                            <option value="controversial">Controversial</option>
-                            <option value="dancing">Dancing</option>
-                            <option value="variety">Variety</option>
-                        </select>
-                    </div>
-                    <div class="control-group">
-                        <label>Type Hint</label>
-                        <input type="text" id="inp-type" placeholder="e.g. gaming, irl" style="width: 140px;">
-                    </div>
-                    <div class="control-group">
-                        <label>Speed</label>
-                        <select id="sel-speed">
-                            <option value="1.0">1× (normal)</option>
-                            <option value="1.1">1.1×</option>
-                            <option value="1.25">1.25×</option>
-                            <option value="1.5">1.5×</option>
-                            <option value="2.0">2×</option>
-                        </select>
-                    </div>
-                    <div class="control-group" title="Pass B dead-chunk gate. Higher modes skip the LLM on chunks judged 'dead' (no clip-worthy signal), saving time but risking false negatives (a missed clip). Ordered safest→fastest. sample = multi + a 1-in-N pass-through, so it skips a subset of multi → slower but safer. See logtool dead and the rakai Delaware case study.">
-                        <label>Pass B gate</label>
-                        <select id="sel-passb-gate">
-                            <option value="off" selected>Off (default) — 0% faster, safest (zero false negatives)</option>
-                            <option value="sample">Sample — ~10% faster, very low false-negative risk</option>
-                            <option value="multi">Multi — ~22% faster, low false-negative risk</option>
-                            <option value="strict">Strict — ~28% faster, meaningful FN risk (legacy)</option>
-                        </select>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-hook-caption" checked>
-                        <label for="chk-hook-caption">Hook caption</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-captions" checked>
-                        <label for="chk-captions">Captions</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-force">
-                        <label for="chk-force">Force reprocess</label>
-                    </div>
-                    <button id="btn-clip" class="btn-primary" disabled>Clip Selected</button>
-                    <button id="btn-clip-all" class="btn-primary">Clip All</button>
-                    <button id="btn-stop" class="btn-danger" style="display: none;">Stop Pipeline</button>
-                </div>
-            </div>
+        <div class="logo-text">
+            <span class="logo-name">OpenClaw</span>
+            <span class="logo-sub">Stream Clipper</span>
         </div>
-
-        <!-- Originality (TikTok defense) -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Originality &amp; Render</span>
-                <span class="badge badge-gray" style="font-size: 0.65rem;" title="Per-clip randomization, framing modes, stitching, camera pan, music bed, and voiceover controls. See the Originality wiki page for how each setting affects detection.">defense stack</span>
-            </div>
-            <div class="panel-body">
-                <div class="controls" id="originality-controls">
-                    <div class="control-group">
-                        <label>Framing mode</label>
-                        <select id="sel-framing" onchange="onOriginalityChange()" title="Blur-fill: legacy 9:16 with blurred sidebars (safe default). Camera pan: OpenCV face detection drives a virtual camera across speakers; falls back to blur-fill silently if no faces are detected.">
-                            <option value="blur_fill" selected>Blur-fill (legacy)</option>
-                            <option value="camera_pan">Camera pan (face track)</option>
-                        </select>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-originality" checked onchange="onOriginalityChange()">
-                        <label for="chk-originality" title="Per-clip random blur, color, mirror, hook and subtitle style">Per-clip randomization</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-narrative" checked onchange="onOriginalityChange()">
-                        <label for="chk-narrative" title="Merge adjacent storytime/emotional/hot_take moments into one long clip">Narrative merge (long clips)</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-stitch" onchange="onOriginalityChange()">
-                        <label for="chk-stitch" title="Bundle 3-4 short moments into one multi-segment post">Stitch short moments</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-arc-stitch" onchange="onOriginalityChange()">
-                        <label for="chk-arc-stitch" title="Render A1/M3 setup→payoff arcs as a 2-part clip: a short 'Earlier:' setup snippet jump-cut to the payoff. Also loosens the arc-guarantee so the top arc reaches the final selection to be stitched.">Stitch setup→payoff arcs</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-tts-vo" onchange="onOriginalityChange()">
-                        <label for="chk-tts-vo" title="Mix a Piper (local) voiceover line generated during vision enrichment">Voiceover layer (Piper TTS)</label>
-                    </div>
-                    <div class="control-group" style="min-width: 240px; flex: 1;">
-                        <label>Music bed folder</label>
-                        <div style="display: flex; gap: 4px;">
-                            <input type="text" id="inp-music-bed" placeholder="/path/to/music (empty = off)" style="flex: 1; min-width: 160px;" onchange="onOriginalityChange()">
-                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="browseMusicFolder()" title="Pick a folder">…</button>
-                        </div>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="chk-music-tier-c" onchange="onOriginalityChange()">
-                        <label for="chk-music-tier-c" title="Use librosa-scored tier C matching (tempo/energy/brightness). Requires running the Scan Music button once.">Tier C music matching</label>
-                    </div>
-                    <button id="btn-scan-music" class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanMusicLibrary()" title="Run librosa on every track in the folder and write music_library.json">Scan Music</button>
-                    <span id="music-scan-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
-                    <div class="checkbox-group" style="margin-left: auto;">
-                        <input type="checkbox" id="chk-style-profiles" onchange="onOriginalityChange()">
-                        <label for="chk-style-profiles" title="Per-category editing profiles: zoom punches, freeze frames, slow-mo (≥50 fps), meme cutaways, B-roll inserts, SFX cues, kinetic captions, plus always-on audio + container fingerprint perturbation. Reads assets under assets/. Off by default.">AI editing profiles (per-category)</label>
-                    </div>
-                    <button id="btn-scan-libraries" class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="scanLibraries()" title="Re-read assets/sfx, music, broll, memes from disk and rebuild every library.json — useful after dropping in your own files.">Scan Libraries</button>
-                    <span id="libraries-scan-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
-                </div>
-                <div class="hw-hint hw-hint-note" style="margin-top: 10px; font-size: 0.72rem;">
-                    💡 Smart crop relies on the vision model flagging chrome_regions. If the model returns no regions (clean stream), smart_crop falls back to blur-fill automatically. Narrative and stitch modes require enough moments in the right categories or they emit zero groups.
-                </div>
-            </div>
+    </div>
+    <div class="header-right">
+        <span id="docker-badge" class="badge badge-gray" style="display: none;"></span>
+        <div id="status-badge" class="status-badge">
+            <div class="status-dot"></div>
+            <span id="status-label">Idle</span>
         </div>
+    </div>
+</header>
 
-        <!-- AI Models -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>AI Models</span>
-                <div style="display: flex; gap: 6px;">
-                    <button id="btn-refresh-models" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
-                </div>
-            </div>
-            <div class="panel-body" id="models-panel">
-                <div class="models-grid" id="models-grid">
-                    <div class="empty-state">Loading model configuration...</div>
-                </div>
-                <div id="models-save-bar" class="models-save-bar" style="display: none;">
-                    <span id="models-change-summary" class="models-change-text"></span>
-                    <button id="btn-save-models" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Save Changes</button>
-                </div>
-            </div>
+<div class="dashboard">
+
+    <!-- VOD Library -->
+    <div class="panel" style="grid-column: 1 / -1">
+        <div class="panel-header">
+            <span class="panel-title">VOD Library</span>
+            <button id="btn-refresh-vods" class="btn-ghost btn-sm">Refresh</button>
         </div>
-
-        <!-- Hardware -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Hardware</span>
-                <button id="btn-refresh-hardware" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
-            </div>
-            <div class="panel-body">
-                <div id="hardware-grid" class="models-grid">
-                    <div class="empty-state">Loading hardware configuration...</div>
-                </div>
-                <div id="hardware-save-bar" class="models-save-bar" style="display: none;">
-                    <span id="hardware-change-summary" class="models-change-text"></span>
-                    <button id="btn-save-hardware" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Save</button>
-                </div>
-                <div id="hardware-restart-notice" class="hardware-restart-notice" style="display: none;">
-                    <div class="hardware-restart-title">&#x26A0; Restart required to apply changes</div>
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px;">
-                        <button id="btn-restart-services" class="btn-primary" style="padding: 6px 16px; font-size: 0.8rem;">Restart Services</button>
-                        <span id="hardware-restart-status" style="font-size: 0.75rem; color: var(--text-muted);"></span>
-                    </div>
-                    <div class="hardware-restart-cmd" id="hardware-restart-cmd" style="margin-top: 6px;"></div>
-                </div>
-            </div>
+        <div class="panel-body" style="padding: 0;">
+            <table class="vod-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px; text-align: center;">
+                            <input type="checkbox" id="vod-select-all" title="Select all VODs"
+                                   onchange="toggleAllVods(this.checked)">
+                        </th>
+                        <th>VOD Name</th>
+                        <th>Size</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Transcription</th>
+                    </tr>
+                </thead>
+                <tbody id="vod-tbody">
+                    <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+                </tbody>
+            </table>
         </div>
+    </div>
 
-        <!-- Folder Settings -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Folder Settings</span>
-                <button id="btn-refresh-folders" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
-            </div>
-            <div class="panel-body" id="folders-panel">
-                <div class="empty-state">Loading folder settings...</div>
-            </div>
+    <!-- Clip Controls -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Clip Controls</span>
         </div>
+        <div class="panel-body">
+            <div class="controls">
+                <div class="control-group">
+                    <label class="field-label">Style</label>
+                    <select id="sel-style">
+                        <option value="auto">Auto</option>
+                        <option value="funny">Funny</option>
+                        <option value="hype">Hype</option>
+                        <option value="emotional">Emotional</option>
+                        <option value="hot_take">Hot Take</option>
+                        <option value="storytime">Storytime</option>
+                        <option value="reactive">Reactive</option>
+                        <option value="controversial">Controversial</option>
+                        <option value="dancing">Dancing</option>
+                        <option value="variety">Variety</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label class="field-label">Type Hint</label>
+                    <input type="text" id="inp-type" placeholder="gaming, irl…" style="width: 120px;">
+                </div>
+                <div class="control-group">
+                    <label class="field-label">Speed</label>
+                    <select id="sel-speed">
+                        <option value="1.0">1×</option>
+                        <option value="1.1">1.1×</option>
+                        <option value="1.25">1.25×</option>
+                        <option value="1.5">1.5×</option>
+                        <option value="2.0">2×</option>
+                    </select>
+                </div>
+                <div class="control-group" title="Pass B dead-chunk gate. Higher modes skip the LLM on chunks judged 'dead' (no clip-worthy signal), saving time but risking false negatives (a missed clip). Ordered safest→fastest. 'sample' = multi + a 1-in-N pass-through, so it skips a subset of multi → slower but safer.">
+                    <label class="field-label">Pass B Gate</label>
+                    <select id="sel-passb-gate">
+                        <option value="off" selected>Off — safest</option>
+                        <option value="sample">Sample — ~10% faster</option>
+                        <option value="multi">Multi — ~22% faster</option>
+                        <option value="strict">Strict — ~28% faster</option>
+                    </select>
+                </div>
+            </div>
 
-        <!-- Asset Cache (mounted models on host) -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Asset Cache</span>
-                <button id="btn-refresh-assets" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAssets()">Refresh</button>
-            </div>
-            <div class="panel-body" id="assets-panel">
-                <div class="empty-state">Loading asset cache…</div>
-            </div>
-            <div class="panel-body" style="padding-top: 0; border-top: 1px solid var(--border);">
-                <div class="controls">
-                    <div class="control-group" style="min-width: 200px; flex: 1;">
-                        <label>Fetch Whisper model</label>
-                        <div style="display: flex; gap: 4px;">
-                            <input type="text" id="inp-asset-whisper" value="large-v3" placeholder="large-v3" style="flex: 1;">
-                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAsset('whisper')">Fetch</button>
-                        </div>
-                    </div>
-                    <div class="control-group" style="min-width: 200px; flex: 1;">
-                        <label>Fetch Piper voice</label>
-                        <div style="display: flex; gap: 4px;">
-                            <input type="text" id="inp-asset-piper" value="en_US-amy-low" placeholder="en_US-amy-low" style="flex: 1;">
-                            <button class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="fetchAsset('piper')">Fetch</button>
-                        </div>
-                    </div>
-                    <span id="assets-fetch-status" style="font-size: 0.7rem; color: var(--text-muted); align-self: center;"></span>
-                </div>
-                <div class="hw-hint hw-hint-note" style="margin-top: 8px; font-size: 0.72rem;">
-                    💡 Model weights live in <code>./models/</code> on the host — not in the Docker image. First pipeline run auto-fetches the Whisper model if missing. Use this panel to pre-download or to add extra Piper voices.
-                </div>
-            </div>
-        </div>
+            <hr class="section-divider">
 
-        <!-- Pipeline Monitor -->
-        <div class="panel">
-            <div class="panel-header">Pipeline Monitor</div>
-            <div class="panel-body">
-                <div class="stage-track">
-                    <div id="stage-1" class="stage-dot" title="Discovery"></div>
-                    <div id="stage-2" class="stage-dot" title="Transcription"></div>
-                    <div id="stage-3" class="stage-dot" title="Segments"></div>
-                    <div id="stage-4" class="stage-dot" title="Moments"></div>
-                    <div id="stage-5" class="stage-dot" title="Frames"></div>
-                    <div id="stage-6" class="stage-dot" title="Vision"></div>
-                    <div id="stage-7" class="stage-dot" title="Render"></div>
-                    <div id="stage-8" class="stage-dot" title="Summary"></div>
-                </div>
-                <div id="stage-label" class="stage-label">No pipeline running</div>
-                <div id="log-viewer" class="log-viewer"></div>
-                <div id="stage-history" class="stage-history"></div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-hook-caption" checked>
+                <label for="chk-hook-caption">Hook caption</label>
             </div>
-        </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-captions" checked>
+                <label for="chk-captions">Captions</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-force">
+                <label for="chk-force">Force reprocess</label>
+            </div>
 
-        <!-- Clips Gallery -->
-        <div class="panel" style="grid-column: 1 / -1">
-            <div class="panel-header">
-                <span>Clips Gallery</span>
-                <button id="btn-refresh-clips" class="btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">Refresh</button>
-            </div>
-            <div class="panel-body">
-                <div id="clips-grid" class="clips-grid">
-                    <div class="empty-state">Loading clips...</div>
-                </div>
+            <div class="btn-row">
+                <button id="btn-clip" class="btn-primary" disabled>Clip Selected</button>
+                <button id="btn-clip-all" class="btn-primary">Clip All</button>
+                <button id="btn-stop" class="btn-danger" style="display: none;">Stop</button>
             </div>
         </div>
     </div>
 
-    <script type="module" src="/static/app.js"></script>
+    <!-- Originality & Render -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Originality &amp; Render</span>
+        </div>
+        <div class="panel-body">
+            <div class="controls" id="originality-controls">
+                <div class="control-group">
+                    <label class="field-label">Framing</label>
+                    <select id="sel-framing" onchange="onOriginalityChange()" title="Blur-fill: 9:16 with blurred sidebars (safe default). Camera pan: face-tracking virtual camera; silently falls back to blur-fill if no faces are detected.">
+                        <option value="blur_fill" selected>Blur-fill</option>
+                        <option value="camera_pan">Camera pan</option>
+                    </select>
+                </div>
+            </div>
+
+            <hr class="section-divider">
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-originality" checked onchange="onOriginalityChange()">
+                <label for="chk-originality" title="Per-clip random blur, color, mirror, hook and subtitle style.">Per-clip randomization</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-narrative" checked onchange="onOriginalityChange()">
+                <label for="chk-narrative" title="Merge adjacent storytime/emotional/hot_take moments into one long clip.">Narrative merge</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-stitch" onchange="onOriginalityChange()">
+                <label for="chk-stitch" title="Bundle 3-4 short moments into one multi-segment post.">Stitch short clips</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-arc-stitch" onchange="onOriginalityChange()">
+                <label for="chk-arc-stitch" title="Render A1/M3 setup→payoff arcs as a 2-part clip (short 'Earlier:' setup snippet jump-cut to the payoff). Also loosens the arc-guarantee so the top arc reaches the final selection.">Stitch arcs</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-tts-vo" onchange="onOriginalityChange()">
+                <label for="chk-tts-vo" title="Mix a Piper (local) voiceover line generated during vision enrichment.">Voiceover (TTS)</label>
+            </div>
+
+            <hr class="section-divider">
+
+            <div class="control-group" style="width: 100%;">
+                <label class="field-label">Music bed</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="inp-music-bed" placeholder="Empty = off"
+                           style="flex: 1;" onchange="onOriginalityChange()">
+                    <button class="btn-secondary" onclick="browseMusicFolder()">Browse</button>
+                </div>
+            </div>
+
+            <div class="checkbox-group" style="margin-top: 10px;">
+                <input type="checkbox" id="chk-music-tier-c" onchange="onOriginalityChange()">
+                <label for="chk-music-tier-c" title="librosa-scored matching (tempo/energy/brightness). Run Scan Music once first.">Tier C music matching</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-style-profiles" onchange="onOriginalityChange()">
+                <label for="chk-style-profiles" title="Per-category editing profiles: zoom punches, freeze frames, slow-mo, meme cutaways, B-roll, SFX, kinetic captions + audio/container fingerprinting. Reads assets under assets/. Off by default.">AI editing profiles</label>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
+                <button id="btn-scan-music" class="btn-secondary btn-sm"
+                        onclick="scanMusicLibrary()">Scan Music</button>
+                <button id="btn-scan-libraries" class="btn-secondary btn-sm"
+                        onclick="scanLibraries()">Scan Libraries</button>
+                <span id="music-scan-status"
+                      style="font-size: 11px; color: var(--text-dim);"></span>
+                <span id="libraries-scan-status"
+                      style="font-size: 11px; color: var(--text-dim);"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Models -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">AI Models</span>
+            <button id="btn-refresh-models" class="btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div class="panel-body" id="models-panel">
+            <div class="models-grid" id="models-grid">
+                <div class="empty-state">Loading…</div>
+            </div>
+            <div id="models-save-bar" class="models-save-bar" style="display: none;">
+                <span id="models-change-summary" class="models-change-text"></span>
+                <button id="btn-save-models" class="btn-primary btn-sm">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hardware -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Hardware</span>
+            <button id="btn-refresh-hardware" class="btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div class="panel-body">
+            <div id="hardware-grid" class="models-grid">
+                <div class="empty-state">Loading…</div>
+            </div>
+            <div id="hardware-save-bar" class="models-save-bar" style="display: none;">
+                <span id="hardware-change-summary" class="models-change-text"></span>
+                <button id="btn-save-hardware" class="btn-primary btn-sm">Save</button>
+            </div>
+            <div id="hardware-restart-notice" class="hardware-restart-notice" style="display: none;">
+                <div class="hardware-restart-title">Restart required</div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px;">
+                    <button id="btn-restart-services" class="btn-primary btn-sm">Restart Services</button>
+                    <span id="hardware-restart-status"
+                          style="font-size: 11px; color: var(--text-muted);"></span>
+                </div>
+                <div class="hardware-restart-cmd" id="hardware-restart-cmd"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder Settings -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Folder Settings</span>
+            <button id="btn-refresh-folders" class="btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div class="panel-body" id="folders-panel">
+            <div class="empty-state">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Asset Cache -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Asset Cache</span>
+            <button id="btn-refresh-assets" class="btn-ghost btn-sm"
+                    onclick="fetchAssets()">Refresh</button>
+        </div>
+        <div class="panel-body" id="assets-panel">
+            <div class="empty-state">Loading…</div>
+        </div>
+        <div class="panel-body" style="border-top: 1px solid var(--border); padding-top: 14px;">
+            <div class="controls">
+                <div class="control-group" style="flex: 1; min-width: 160px;">
+                    <label class="field-label">Fetch Whisper</label>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="inp-asset-whisper" value="large-v3" style="flex: 1;">
+                        <button class="btn-secondary btn-sm" onclick="fetchAsset('whisper')">Fetch</button>
+                    </div>
+                </div>
+                <div class="control-group" style="flex: 1; min-width: 160px;">
+                    <label class="field-label">Fetch Piper</label>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="inp-asset-piper" value="en_US-amy-low" style="flex: 1;">
+                        <button class="btn-secondary btn-sm" onclick="fetchAsset('piper')">Fetch</button>
+                    </div>
+                </div>
+            </div>
+            <span id="assets-fetch-status"
+                  style="display: block; margin-top: 10px; font-size: 11px; color: var(--text-dim);"></span>
+        </div>
+    </div>
+
+    <!-- Pipeline Monitor -->
+    <div class="panel" style="grid-column: 1 / -1">
+        <div class="panel-header">
+            <span class="panel-title">Pipeline Monitor</span>
+        </div>
+        <div class="panel-body">
+            <div class="stage-track">
+                <div id="stage-1" class="stage-dot" title="Discovery"></div>
+                <div id="stage-2" class="stage-dot" title="Transcription"></div>
+                <div id="stage-3" class="stage-dot" title="Segments"></div>
+                <div id="stage-4" class="stage-dot" title="Moments"></div>
+                <div id="stage-5" class="stage-dot" title="Frames"></div>
+                <div id="stage-6" class="stage-dot" title="Vision"></div>
+                <div id="stage-7" class="stage-dot" title="Render"></div>
+                <div id="stage-8" class="stage-dot" title="Summary"></div>
+            </div>
+            <div id="stage-label" class="stage-label">No pipeline running</div>
+            <div id="log-viewer" class="log-viewer"></div>
+            <div id="stage-history" class="stage-history"></div>
+        </div>
+    </div>
+
+    <!-- Clips Gallery -->
+    <div class="panel" style="grid-column: 1 / -1">
+        <div class="panel-header">
+            <span class="panel-title">Clips Gallery</span>
+            <button id="btn-refresh-clips" class="btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div class="panel-body">
+            <div id="clips-grid" class="clips-grid">
+                <div class="empty-state">No clips yet</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script type="module" src="/static/app.js"></script>
 </body>
 </html>
