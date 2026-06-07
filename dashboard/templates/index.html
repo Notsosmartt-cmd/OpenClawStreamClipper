@@ -29,6 +29,10 @@
                 <table class="vod-table">
                     <thead>
                         <tr>
+                            <th style="width:36px; text-align:center;">
+                                <input type="checkbox" id="vod-select-all" title="Select all VODs"
+                                       onchange="toggleAllVods(this.checked)">
+                            </th>
                             <th>VOD Name</th>
                             <th>Size</th>
                             <th>Duration</th>
@@ -37,7 +41,7 @@
                         </tr>
                     </thead>
                     <tbody id="vod-tbody">
-                        <tr><td colspan="5" class="empty-state">Loading VODs...</td></tr>
+                        <tr><td colspan="6" class="empty-state">Loading VODs...</td></tr>
                     </tbody>
                 </table>
             </div>

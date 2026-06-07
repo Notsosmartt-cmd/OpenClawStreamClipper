@@ -3,7 +3,7 @@ title: "Clipping Pipeline"
 type: concept
 tags: [pipeline, architecture, workflow, stages, hub, stage-1, stage-2, stage-3, stage-4, stage-5, stage-6, stage-7, stage-8]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 <!-- updated 2026-04-27d for Tier-1 moment-discovery upgrades (Q1-Q5) -->
@@ -54,6 +54,8 @@ Discord / Dashboard trigger
 - Verifies file is complete (size check with delay)
 - Gets VOD duration via `ffprobe`
 - `--vod <keyword>` targets a specific file by name match (bypasses processed.log)
+- `--vods a,b,c` processes a chosen subset **sequentially** (dashboard multi-select → `/api/clip-batch`); reuses the `--all` loop (per-VOD work reset between iterations) but respects the caller's `--force` instead of always forcing
+- `--all` processes every unprocessed VOD sequentially (each reprocessed fresh)
 - `--force` re-processes the latest VOD without naming it
 - `--list` returns JSON inventory of all VODs with size, duration, status, transcription cache
 - When a VOD isn't found, error includes full list of available filenames
