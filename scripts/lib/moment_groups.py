@@ -70,12 +70,16 @@ def _log(msg: str) -> None:
     print(f"[GROUPS] {msg}", file=sys.stderr)
 
 
-def build_narrative_groups(moments: list[dict]) -> list[dict]:
+def build_narrative_groups(moments: list[dict], enabled: bool = True) -> list[dict]:
     """Adjacent storytime/emotional/hot_take moments become one long clip."""
+    if not enabled:
+        _log("narrative: disabled (CLIP_NARRATIVE off)")
+        return []
     groups: list[dict] = []
     used: set[int] = set()
     # Sort by timestamp so "adjacent" really means adjacent in time
     ordered = sorted(moments, key=lambda m: m.get("timestamp", 0))
+    n_narr = sum(1 for m in moments if m.get("category") in NARRATIVE_CATEGORIES)
 
     for i, m in enumerate(ordered):
         if i in used:
@@ -128,7 +132,13 @@ def build_narrative_groups(moments: list[dict]) -> list[dict]:
             "score": round(max(m.get("score", 0) for m in members), 3),
         })
         used.update(member_indices)
+        _log(f"  narrative: FORMED {gid} — {len(members)} "
+             f"{members[0].get('category')} moments merged ~{duration:.0f}s "
+             f"T={[int(x['timestamp']) for x in members]}")
 
+    _log(f"narrative: {len(groups)} group(s) from {n_narr} moment(s) in "
+         f"{sorted(NARRATIVE_CATEGORIES)} (need >=2 same-family within "
+         f"{NARRATIVE_MAX_GAP_SEC}s gap, <= {NARRATIVE_MAX_DURATION}s merged)")
     return groups
 
 
@@ -299,6 +309,44 @@ def build_arc_stitch_groups(moments: list[dict], enabled: bool) -> list[dict]:
     return groups
 
 
+def _explain(moments: list[dict]) -> int:
+    """Dry-run report: run ALL THREE grouping types (forced on) against a moments
+    file and show what WOULD form + why, without writing anything. Use to verify
+    qualification / tune thresholds against a real run's data, e.g.:
+
+        python scripts/lib/moment_groups.py --explain --moments <hype_moments.json>
+
+    The builders' own `[GROUPS]` lines (per-category eligibility + skip reasons)
+    print to stderr; the `[EXPLAIN]` summary prints to stdout."""
+    from collections import Counter
+    cats = Counter(m.get("category", "?") for m in moments)
+    durs = sorted(int(float(m.get("clip_duration", 0) or 0)) for m in moments)
+    print(f"[EXPLAIN] {len(moments)} moments")
+    print(f"[EXPLAIN] categories: {dict(cats)}")
+    print(f"[EXPLAIN] clip durations (s): {durs}")
+    print(f"[EXPLAIN] narrative-eligible cats {sorted(NARRATIVE_CATEGORIES)} | "
+          f"stitch-eligible cats {sorted(STITCHABLE_CATEGORIES)} (<= {STITCH_ELIGIBLE_MAX_DUR}s) | "
+          f"arc cats {sorted(ARC_STITCH_CATEGORIES)} (need setup_time)")
+
+    work = [dict(m) for m in moments]  # don't mutate the caller
+
+    def _claim(groups, kind):
+        for g in groups:
+            for mem in g["members"]:
+                for m in work:
+                    if m.get("timestamp") == mem["timestamp"] and not m.get("group_id"):
+                        m["group_id"] = g["group_id"]
+                        m["group_kind"] = kind
+
+    narr = build_narrative_groups(work, True);      _claim(narr, "narrative")
+    st = build_stitch_groups(work, True);           _claim(st, "stitch")
+    arc = build_arc_stitch_groups(work, True);      _claim(arc, "stitch")
+    solo = sum(1 for m in work if not m.get("group_id"))
+    print(f"[EXPLAIN] WOULD FORM -> narrative={len(narr)}  stitch={len(st)}  "
+          f"arc-stitch={len(arc)}  | solo={solo} of {len(moments)}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stitch", default="false")
@@ -306,6 +354,9 @@ def main() -> int:
     parser.add_argument("--arc-stitch", dest="arc_stitch", default="false")
     parser.add_argument("--moments", default=str(TEMP_DIR / "hype_moments.json"))
     parser.add_argument("--out", default=str(TEMP_DIR / "moment_groups.json"))
+    parser.add_argument("--explain", action="store_true",
+                        help="dry-run: report which groups WOULD form (all 3 types) "
+                             "+ the per-category eligibility & skip reasons; writes nothing")
     args = parser.parse_args()
 
     stitch_enabled = args.stitch.lower() == "true"
@@ -318,8 +369,11 @@ def main() -> int:
         return 1
     moments = json.loads(src.read_text(encoding="utf-8"))
 
+    if args.explain:
+        return _explain(moments)
+
     # Narrative first (claims whole arcs), then stitch on the remainder.
-    narrative = build_narrative_groups(moments) if narrative_enabled else []
+    narrative = build_narrative_groups(moments, narrative_enabled)
     for g in narrative:
         for mem in g["members"]:
             for m in moments:
