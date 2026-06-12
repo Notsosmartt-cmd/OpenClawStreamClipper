@@ -27,6 +27,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | Docker | legacy, superseded by bare-metal | 2026-06-04 | [[concepts/bare-metal-windows]] |
 
 ## In flight / awaiting validation
+- **2026-06-12 detection fixes shipped, need a real-VOD validation run**: word-boundary keywords (default ON — watch Pass A recall), rare-pattern bonus (re-run rakai VOD: does the Delaware battle win its bucket now?), `CLIP_SEGMENT_VOTES=3` opt-in A/B — [[concepts/clipping-intelligence]] §Opportunity D
 - **2026-06-12 evaluation filed 5 plan pages** — unoriginality root cause = un-perturbed audio channel ([[concepts/plan-unoriginality-audio-layer]]); calibration loop glue ([[concepts/plan-calibration-loop]]); judge decorrelation ([[concepts/plan-decorrelate-judges]]); incongruity anomaly-proposer + micro-clips ([[concepts/case-incongruity-comedy]]); YouTube/informative ingest ([[concepts/plan-youtube-informative]])
 - Transition animations (white-flash + jump-cut compression) shipped flag-gated; BUG 64 fix lands the flash — needs a clean validation run (`CLIP_JUMP_CUTS=gaps` safest first) — [[concepts/transition-animations]]
 - Existing white-flashed clips are unrecoverable (transition pass `os.replace`d the good render) — re-run to regenerate — [[concepts/bugs-and-fixes]]
@@ -36,6 +37,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-12] Evaluation fixes executed: word-boundary keywords (default ON), `config/channel_keywords.json` packs, `config/prompts.json` unification, `CLIP_SEGMENT_VOTES` confidence+smoothing (opt-in), rare-pattern Pass C bonus (rap_battle 1.15), `self_consistency.py` REMOVED — [[log]]
 - [2026-06-12] Deep evaluation filed as 5 plan/case pages (unoriginality audio layer, calibration loop, decorrelation, incongruity case, YouTube ingest); `self_consistency.py` flagged as the one orphan module — [[log]]
 - [2026-06-12] Wiki maintenance pass: added [[hot]] + `scripts/wiki_lint.py`, `status:` field on plan pages, fixed stale model/arch facts, completed the bugs quick-nav — [[log]]
 - [2026-06-07] Added narrative `[GROUPS]` logging + `moment_groups.py --explain` dry-run to verify stitch/arc grouping — [[concepts/originality-stack]]

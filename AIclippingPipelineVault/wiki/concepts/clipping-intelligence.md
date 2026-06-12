@@ -3,7 +3,7 @@ title: "Clipping Intelligence — Prompt Engineering & Heuristics (evaluation)"
 type: concept
 tags: [prompt-engineering, heuristics, scoring, llm, pass-a, pass-b, pass-c, pass-d, vision, grounding, pattern-catalog, evaluation, hub]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Clipping Intelligence — Prompt Engineering & Heuristics
@@ -51,7 +51,7 @@ This one word **routes everything**: Pass A keyword weights + thresholds, Pass B
 
 | Mechanism | Where | What it does |
 |---|---|---|
-| 8 keyword categories | `KEYWORD_SETS` :197-266 | literal substring lists (hype/funny/emotional/hot_take/storytime/reactive/dancing/controversial) |
+| 8 keyword categories | `KEYWORD_SETS` :197-266 | phrase lists (hype/funny/emotional/hot_take/storytime/reactive/dancing/controversial); word-boundary regex matching since 2026-06-12 (`CLIP_KEYWORD_BOUNDARY=0` reverts to substring), extended per-channel by `config/channel_keywords.json` |
 | Segment weight multipliers | `SEGMENT_KEYWORD_WEIGHTS` :270-276 | e.g. `funny`×1.4 in `irl`, `storytime`×1.5 in `just_chatting` |
 | Dynamic threshold | `SEGMENT_THRESHOLD` :280-286 | gaming/reaction = 3 signals; irl/just_chatting/debate = 2 |
 | Universal signals | :327-375 | exclamation clusters, ALL-CAPS streaks, rapid-fire, laughter, question clusters, long-pause-then-burst, multi-category bonus |
@@ -161,12 +161,15 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 
 > [!warning] 3. Keyword lists are brittle, English-only, and substring-matched
 > `"pog" in combined` fires on "pogo stick"; no word boundaries. The slang is of-its-moment and will rot. Low precision is intentional, but it inflates the cross-validation denominator with junk co-fires.
+> **Partially fixed 2026-06-12**: Pass A now compiles each phrase to a word-boundary regex (\b both ends, `\W+` between words, final-letter elongation tolerance) — `CLIP_KEYWORD_BOUNDARY=0` reverts. Slang rot is mitigated by per-channel packs (`config/channel_keywords.json`, mirrors streamer_prompts matching). English-only remains.
 
 > [!warning] 4. "What's a clip" knowledge is spread across 4+ surfaces that can drift
 > `SEGMENT_PROMPTS` (code constant), `style_prompts` (code constant), `config/patterns.json` (catalog), `config/streamer_prompts.json` (Whisper), plus the legacy 6-rule fallback prompt carried inline. No single source of truth; the fallback can silently diverge from the catalog path.
+> **Partially fixed 2026-06-12**: `SEGMENT_PROMPTS` + `style_prompts` now live in **`config/prompts.json`** (entries override the in-code defaults, which remain failure-soft fallback). The legacy 6-rule fallback prompt is still inline.
 
 > [!warning] 5. Segment classification is an unguarded single point of failure
 > One word from a 9B on the first 600 words of a 10-min window, no confidence score, no smoothing beyond same-type merge. A chatting break mislabeled "gaming" silently applies the wrong threshold/weights/prompt to that whole window.
+> **Guard available 2026-06-12 (opt-in)**: `CLIP_SEGMENT_VOTES=3` runs an N-vote majority at temp 0.7, stamps `confidence` on each window, and smooths low-confidence (<`CLIP_SEGMENT_SMOOTH_BELOW`, 0.67) windows whose neighbors agree — confidently-typed off-type pockets are never touched. Default stays 1 vote (old behavior) pending an A/B run.
 
 > [!warning] 6. The Catalog's best patterns depend on optional signals
 > `setup_external_contradiction` / `reading_chat_reaction` lean on conversation-shape regex + diarization + vision gaze — all of which degrade silently when the HF token, librosa, or chat are absent. The most valuable patterns are only as reliable as the optional signal stack underneath them.
@@ -186,6 +189,7 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 
 > [!todo] D. Cheap precision + maintainability wins
 > Word-boundary keyword matching; per-channel keyword packs mirroring `streamer_prompts.json`; unify `SEGMENT_PROMPTS`/`style_prompts`/catalog into one editable config; add a confidence (logprobs or 2-of-3 vote) + boundary smoothing to segment classification; surface low-confidence/grounding-nulled detections to the dashboard instead of only stderr.
+> **Mostly shipped 2026-06-12**: word-boundary matching (default ON, `CLIP_KEYWORD_BOUNDARY=0` reverts), `config/channel_keywords.json` packs, `config/prompts.json` unification, and `CLIP_SEGMENT_VOTES`/`CLIP_SEGMENT_SMOOTH*` confidence+smoothing (opt-in). Also shipped: the rap-battle postmortem's deferred **rare-pattern Pass C bonus** (`pass_c_bonus` per catalog entry, `rap_battle_freestyle`=1.15, clamp [0.8,1.3], `CLIP_PATTERN_BONUS=0` disables). Remaining from this list: dashboard surfacing of low-confidence/grounding-nulled detections.
 
 ---
 
@@ -193,7 +197,10 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 
 | Want to change… | Edit |
 |---|---|
-| What each segment treats as clip-worthy | `SEGMENT_PROMPTS` in `stage4_moments.py:875` |
+| What each segment treats as clip-worthy | `config/prompts.json` → `segment_prompts` (overrides the in-code defaults; 2026-06-12) |
+| The `--style` emphasis lines | `config/prompts.json` → `style_prompts` |
+| Channel-specific slang/catchphrases (Pass A) | `config/channel_keywords.json` (first filename-substring match wins) |
+| Per-pattern Pass C rarity bonus | `pass_c_bonus` on a `config/patterns.json` entry (clamped [0.8, 1.3]) |
 | The named interaction shapes | `config/patterns.json` |
 | Cross-val / speaker / style / length / position multipliers | Pass C constants in `stage4_moments.py:1650-1864` |
 | Rubric dimension weights + Pass C/rubric blend | `config/rubric.json` |
