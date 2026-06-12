@@ -10,6 +10,9 @@ updated: 2026-06-04
 
 A high-quality rap-battle / freestyle moment in [vods/.transcriptions/20260424_2xRaKai_2756365448.transcript.srt](vods/.transcriptions/20260424_2xRaKai_2756365448.transcript.srt) that the pipeline missed entirely. Documented 2026-06-04 to drive Pass A keyword + Stage 3 segment + Pass B prompt tuning so similar moments are caught in future runs.
 
+> [!note] Generalized 2026-06-12
+> [[concepts/case-incongruity-comedy]] reframes this miss as one instance of a single architectural gap — **cross-channel incongruity** (rhythm here; prosody/motion in the owner's competitor reference clips) — and proposes one anomaly-proposer lane that subsumes this page's unshipped recs (phonetic rhyme density, verbal-duel detector). Also note: after this page's quick wins shipped, the 2026-06-05 re-run **detected** the moment (Pass B 0.878, cross-validated) but **Pass C dropped it** (axis 1.05 vs 1.55 on a blander competitor) — the deferred rare-pattern bonus and [[concepts/plan-calibration-loop]] are the remaining fixes.
+
 ---
 
 ## The segment

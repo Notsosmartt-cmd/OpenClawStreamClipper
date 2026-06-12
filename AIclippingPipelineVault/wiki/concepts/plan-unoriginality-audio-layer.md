@@ -1,0 +1,88 @@
+---
+title: "Plan — Unoriginality Fix: the Audio Layer"
+type: concept
+tags: [plan, originality, tiktok, audio, sfx, voiceover, music, research]
+sources: 0
+status: planned
+updated: 2026-06-12
+---
+
+# Plan — Unoriginality Fix: the Audio Layer
+
+Filed from the 2026-06-12 deep evaluation. **Problem:** the owner's posted clips are being flagged "unoriginal content" on TikTok (ineligible for the For You feed and Creator Rewards). Competitor accounts posting the *same source moments* get distribution — their clips carry cliché sound effects at punchlines, voiceover, and music. Platform logos (Twitch/Kick) appear irrelevant in either direction. Reference competitor-clip transcripts live at `B:\AuxCoding\VideoToText-main\transcripts\` (4 files) — analyzed in [[concepts/case-incongruity-comedy]].
+
+> [!note] Core finding
+> The [[concepts/originality-stack]] is visually strong but ships clips whose **audio track is essentially raw stream audio**. TikTok fingerprints audio and explicitly survives mirror/speed/color tweaks — the exact transformations Wave A leans on. The fix is **additive creative layers** (SFX/VO/music/dense captions), which is also precisely what TikTok's own policy rewards as originality. Sub-perceptual perturbation is the wrong theory of the problem.
+
+---
+
+## What TikTok flags (researched June 2026)
+
+From TikTok's published guidance and third-party detection analysis:
+
+- **Unoriginal** = reposted content without significant changes, mere splicing of clips, content with another platform's visible watermark/superimposed logo, no creative additions.
+- **What earns "original"**: appearing on screen, **adding your own voiceover**, own commentary/editing/transitions/captions — "dynamic and intentionally created."
+- **Detection stack**: audio fingerprinting (ACRCloud-style derivative-works matching — robust to pitch and timing modification), visual perceptual hashing (robust to cropping, filters, color adjustment, **mirroring, speed changes**), metadata/C2PA tracing, and behavioral patterns (accounts mass-posting similar content with similar captions).
+- Consequence: For-You ineligibility + excluded from Creator Rewards (originality is a rewards-formula metric).
+
+Two implications matching the owner's observations:
+
+1. **Logos don't decide it.** Watermark detection is one signal; competitors with Twitch/Kick logos still get reach because the rest of the video reads as transformed.
+2. **The fingerprint race is against other clippers, not just the VOD.** A viral moment is uploaded by dozens of accounts within hours; dedup compares against every prior upload of that moment. Differentiation must be *substantial and additive*, not sub-perceptual.
+
+Sources: [TikTok Creator Academy originality policy](https://www.tiktok.com/creator-academy/article/tiktok-originality-policy), [Community Guidelines — Integrity & Authenticity](https://www.tiktok.com/safety/en/policies-and-engagement/integrity-authenticity), [RenderIO — duplicate content detection](https://renderio.dev/blogs/tiktok-duplicate-content-detection/), [Napolify — how TikTok detects duplicates](https://napolify.com/blogs/news/duplicate-content-detection), [Napolify — algorithm penalty](https://napolify.com/blogs/news/tiktok-duplicate-penalty), [ALM Corp — TikTok × ACRCloud](https://almcorp.com/blog/tiktok-acrcloud-derivative-works-detection/).
+
+---
+
+## Where the stack is strong vs exposed (audit of defaults, 2026-06-12)
+
+**Strong (visual, mostly ON):** per-clip blur radius [18–32], ~45% mirror, color/hue/gamma jitter, 35% micro-shake, 30% vignette, randomized hook palette/position, GOP/CRF jitter, metadata strip, white-flash beats (BUG 64 fixed), CapCut word-box captions ON, hook card ON. See [[concepts/originality-stack]].
+
+**Exposed (audio, mostly OFF in `config/originality.json` as of 2026-06-12):** `tts_vo: false`, `music_bed: ""`, `music_tier_c: false`. Profile-mode pitch jitter (±2–5¢) is *designed to be inaudible* — i.e. designed not to change the fingerprint meaningfully. `eq_tilt_db` is **computed but never wired** into the filter graph (`scripts/lib/style_profiles.py:166-167`, firequalizer pending). Net: the audio channel of a default render is raw stream audio — and it matches every other clipper's upload of the same moment.
+
+---
+
+## The plan
+
+### P1 — Turn on and harden the audio layer (highest leverage)
+
+1. **Punchline-anchored SFX.** Machinery exists: `sfx_cues` in `scripts/lib/edit_plan.py:22-41` with 5 kinds (`whoosh|impact|scratch|ding|riser`), injected by `sfx_inject.py` under `CLIP_STYLE_PROFILES` (ON). Gap: timing comes from the **vision model's guess** or profile defaults, not acoustics. Add a deterministic cue pass using anchors the pipeline already computes — word-level SRT timestamps, Pass A laughter markers, `crowd_response`/`rhythmic_speech` peaks from [[entities/audio-events]]: `impact` on the payoff word, `riser` 2–3 s before it, `scratch` on fail/awkward beats, `ding` on chat-callout beats. LLM plan as fallback, acoustic anchors as primary. (This is the competitor pattern the owner observed.)
+2. **Music bed default-ON.** Tier A (folder convention) and Tier C (librosa BPM/energy matching) are built (`music_pick.py`); CC0 seed packs via `seed_libraries.py` — **verify `assets/` is actually seeded**. A −22 dB bed materially changes the fingerprint and reads as production.
+3. **Piper TTS voiceover for the hook.** Stage 6 already generates an 8–14 word creator-POV `voiceover` line with placement; flip `CLIP_TTS_VO` ON. Caveat: `en_US-amy-low` is robotic — fine for an intro hook; voice upgrade (better Piper voice / Kokoro-class local TTS) is a cheap follow-up. Voiceover is the most-cited originality signal in TikTok's own guidance.
+4. **Wire `eq_tilt_db`** (pending firequalizer) and consider a bolder micro-treatment (e.g. ±2% tempo on non-speech-critical clips) — supporting, not primary.
+
+### P2 — Structural edits (change the temporal fingerprint AND read as editing)
+
+- Flip `CLIP_JUMP_CUTS` to `gaps` (silence removal) after the pending clean validation run ([[concepts/transition-animations]]). Re-times every downstream frame.
+- **Cold-open hook reorder** (new feature, medium effort): prepend a 1.5–3 s teaser of the payoff before the setup, whoosh + white flash into the start. Buildable as a 2-segment stitch variant on `stitch_render.py`; payoff timestamp already known.
+
+### P3 — Visual engagement sync
+
+Zoom punch ON the punchline frame (exists — anchor to the same acoustic cue as the SFX); meme/B-roll cutaways for funny/reactive (exist, asset-gated); camera-pan Wave E for IRL VODs (+2–4 s/clip).
+
+### P4 — Account-level hygiene (outside the pipeline)
+
+Vary captions/hashtags per clip (Stage 6 already produces unique titles — ensure the posting flow uses them); avoid burst-posting many clips of one VOD; appeal false flags (appeals reportedly succeed and may matter for account standing).
+
+### P5 — Measure it
+
+Add a small `posted.log` (clip → treatments applied → flagged? → views). This becomes a second label stream for [[concepts/plan-calibration-loop]]: fit not just "what's clip-worthy" but "which treatment bundle avoids the flag." Without it, which layer mattered is guesswork.
+
+---
+
+## Research prompts (ready to fire via deep research)
+
+1. **TikTok originality mechanics (2026):** "How does TikTok's unoriginal-content / For-You-ineligibility classification work as of mid-2026 for streamer clip channels? Cover: audio fingerprinting (ACRCloud derivative-works detection) robustness to pitch/tempo/EQ changes vs additive layers (SFX, VO, music); visual perceptual hashing robustness; what 'significant creative editing' demonstrably satisfies reviewers/appeals; account-level vs per-video flagging; documented experiences of clip channels that recovered from the label. Output: a ranked list of transformations by evidence of effectiveness, each with implementation cost for an FFmpeg pipeline."
+2. **Sound-design pattern library:** "Catalog the SFX vocabulary of high-performing TikTok/Shorts clip channels (streamer clips, comedy, storytime): which sounds (Vine boom, record scratch, whoosh, riser, bruh, sad violin, etc.) are placed at which narrative beats (setup, punchline, fail, reveal), typical mix levels, and CC0/royalty-free sources. Output: a JSON-ready cue taxonomy mapping beat-type → sound-kind → timing offset → volume, suitable for automated injection."
+3. **Hook engineering:** "What opening-second patterns maximize retention for 60–180 s storytime and informative clips in 2026 (cold-open payoff teaser, text hook phrasing, caption density, pacing)? Output: implementable rules for an automated clipper (teaser length, where to cut the teaser from, hook-text templates by category)."
+
+---
+
+## Related
+
+- [[concepts/originality-stack]] — the existing waves A–E this plan extends
+- [[concepts/case-incongruity-comedy]] — the competitor reference clips + detection blind spot
+- [[concepts/plan-calibration-loop]] — consumes P5's posted.log labels
+- [[concepts/transition-animations]] — jump cuts / white flash status
+- [[concepts/style-profiles]], [[concepts/asset-libraries]] — SFX/music/meme asset layer
+- [[entities/piper]], [[entities/librosa]], [[entities/audio-events]]

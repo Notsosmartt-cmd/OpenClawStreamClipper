@@ -3,10 +3,13 @@ title: "self_consistency.py — N-candidate ranker"
 type: entity
 tags: [self-consistency, usc, phase-5, module, stage-6, vision]
 sources: 1
-updated: 2026-05-01
+updated: 2026-06-12
 ---
 
 # `scripts/lib/self_consistency.py`
+
+> [!warning] Orphaned — plumbed but never consumed (2026-06-12 audit)
+> `paths.py:221` sets `CLIP_SELF_CONSISTENCY_CONFIG` and `config/self_consistency.json` exists, but **no stage imports this module** (verified by grep — only self-references and the env plumbing). Decide: wire it into Stage 6 title generation (its intended Phase 5.2 role) or delete it. The 2026-06-12 evaluation leaned delete — the grounding cascade covers most of its value. Note the same audit confirmed `conversation_shape`, `boundary_detect`, `chat_fetch`, `chat_features`, `chat_overlay`, and `vocal_sep` are all **live** — this is the only orphan.
 
 Phase 5.2 implementation of Universal Self-Consistency + SelfCheckGPT-style ranking. Introduced 2026-04-24. Stdlib-only — uses token-Jaccard via `grounding.content_overlap_ratio` with a local fallback when the grounding module is missing. The legacy `method="minicheck"` path was retired 2026-05-01 alongside the MiniCheck tier in the grounding cascade — see [[concepts/bugs-and-fixes#REMOVAL 2026-05-01b]].
 

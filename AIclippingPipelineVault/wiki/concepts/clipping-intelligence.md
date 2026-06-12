@@ -175,12 +175,14 @@ Post-processing: defensive JSON parse (`parse_llm_moments` :697) with BUG-35 dup
 
 > [!todo] A. Close the calibration loop (highest value)
 > Wire [[entities/bootstrap-twitch-clips]] real-Twitch-clip timestamps in as positive labels, build an offline scorer (recall@N + ranking correlation), and *fit* the multipliers (even a coarse grid search) instead of hand-setting them. Converts the whole stack from "vibes" to "measured."
+> **Concrete build plan filed 2026-06-12: [[concepts/plan-calibration-loop]]** (~30% already exists; ~1–2 days of glue).
 
 > [!todo] B. Move to additive log-space scoring
 > Replace the multiplier chain with summed log-weights (a tiny logistic model). Same behavior, but interpretable, fittable from (A), and free of the saturation that forced the BUG-37 soft-cap hack.
 
 > [!todo] C. De-correlate the LLM panel
 > Where Pass B/D/vision "agree," vary prompt framing or temperature so they aren't the same call three times — or explicitly down-weight same-model agreement relative to Pass A↔B agreement.
+> **Concrete plan filed 2026-06-12: [[concepts/plan-decorrelate-judges]]** (~2 h: add `text_model_passd` + `vision_model_judge` keys; Pass D → Gemma 4 12B).
 
 > [!todo] D. Cheap precision + maintainability wins
 > Word-boundary keyword matching; per-channel keyword packs mirroring `streamer_prompts.json`; unify `SEGMENT_PROMPTS`/`style_prompts`/catalog into one editable config; add a confidence (logprobs or 2-of-3 vote) + boundary smoothing to segment classification; surface low-confidence/grounding-nulled detections to the dashboard instead of only stderr.
