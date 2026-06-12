@@ -3,7 +3,7 @@ title: "Moment Detection (Stage 4)"
 type: concept
 tags: [highlight-detection, transcription, scoring, heuristics, llm, three-pass, grounding, stage-4, pass-a, pass-b, pass-c, hub, text]
 sources: 2
-updated: 2026-04-27
+updated: 2026-06-12
 ---
 
 # Moment Detection (Stage 4)
@@ -67,6 +67,9 @@ Slides a **30-second window** across the transcript with a **10-second step**.
 Multi-category hits (moment matches 2+ categories) get a bonus point.
 
 **Deduplication**: candidates within 20 seconds of each other merged.
+
+> [!note] Word-boundary matching + per-channel packs (2026-06-12)
+> Keyword phrases are now compiled once to **word-boundary regexes** (\b at both ends, `\W+` between words, final-letter elongation tolerance so "let's gooo" matches "let's goooooo") — "pog" no longer fires on "pogo stick", "lol" no longer fires on "lollipop". This de-junks both Pass A counts and the A∩B cross-validation denominator. `CLIP_KEYWORD_BOUNDARY=0` reverts to legacy substring matching. Additionally, **`config/channel_keywords.json`** (mirrors `streamer_prompts.json` filename-substring matching, first match wins) extends the base category lists with per-channel slang/catchphrases — additive only, unknown categories skipped. See [[concepts/clipping-intelligence]] opportunity D.
 
 ---
 
@@ -156,6 +159,8 @@ Skipped silently when `sentence-transformers` isn't installed or Pass B produced
 3. **Style weighting**: multipliers applied based on `--style` flag (e.g., `--style funny` gives funny moments 1.4× multiplier)
 
    **Arc-completeness factor** (Plan A, 2026-06-04): a gentle, category-aware multiplier (~0.85–1.12) folded into the same Pass C score chain. `scripts/lib/arc_completeness.py` scores each moment's structural setup→payoff completeness — opener + resolution + monologue coherence − topic-crossing / mid-thought start — from `conversation_shape` discourse markers + pattern fit, and stamps `arc_completeness` on the moment (also consumed by the future Stage 5.5 Vision Judge). Boost-leaning, **never gates**; arc categories (storytime/emotional/controversial/hot_take/arc) are weighted, one-liner categories (reactive/hype/funny/dancing) stay near-neutral. Tunable in `config/selection_axes.json`. See [[concepts/plan-arc-completeness]].
+
+3b. **Rare-pattern bonus** (2026-06-12, [[concepts/case-rap-battle-missed]] deferred Phase 2): a style-independent multiplier from the Pattern Catalog — a `config/patterns.json` entry may carry `pass_c_bonus` (clamped [0.8, 1.3]; currently `rap_battle_freestyle` = 1.15) applied to moments whose `primary_pattern` matches, so a rare once-a-VOD pattern survives bucket competition. Stamped as `pattern_bonus` on the moment; `CLIP_PATTERN_BONUS=0` disables. Distinct from `config/style_pattern_weights.json`, which is style-conditional and applied in the Phase 4.6 diversity step.
 
 4. **Category cap**: for `auto` style, no single category can exceed 60% of final candidates
 

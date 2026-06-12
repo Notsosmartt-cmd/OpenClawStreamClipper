@@ -42,7 +42,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[entities/vocal-sep-module]] — optional Demucs v4 vocal-stem separator for music-heavy streams
 - [[entities/chrome-mask-module]] — *removed 2026-05-01* — Phase 4.1 UI overlay detection (MOG2) + overlay-text extraction (PaddleOCR); see BUG 49/50
 - [[entities/boundary-detect-module]] — Phase 4.2 clip boundary snap to sentence + silence gaps
-- [[entities/self-consistency-module]] — Phase 5.2 N-candidate ranking (USC + reference grounding)
+- [[entities/self-consistency-module]] — *removed 2026-06-12* — Phase 5.2 N-candidate ranker; never imported by any stage (orphan)
 - [[entities/bootstrap-twitch-clips]] — Phase 5.3 research tool for bootstrapping a Twitch-clip eval dataset
 - [[entities/audio-events]] — Tier-2 M2 librosa scanner: rhythmic / crowd / music boost-only signals
 - [[entities/diarization]] — Tier-2 M1 WhisperX/pyannote speaker labeling for Pass A and Pass C boost
@@ -99,7 +99,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/pipeline-optimizations-2026-06]] — Parallelization + RMS-gate + dead-chunk pre-filter sweep; implemented Stage 5/7 ffmpeg parallel + Pass B pre-filter + audio events RMS gate; ~1.6× combined wall-clock lift expected
 - [[concepts/clip-quality-remediation-2026-06]] — **Plan** from the 6/6 session review: fix vision REGEN→garbage titles, gate/parallelize Stage 5.5 (620s), score-display saturation, torchcodec; file:line-anchored
 - [[concepts/pass-b-false-negatives]] — Why Pass B (LLM detection) drops clip-worthy moments + mitigations; failed-chunk re-queue + de-tidy prompt shipped 2026-06-06
-- [[concepts/self-consistency]] — Phase 5.2 N-candidate ranking for hallucination suppression
+- [[concepts/self-consistency]] — *removed 2026-06-12* — Phase 5.2 N-candidate ranking; architectural record kept for any revival
 - [[concepts/callback-detection]] — Tier-2 M3 architecture: cosine search + LLM judgment for cross-chunk arcs
 - [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection (+ §Evaluation: 15-word-summary weakness)
 - [[concepts/arc-aware-extraction]] — Fix A1's 15-word bottleneck with structured "chunk cards" (Chain-of-Density + claim/prediction extraction) (**in-progress**: phases 1–3 shipped)

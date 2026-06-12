@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 64 bugs (highest number BUG 64) + 2 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 64 bugs (highest number BUG 64) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -134,6 +134,7 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 44 | *historical* — Tier-3 grounding timeouts on Gemma routing (Lynx tier retired 2026-05-01; see LLM row) |
 | [[#REMOVAL 2026-05-01]] | Phase 4.1 chrome stage + Pass A' chat-speed scoring deleted |
 | [[#REMOVAL 2026-05-01b]] | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + LLM judge |
+| [[#REMOVAL 2026-06-12]] | `self_consistency.py` orphan deleted (plumbed but never imported by any stage) |
 
 ---
 
@@ -616,6 +617,18 @@ The "actual answer to why no clips were produced": Stage 6 crashed on the f-stri
 **Verification**: `bash -n scripts/clip-pipeline.sh` clean. AST parse on all 10 remaining python heredocs clean. No orphan references to `chrome_overlay_text`, `overlay_context_block`, `chrome_mask`, `CHAT_SCORING_CFG`, `chat_window_stats`, `chat_stats`, `burst_factor` in the pipeline. The dashboard reference to `chrome_regions` at `dashboard/templates/index.html:149` is the VLM-output field for `smart_crop` framing — unrelated to Phase 4.1, kept.
 
 **Related**: [[#BUG 49]] (the wedge that prompted the removal); [[#BUG 50]] (the structural mismatch that made MOG2 dead code); [[concepts/chrome-masking]] (tombstoned); [[concepts/chat-signal]] (scoring marked removed; hard-event integration still live).
+
+---
+
+## REMOVAL 2026-06-12 — self_consistency.py orphan deleted
+
+**Why**: The 2026-06-12 module-liveness audit found Phase 5.2's `self_consistency.py` was the codebase's one true orphan: `paths.py` plumbed `CLIP_SELF_CONSISTENCY_CONFIG` and `config/self_consistency.json` existed, but **no stage ever imported the module** — built 2026-04-24 for Stage 6 N-candidate title ranking and never wired in. The grounding cascade ([[entities/grounding]]) covers most of its intended value (hallucination suppression on generated titles); the regenerate-once policy covers the rest.
+
+**What was removed**: `scripts/lib/self_consistency.py`, `config/self_consistency.json`, and the `CLIP_SELF_CONSISTENCY_CONFIG` env line in `scripts/lib/paths.py`. The frozen copy under `archive/clipping-intelligence-2026-06-04/` is untouched — resurrect from there or git history if Phase 5.2 is ever revived.
+
+**Audit context**: the same audit verified `conversation_shape`, `boundary_detect`, `chat_fetch`, `chat_features`, `chat_overlay`, and `vocal_sep` are all live call-sited modules — this was the only orphan. `eval_tier4.py` is CLI-only but load-bearing for [[concepts/plan-calibration-loop]], so it stays.
+
+**Related**: [[entities/self-consistency-module]] (tombstoned), [[concepts/self-consistency]] (tombstoned).
 
 ---
 

@@ -3,10 +3,13 @@ title: "Self-Consistency Ranking — Phase 5.2"
 type: concept
 tags: [self-consistency, usc, hallucination, phase-5, stage-6, vision]
 sources: 2
-updated: 2026-04-24
+updated: 2026-06-12
 ---
 
 # Self-Consistency Ranking
+
+> [!warning] REMOVED 2026-06-12 — never wired in, module deleted
+> The "available but not wired in by default" state below never changed: the 2026-06-12 audit confirmed no stage ever imported [[entities/self-consistency-module]], and it was deleted along with its config and env plumbing — see [[concepts/bugs-and-fixes#REMOVAL 2026-06-12]]. Page kept as the architectural record for any future Phase 5.2 revival (code recoverable from `archive/clipping-intelligence-2026-06-04/` or git history).
 
 Per `ClippingResearch.md` §8.2: sample N candidates at high temperature, pick the one that agrees with the others AND is most grounded in the reference. The core insight is from **Universal Self-Consistency** (Chen et al., arXiv:2311.17311) and **SelfCheckGPT** (Manakul et al., EMNLP 2023, arXiv:2303.08896): hallucinated claims diverge across samples; grounded claims stay consistent.
 

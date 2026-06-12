@@ -38,6 +38,9 @@ Speed: ~1 second per chunk on a fast text model (more on thinking models, which 
 > [!note] Window size is a tunable knob (Fix 1, 2026-06-06)
 > `CLIP_SEGMENT_CHUNK` (default 600) sets the classification window. Smaller (e.g. `300`) gives finer granularity so a short off-type pocket — a 2-min debate inside a gaming stream — gets its own label instead of being absorbed, at ~2× the (cheap) classification calls. `CLIP_SEGMENT_OVERLAP` (default 0) adds read-context to each window without overlapping the recorded (nominal, non-overlapping) segments. Default left at 600 deliberately (measure-first; A/B 300 vs 600 via the env). See [[concepts/detection-improvements-plan]] Fix 1.
 
+> [!note] Confidence voting + smoothing (2026-06-12, opt-in)
+> Segment classification was the funnel's unguarded single point of failure ([[concepts/clipping-intelligence]] weakness #5; [[concepts/case-rap-battle-missed]] failure #2). `CLIP_SEGMENT_VOTES=N` (default 1 = old behavior) classifies each window N times at temperature 0.7, takes the majority, and stamps `confidence = top_votes/N` on the window (single-vote path keeps the deterministic 0.1 call; `confidence: null`). With voting on, a low-confidence window (< `CLIP_SEGMENT_SMOOTH_BELOW`, default 0.67) sandwiched between two neighbors that agree with each other is smoothed to the neighbor type (`CLIP_SEGMENT_SMOOTH=0` disables) — confidently-typed off-type pockets are never flattened. Merged segments keep the **lowest** member confidence (pessimistic). Cost at N=3 on a 3-h VOD: ~36 extra 1-word calls (~1 min). Validated against a scripted mock LLM: split-vote window (conf 0.33) between agreeing gaming neighbors correctly smoothed and merged.
+
 ---
 
 ## Segment types
@@ -98,7 +101,7 @@ Each segment type changes how Stage 4 behaves:
 
 ## Output files
 
-- `segments.json`: array of `{start, end, type}` for each segment
+- `segments.json`: array of `{start, end, type, confidence}` for each segment (`confidence` is `null` at the default 1-vote setting; min-of-members after merge)
 - `stream_profile.json`: `dominant_type`, `dominant_pct`, `type_breakdown`, `is_variety`, `hint_used`
 
 Both files persist in `/tmp/clipper/` during the pipeline run. The stream profile is read by Stage 6 when constructing vision prompts.

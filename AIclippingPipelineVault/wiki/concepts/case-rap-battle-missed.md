@@ -3,7 +3,7 @@ title: "Missed-clip case study: rap battle on a 'gaming' VOD (rakai 2026-04-24)"
 type: concept
 tags: [case-study, tuning, pass-a, pass-b, segment-detection, audio-events, freestyle, rap, missed-clip, hub]
 sources: 1
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Case study: the Delaware freestyle that didn't get clipped
@@ -11,7 +11,7 @@ updated: 2026-06-04
 A high-quality rap-battle / freestyle moment in [vods/.transcriptions/20260424_2xRaKai_2756365448.transcript.srt](vods/.transcriptions/20260424_2xRaKai_2756365448.transcript.srt) that the pipeline missed entirely. Documented 2026-06-04 to drive Pass A keyword + Stage 3 segment + Pass B prompt tuning so similar moments are caught in future runs.
 
 > [!note] Generalized 2026-06-12
-> [[concepts/case-incongruity-comedy]] reframes this miss as one instance of a single architectural gap — **cross-channel incongruity** (rhythm here; prosody/motion in the owner's competitor reference clips) — and proposes one anomaly-proposer lane that subsumes this page's unshipped recs (phonetic rhyme density, verbal-duel detector). Also note: after this page's quick wins shipped, the 2026-06-05 re-run **detected** the moment (Pass B 0.878, cross-validated) but **Pass C dropped it** (axis 1.05 vs 1.55 on a blander competitor) — the deferred rare-pattern bonus and [[concepts/plan-calibration-loop]] are the remaining fixes.
+> [[concepts/case-incongruity-comedy]] reframes this miss as one instance of a single architectural gap — **cross-channel incongruity** (rhythm here; prosody/motion in the owner's competitor reference clips) — and proposes one anomaly-proposer lane that subsumes this page's unshipped recs (phonetic rhyme density, verbal-duel detector). Also note: after this page's quick wins shipped, the 2026-06-05 re-run **detected** the moment (Pass B 0.878, cross-validated) but **Pass C dropped it** (axis 1.05 vs 1.55 on a blander competitor). The deferred **rare-pattern bonus shipped 2026-06-12** (`pass_c_bonus: 1.15` on `rap_battle_freestyle` in `config/patterns.json`, style-independent, applied in Pass C, `CLIP_PATTERN_BONUS=0` disables) — re-run the rakai VOD to confirm the battle now wins its bucket. [[concepts/plan-calibration-loop]] remains the systemic fix.
 
 ---
 
