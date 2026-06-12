@@ -3,12 +3,15 @@ title: "Discord Bot"
 type: entity
 tags: [discord, interface, delivery, bot, natural-language, hub]
 sources: 2
-updated: 2026-04-17
+updated: 2026-06-12
 ---
 
 # Discord Bot
 
-The primary user interface for the stream clipper. Receives natural-language commands, reports pipeline progress, and delivers finished clips as inline file attachments. Operated by [[entities/openclaw]] running [[entities/qwen25]].
+The primary user interface for the stream clipper. Receives natural-language commands, reports pipeline progress, and delivers finished clips as inline file attachments. Operated by [[entities/openclaw]].
+
+> [!note] Agent model + invocation (2026-06)
+> The bot's agent model is currently `qwen/qwen3.5-9b` (fallback `qwen/qwen3-vl-8b`) served by native Windows **LM Studio** — not the original [[entities/qwen25]] (`qwen2.5:7b`). Since the bare-metal port, the agent runs `clip.cmd …` (a Windows wrapper around `scripts/run_pipeline.py`), not `bash clip-pipeline.sh`. The natural-language inference below is unchanged; only the model and command surface moved.
 
 ---
 
@@ -21,12 +24,16 @@ No syntax required. The agent infers style and type from the message:
 | "clip my stream" | `--style auto`, VOD auto-detected |
 | "find the funny parts" | `--style funny` |
 | "get the hype clips" | `--style hype` |
-| "find the spicy takes" | `--style hot_take` |
+| "find the hot takes / opinions" | `--style hot_take` |
+| "find the spicy callouts / beef" | `--style spicy` (tier-4) |
 | "clip the irl lacy stream" | `--style auto --type irl --vod lacy` |
 | "process the gaming vod" | `--type gaming` |
 | "list vods" / "what streams do you have" | `--list` mode |
 
 Style and type are **silently inferred** — the bot never asks the user to choose.
+
+> [!note] Tier-4 interaction styles (per `workspace/AGENTS.md`)
+> Beyond the emotion-coded styles (funny, hype, emotional, controversial, hot_take, storytime, reactive, dancing, variety), the bot also infers interaction-coded styles: `conversational`, `informational`, `freestyle`, `chatlive`, `spicy`. See [[concepts/tier-4-conversation-shape]].
 
 ---
 
@@ -38,7 +45,7 @@ Finished clips delivered as Discord file attachments (inline video preview). Eac
 - One-line description of the moment
 
 > [!note] Discord file size limit
-> Default Discord servers: 25MB per attachment. Boosted servers: up to 500MB. The ~45-second H.264 CRF 23 clips at 1080×1920 are typically well under 25MB. Very long or high-bitrate clips could approach the limit.
+> Default Discord servers: 25MB per attachment. Boosted servers: up to 500MB. The ~45-second H.264 clips at 1080×1920 (encoded `h264_nvenc -cq 20`, or `libx264 -crf 20` fallback; `-crf 23` only in the last-ditch `_ffmpeg_legacy` path) are typically well under 25MB. Very long or high-bitrate clips could approach the limit.
 
 ---
 
@@ -58,30 +65,37 @@ During the pipeline (Stages 2–7), the bot is not responsive to new messages. T
 2. Enable **Message Content Intent** under Bot settings (required — without this, OpenClaw cannot read messages)
 3. Generate invite URL with permissions: Send Messages, Read Message History, Add Reactions
 4. Invite bot to server
-5. Store token in `.env`: `DISCORD_BOT_TOKEN=your-token-here`
+5. Store the token where OpenClaw reads it: `config/openclaw.json` (`channels.discord.token`)
 
-The token is injected into `openclaw.json` at container startup by `entrypoint.sh` (replaces `__DISCORD_BOT_TOKEN__` placeholder).
+> [!note] Token location (2026-06)
+> On bare-metal the token lives directly in `channels.discord.token` in `config/openclaw.json` (the file is git-ignored because it holds the token). The legacy Docker flow injected it at container startup via `entrypoint.sh` (replacing a `__DISCORD_BOT_TOKEN__` placeholder from the `DISCORD_BOT_TOKEN` env var); that mechanism applies only to the legacy Docker deployment.
 
 ---
 
 ## Troubleshooting
 
+> [!note] Commands below are the legacy Docker form. On bare-metal, clear the native session `.jsonl` files (`%USERPROFILE%\.openclaw\agents\main\sessions\`), restart the OpenClaw process, and run the pipeline directly with `clip.cmd …` (wrapper over `scripts/run_pipeline.py`).
+
 **Bot responds with text but doesn't run the pipeline:**
 - Context overflow — clear sessions and restart:
   ```bash
+  # legacy (Docker):
   docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
   docker restart stream-clipper
   ```
 
 **Bot ran a weird/broken command (hallucination):**
-- 7B models occasionally hallucinate creative but broken invocations
+- Small models occasionally hallucinate creative but broken invocations
 - Run the pipeline manually instead:
   ```bash
+  # bare-metal:
+  clip.cmd --style auto --vod NAME
+  # legacy (Docker):
   docker exec -d stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod NAME"
   ```
 
 **Bot says "already running" but GPU is idle:**
-- Stale session from container restart — clear sessions and restart
+- Stale session from a restart — clear sessions and restart
 
 See [[concepts/bugs-and-fixes]] and [[concepts/context-management]] for more detail.
 
@@ -89,6 +103,6 @@ See [[concepts/bugs-and-fixes]] and [[concepts/context-management]] for more det
 
 ## Related
 - [[entities/openclaw]] — the framework that runs the bot
-- [[entities/qwen25]] — the model the bot uses
+- [[entities/qwen25]] — the original agent model (now superseded; see note above)
 - [[entities/dashboard]] — alternative interface (web, no Discord needed)
 - [[concepts/context-management]] — why the bot sometimes stops calling exec

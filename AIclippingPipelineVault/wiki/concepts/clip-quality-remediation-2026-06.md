@@ -3,7 +3,7 @@ title: "Clip-Quality & Perf Remediation Plan (2026-06 session review)"
 type: concept
 tags: [plan, remediation, vision, grounding, stage-5.5, vision-judge, pass-c, scoring, performance, stage-6, session-review, text, vision]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Clip-Quality & Perf Remediation Plan (2026-06 session review)
@@ -160,7 +160,7 @@ The deeper reason the raw range is itself narrow (1.33–1.54): the four selecti
 
 ## Related
 - [[concepts/vision-enrichment]] — Stage 6 (Fix 1 lives here; doc fix needed)
-- [[entities/grounding]] / [[entities/grounding-ab]] — the judge cascade Fix 1 adjusts
+- [[entities/grounding]] — the judge cascade Fix 1 adjusts
 - [[entities/vision-judge]] — Stage 5.5 (Fix 2)
 - [[concepts/highlight-detection]] — Pass C scoring (Fix 3) + the Tier-1 safety net Fix 1 preserves
 - [[concepts/observability]] — `judge_tournament` / `axis_report` used to verify Fixes 2 & 3

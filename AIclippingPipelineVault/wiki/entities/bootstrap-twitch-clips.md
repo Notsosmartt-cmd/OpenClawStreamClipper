@@ -3,7 +3,7 @@ title: "bootstrap_twitch_clips.py — Twitch clip dataset bootstrap"
 type: entity
 tags: [research, dataset, twitch, eval, phase-5, module, chat]
 sources: 1
-updated: 2026-04-24
+updated: 2026-06-12
 ---
 
 # `scripts/research/bootstrap_twitch_clips.py`
@@ -29,7 +29,7 @@ python3 scripts/research/bootstrap_twitch_clips.py fetch-clips \
 Two auth paths:
 
 - **Helix API** (preferred): set `TWITCH_CLIENT_ID` and `TWITCH_OAUTH_TOKEN` env vars. The tool calls `/helix/users` + `/helix/clips` normally.
-- **GraphQL** (fallback, no auth): when the env vars are absent, calls the unofficial `gql.twitch.tv/gql` persisted-query endpoint with the same public web client_id that TwitchDownloader uses. Subject to the same ToS caveat as Phase 2.2's `chat_fetch.py`.
+- **GraphQL** (fallback, no auth): when the env vars are absent, calls the unofficial `gql.twitch.tv/gql` persisted-query endpoint with the same public web client_id that TwitchDownloader uses. Subject to the same ToS caveat as Phase 2.2's [[entities/chat-fetch|`chat_fetch.py`]].
 
 Output is JSONL with one record per clip:
 
@@ -91,7 +91,7 @@ python3 scripts/research/bootstrap_twitch_clips.py summary --clips dataset/clips
 
 1. **Eval harness for Phase 4.2 CG-DETR** — when someone ships CG-DETR moment retrieval, run it on this dataset to measure R1@0.5 / R1@0.7 / mAP against the Twitch-clip positives. This is the "why CG-DETR ships in Phase 5+, not Phase 4" gating signal.
 2. **Bootstrap DPO training data** (Phase 5.4) — positive clip titles become the "chosen" in `(prompt, chosen, rejected)` triples; model-generated rejected titles paired against the same VOD become the "rejected".
-3. **Regression testing** — run the full OpenClaw pipeline on VODs in this dataset and measure whether each positive span is detected as a clip candidate (Pass A/B/C) and how the detected span compares to Twitch's `vod_offset + duration` ground truth.
+3. **Regression testing** — run the full OpenClaw [[concepts/clipping-pipeline|pipeline]] on VODs in this dataset and measure whether each positive span is detected as a clip candidate (the [[concepts/moment-discovery-upgrades|Pass A/B/C moment-discovery]] cascade) and how the detected span compares to Twitch's `vod_offset + duration` ground truth.
 
 ---
 
@@ -114,4 +114,5 @@ python3 scripts/research/bootstrap_twitch_clips.py summary --clips dataset/clips
 ## Related
 
 - [[entities/chat-fetch]] — Phase 2.2 VOD chat tool uses the same GraphQL endpoint for a different purpose
-- `IMPLEMENTATION_PLAN.md` — Phase 5.3 definition + future 5.4 HITL/DPO wiring
+- [[sources/implementation-plan|`IMPLEMENTATION_PLAN.md`]] — Phase 5.3 definition + future 5.4 HITL/DPO wiring
+- [[concepts/moment-discovery-upgrades]] — the Pass A/B/C cascade this dataset is meant to regression-test

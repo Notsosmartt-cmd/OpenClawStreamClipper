@@ -1,9 +1,10 @@
 ---
 title: "Selection Sub-Plan E — Engagement / Discussion-Worthiness (the 'yap' / take clip)"
 type: concept
+status: in-progress
 tags: [plan, selection, clip-worthiness, engagement, discussion, comments, niche, chat-features, pattern-catalog, media-pause, vision-judge, style, future-session]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Selection Sub-Plan E — Engagement / Discussion-Worthiness

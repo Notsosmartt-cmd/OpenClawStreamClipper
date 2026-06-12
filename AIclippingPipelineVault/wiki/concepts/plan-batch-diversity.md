@@ -1,9 +1,10 @@
 ---
 title: "Selection Sub-Plan D — Batch Diversity (the delivered set is varied)"
 type: concept
+status: planned
 tags: [plan, selection, clip-worthiness, diversity, mmr, embeddings, anti-sameness, stage-4-diversity, vision-judge, stage-4, stage-5-5, future-session]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Selection Sub-Plan D — Batch Diversity

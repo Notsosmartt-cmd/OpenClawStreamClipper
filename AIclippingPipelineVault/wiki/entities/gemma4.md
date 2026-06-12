@@ -3,12 +3,15 @@ title: "Gemma 4 (Google multimodal family)"
 type: entity
 tags: [model, vision, multimodal, gemma, google, llm, stage-6, vision-judge, hub]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Gemma 4
 
-Google's Gemma 4 family — encoder-free unified multimodal models. The pipeline currently uses **`gemma-4-12b`** as the vision model (Stage 6 + Vision Judge). Installed locally in LM Studio (see [hardware-specs](C:\Users\user\.claude\projects\G--OpenClawStreamClipper\memory\hardware-specs.md)): 12B (dense), 26B-A4B (MoE ~4B active), 31B (dense).
+> [!warning] Superseded as the vision model (2026-06-12)
+> The pipeline **no longer uses Gemma 4 for vision**. `config/models.json` sets `vision_model` (and `text_model`) to the unified **`qwen/qwen3.6-35b-a3b`** — one model serves both roles, so there is no separate Gemma vision slot. Gemma 4 remains *installed* and a viable quality-tier alternative (26B-A4B), and the "why picked initially" rationale below is preserved as history. Sections that say "current `vision_model`" are pre-2026-06-12.
+
+Google's Gemma 4 family — encoder-free unified multimodal models. Was the pipeline's `vision_model` (`gemma-4-12b`, Stage 6 + Vision Judge) until the 2026-06-12 swap to the unified `qwen3.6-35b-a3b`. Installed locally in LM Studio (see [hardware-specs](C:\Users\user\.claude\projects\G--OpenClawStreamClipper\memory\hardware-specs.md)): 12B (dense), 26B-A4B (MoE ~4B active), 31B (dense).
 
 > [!note] Architecture (early-2026 family)
 > Encoder-free unified: single matmul + positional embed for image tokens, no separate vision encoder graph. Reduces inference overhead vs traditional encoder+LLM VLMs. Native audio support (unused by this pipeline).
@@ -19,7 +22,7 @@ Google's Gemma 4 family — encoder-free unified multimodal models. The pipeline
 
 | Variant | Q4_K_M VRAM | Role | Fits 16 GB CUDA alone? |
 |---|---|---|---|
-| `google/gemma-4-12b` | 7.6 GB | **current `vision_model`** (Stage 6 + Vision Judge) | ✅ |
+| `google/gemma-4-12b` | 7.6 GB | former `vision_model` (Stage 6 + Vision Judge) — superseded by `qwen3.6-35b-a3b` | ✅ |
 | `google/gemma-4-26b-a4b` | 18.0 GB | quality candidate (MoE ~4B active) | ❌ Vulkan pool |
 | `google/gemma-4-31b` | 19.9 GB | reference / quality ceiling | ❌ Vulkan pool |
 
@@ -32,7 +35,7 @@ The 12B is the only Gemma 4 variant that fits CUDA single-card at Q4. The 26B-A4
 - **General visual reasoning**: MMMU-Pro 69.1 (12B) / 73.8 (26B-A4B) — strong.
 - **MATH-Vision**: 79.7 (12B) / 82.4 (26B-A4B).
 - **DocVQA** (26B-A4B): 94.9 — solid OCR even though PaddleOCR handles overlay text.
-- **Currently working in the pipeline** — Stage 6 outputs grounded titles/hooks for production runs.
+- **Was working in the pipeline** — Stage 6 output grounded titles/hooks on production runs before the 2026-06-12 swap to the unified model.
 
 ---
 

@@ -1,9 +1,10 @@
 ---
 title: "Arc-Aware Chunk Extraction (plan)"
 type: concept
+status: in-progress
 tags: [pass-b, arcs, a1, callbacks, summarization, chain-of-density, plan, research, tier-3, stage-4, text]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Arc-Aware Chunk Extraction (plan)

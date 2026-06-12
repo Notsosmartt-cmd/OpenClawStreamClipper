@@ -158,5 +158,5 @@ Secondary:
 - [[concepts/vlm-comparison-2026-06]] — companion vision-slot head-to-head
 - [[concepts/model-split]] — text/vision slot config; tier table sourced from here
 - [[concepts/bugs-and-fixes]] — BUG 57 (now deeper-rooted) + BUG 20 (token exhaustion)
-- [[entities/qwen35]] — current text_model (qwen3.5-9b); multimodal verified by LM Studio
-- [[entities/gemma4]] — recommended speed/IFEval text pick (also current vision_model)
+- [[entities/qwen35]] — the unified `qwen3.6-35b-a3b` is the current text_model (this 2026-06 snapshot pre-dates that swap; qwen3.5-9b is now the Discord agent)
+- [[entities/gemma4]] — was the speed/IFEval pick + vision_model in this snapshot; superseded by the unified `qwen3.6-35b-a3b` (2026-06-12)

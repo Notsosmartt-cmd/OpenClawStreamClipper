@@ -3,16 +3,19 @@ title: "qwen2.5:7b"
 type: entity
 tags: [model, llm, alibaba, qwen, discord, agent, tool-calling, infrastructure, text]
 sources: 2
-updated: 2026-04-07
+updated: 2026-06-12
 ---
 
 # qwen2.5:7b
 
-Alibaba's Qwen 2.5 7B parameter model. Used as the **Discord bot agent model** — handles user interaction, style/type inference, and tool calling that triggers the pipeline.
+> [!warning] Superseded as the agent model (2026-06-04)
+> This is **no longer the live Discord agent model**. Since the bare-metal port, the agent's primary model is `qwen/qwen3.5-9b` (fallback `qwen/qwen3-vl-8b`) served by native **LM Studio** — see `config/openclaw.json` (`agents.defaults.model.primary`), [[entities/openclaw]], and [[entities/discord-bot]]. The historical rationale below (small model = reliable tool-calling) still explains *why* a smaller agent model is used; only the specific model and runtime moved. [[entities/ollama]] is also retired.
+
+Alibaba's Qwen 2.5 7B parameter model. Was the **Discord bot agent model** — handled user interaction, style/type inference, and tool calling that triggers the pipeline.
 
 Not the pipeline analysis model. See [[entities/qwen35]] for the text model used inside the pipeline.
 
-VRAM: ~8.8GB. Served by [[entities/ollama]].
+VRAM: ~8.8GB. Was served by [[entities/ollama]] (both retired in favour of [[entities/lm-studio]] + `qwen/qwen3.5-9b`).
 
 ---
 

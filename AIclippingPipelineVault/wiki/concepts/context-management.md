@@ -1,16 +1,19 @@
 ---
 title: "Context and Token Management"
 type: concept
-tags: [context, tokens, compaction, session, openclaw, qwen25, infrastructure]
+tags: [context, tokens, compaction, session, openclaw, infrastructure]
 sources: 2
-updated: 2026-04-17
+updated: 2026-06-12
 ---
 
 # Context and Token Management
 
-The Discord bot ([[entities/openclaw]] running [[entities/qwen25]]) uses a 32K token context window. Without management, conversation history accumulates and crowds out the system prompt and tool descriptions — causing the model to describe actions instead of calling tools.
+The Discord bot ([[entities/openclaw]]) uses a **32K token context window** (`contextWindow: 32768` on the agent model in `config/openclaw.json`). Without management, conversation history accumulates and crowds out the system prompt and tool descriptions — causing the model to describe actions instead of calling tools.
 
 Configuration is in `config/openclaw.json`.
+
+> [!note] Agent model (2026-06)
+> The agent's primary model in `config/openclaw.json` is currently `lmstudio/qwen/qwen3.5-9b` (fallback `qwen/qwen3-vl-8b`), served by **native Windows LM Studio** on port 1234 — not Ollama, and not [[entities/qwen25]] (`qwen2.5:7b`), which was the original agent model. The token-budget logic below is model-agnostic; only the model name has moved on. The pipeline's own text/vision model is separately the unified `qwen/qwen3.6-35b-a3b` (`config/models.json`) — see [[entities/qwen35]].
 
 ---
 
@@ -103,7 +106,7 @@ Heartbeat (periodic "Read HEARTBEAT.md" task) is disabled. When enabled, it woul
 
 ## Model compatibility flags
 
-All local Ollama models require these flags to prevent silent failures:
+All local models require these flags to prevent silent failures (still present on every model in `config/openclaw.json` as of 2026-06):
 
 ```json
 "compat": {
@@ -112,24 +115,28 @@ All local Ollama models require these flags to prevent silent failures:
 }
 ```
 
-Without these, OpenClaw sends OpenAI-style `developer` role messages and `reasoning_effort` parameters that Ollama doesn't understand, causing API errors.
+Without these, OpenClaw sends OpenAI-style `developer` role messages and `reasoning_effort` parameters that the local server (now LM Studio, formerly Ollama) doesn't understand, causing API errors.
 
 ---
 
 ## Fixing a context-bloated bot
 
-If the bot starts responding with text instead of running the pipeline:
+If the bot starts responding with text instead of running the pipeline, clear the stale session files and restart OpenClaw.
 
-```bash
-# Clear stale sessions
-docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-docker restart stream-clipper
-# Wait ~15 seconds for Discord reconnection
-```
+> [!note] Bare-metal vs Docker (2026-06)
+> Since the bare-metal Windows port (2026-06-04), OpenClaw runs natively, so the old `docker exec stream-clipper …` recovery command is **legacy**. Delete the session `.jsonl` files under the native OpenClaw sessions directory (`%USERPROFILE%\.openclaw\agents\main\sessions\`) and restart the OpenClaw process instead. The Docker form below is retained only for legacy deployments:
+>
+> ```bash
+> # legacy (Docker) form:
+> docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
+> docker restart stream-clipper
+> # Wait ~15 seconds for Discord reconnection
+> ```
 
 ---
 
 ## Related
-- [[entities/qwen25]] — the Discord agent model with the 32K context window
 - [[entities/openclaw]] — the agent framework that implements these settings
 - [[entities/discord-bot]] — the interface where context issues manifest
+- [[entities/qwen25]] — the original Discord agent model (32K context); superseded as agent default
+- [[entities/lm-studio]] — the native Windows server now hosting the agent model

@@ -1,9 +1,10 @@
 ---
 title: "Modularization Plan"
 type: concept
+status: shipped
 tags: [refactor, plan, codebase, maintainability, dashboard, pipeline, shipped]
 sources: 0
-updated: 2026-05-01
+updated: 2026-06-12
 ---
 
 # Modularization Plan

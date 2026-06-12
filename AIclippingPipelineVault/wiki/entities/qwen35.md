@@ -3,20 +3,23 @@ title: "Qwen 3.5 / 3.6 (pipeline text family)"
 type: entity
 tags: [model, llm, alibaba, qwen, pipeline, infrastructure, stage-3, stage-4, text, vision-claim, hub]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Qwen 3.5 / 3.6 (pipeline text family)
 
-Alibaba's Qwen text family. The current pipeline `text_model` is **`qwen/qwen3.5-9b`** (Stage 3 + Pass B + Pass D) — see `config/models.json`.
+> [!note] Current state (2026-06-12): the consolidation below shipped
+> The pipeline now runs the **unified `qwen/qwen3.6-35b-a3b`** as BOTH `text_model` and `vision_model` (`config/models.json`) — the "single best model for the whole pipeline" / consolidation idea explored further down is what actually got deployed. `qwen/qwen3.5-9b` is no longer the pipeline text model; it is now the separate **Discord agent** model (`config/openclaw.json`, see [[entities/openclaw]]). Sections below that frame qwen3.5-9b as the live `text_model` or gemma-4-12b as the live `vision_model` are pre-consolidation research, retained for the rationale.
+
+Alibaba's Qwen text family. The pipeline `text_model` **and** `vision_model` are both **`qwen/qwen3.6-35b-a3b`** (the unified MoE, ~3B active — Stage 3 + Pass B + Pass D + Stage 6 + Vision Judge) — see `config/models.json`. The smaller `qwen/qwen3.5-9b` now serves only the Discord agent.
 
 Other family members the user has installed locally (LM Studio, see [hardware-specs](C:\Users\user\.claude\projects\G--OpenClawStreamClipper\memory\hardware-specs.md)):
 
 | Variant | Q4_K_M VRAM | Notes |
 |---|---|---|
-| `qwen/qwen3.5-9b` | 6.5 GB | **current `text_model`** — non-thinking by default; fits 16 GB CUDA |
+| `qwen/qwen3.5-9b` | 6.5 GB | non-thinking by default; fits 16 GB CUDA — **now the Discord agent model**, not the pipeline text model |
 | `qwen/qwen3.6-27b` | 17.5 GB | dense; quality candidate but needs Vulkan pool at Q4_K_M (UD-Q3_K_XL ~14.5 GB fits CUDA) |
-| `qwen/qwen3.6-35b-a3b` | 22.1 GB | MoE ~3B active; needs Vulkan pool; **thinking can be disabled** via LM Studio Custom Fields toggle (verified 2026-06-04 — see narrowed [[concepts/bugs-and-fixes]] BUG 57) |
+| `qwen/qwen3.6-35b-a3b` | 22.1 GB | MoE ~3B active; needs Vulkan pool; **thinking can be disabled** via LM Studio Custom Fields toggle (verified 2026-06-04 — see narrowed [[concepts/bugs-and-fixes]] BUG 57) — **current `text_model` + `vision_model`** |
 
 Served by [[entities/lm-studio]] at `localhost:1234`.
 
@@ -91,7 +94,7 @@ These are top-of-leaderboard numbers — competitive with or ahead of Qwen3-VL-3
 
 ## VRAM choreography
 
-`qwen3.5-9b` at 6.5 GB Q4_K_M + 32K context KV cache fits comfortably on the RTX 5060 Ti 16 GB CUDA. Paired with the 7.6 GB `gemma-4-12b` vision model (14.1 GB combined) the two may even co-reside, eliminating the text↔vision swap entirely. See [[concepts/vram-budget]].
+**Current**: the unified `qwen3.6-35b-a3b` (~22 GB Q4_K_M + KV) runs across the dual-GPU Vulkan pool (RTX 5060 Ti 16 GB + AMD RX 6700 XT 12 GB) and serves both text and vision, so there is **no text↔vision swap** at all. *(Superseded plan: `qwen3.5-9b` 6.5 GB + `gemma-4-12b` 7.6 GB co-resident on the single 16 GB CUDA card — the rationale that motivated consolidating onto one model.)* See [[concepts/vram-budget]].
 
 ---
 
@@ -99,9 +102,9 @@ These are top-of-leaderboard numbers — competitive with or ahead of Qwen3-VL-3
 
 Per [[concepts/model-split]] tier table:
 
-- **Speed pick** — `qwen3.5-9b` (current). Best throughput for the heavy Pass B workload.
+- **Quality (current pick)** — `qwen3.6-35b-a3b` with **Enable Thinking OFF** (Vulkan pool, MoE 3B active keeps it fast). The deployed `text_model`/`vision_model`.
+- **Speed** — `qwen3.5-9b`. Best throughput for the heavy Pass B workload; now reassigned to the Discord agent.
 - **Balanced** — `openai/gpt-oss-20b` (installed, 12.1 GB MXFP4 CUDA-fit, runtime-tunable `reasoning_effort` Low/Med/High that actually works).
-- **Quality** — `qwen3.6-35b-a3b` with **Enable Thinking OFF** (Vulkan pool, MoE 3B active keeps it fast). Newly viable post-BUG-57-narrowing.
 
 ---
 
@@ -110,8 +113,8 @@ Per [[concepts/model-split]] tier table:
 - [[concepts/model-split]] — text-slot tier table and thinking policy
 - [[concepts/vlm-comparison-2026-06]] — verifies the qwen3.5-9b vision claim is practically fragile
 - [[concepts/bugs-and-fixes]] — BUG 57 (narrowed); BUG 20 (token exhaustion)
-- [[entities/gemma4]] — current vision slot
-- [[entities/qwen3-vl]] — recommended migration target for vision
+- [[entities/gemma4]] — former vision slot (superseded by the unified `qwen3.6-35b-a3b`)
+- [[entities/qwen3-vl]] — dedicated VLM family; now the Discord agent's fallback model
 - [[entities/lm-studio]] — serves the GGUF
 - [[concepts/clipping-pipeline]] — Stages 3 and 4
 - [[concepts/segment-detection]] — Stage 3

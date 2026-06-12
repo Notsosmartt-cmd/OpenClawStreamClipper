@@ -1,9 +1,10 @@
 ---
 title: "UI Chrome Masking + Overlay OCR — Phase 4.1 (REMOVED 2026-05-01)"
 type: concept
+status: retired
 tags: [chrome, mog2, paddleocr, overlay, phase-4, grounding, stage-5, vision, removed, tombstone]
 sources: 2
-updated: 2026-05-01
+updated: 2026-06-12
 ---
 
 > [!warning] REMOVED 2026-05-01

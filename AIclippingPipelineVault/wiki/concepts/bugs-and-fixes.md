@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Bugs and Fixes
@@ -20,7 +20,9 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ---
 
-## Status summary (2026-06-04)
+## Status summary (2026-06-12)
+
+**Total recorded: 64 bugs (highest number BUG 64) + 2 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -39,90 +41,99 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 
 ## Quick-nav index
 
+> [!note] Coverage
+> Every BUG entry (1–64, no BUG 22; 37 has 37b/37c) and both REMOVAL records below are listed here, grouped by category. Where a number was reused (BUG 60, BUG 61), both entries share a row — the `[[#BUG NN]]` anchor resolves to the first (older) occurrence.
+
 ### Infrastructure / Docker
 | # | Title |
 |---|---|
-| BUG 1 | Pipeline not reclipping after rebuild — `processed.log` full, use `--force` |
-| BUG 2 | PowerShell breaks `2>/dev/null` — wrap in `bash -c "..."` |
-| BUG 4 | Docker build uploads 32GB — missing `.dockerignore` |
-| BUG 11 | `apt-get` fails during Docker build on Windows/WSL2 — add retry/timeout config |
-| BUG 12 | Mixed mode falls back to CPU — `OLLAMA_VULKAN=1` missing |
-| BUG 13 | `vulkaninfo` not found in container — missing `vulkan-tools` package |
-| BUG 14 | Vulkan silently falls back to CPU — ICD init failure; now auto-detected |
-| BUG 18 | Pipeline logs lost after EXIT cleanup — added persistent timestamped log |
-| BUG 31 | Docker Desktop named pipe 500 kills `docker exec` mid-Pass-B — detached pipeline lifecycle |
-| BUG 32 | Container loses `host.docker.internal` route mid-run — Pass B / Stage 6 fail-fast after 3 consecutive ENETUNREACH |
-| BUG 59 | HF model download hard-fails on Windows — symlink WinError 1314; set `HF_HUB_DISABLE_SYMLINKS=1` (copy mode) |
+| [[#BUG 1]] | Pipeline not reclipping after rebuild — `processed.log` full, use `--force` |
+| [[#BUG 2]] | PowerShell breaks `2>/dev/null` — wrap in `bash -c "..."` |
+| [[#BUG 4]] | Docker build uploads 32GB — missing `.dockerignore` |
+| [[#BUG 11]] | `apt-get` fails during Docker build on Windows/WSL2 — add retry/timeout config |
+| [[#BUG 12]] | Mixed mode falls back to CPU — `OLLAMA_VULKAN=1` missing |
+| [[#BUG 13]] | `vulkaninfo` not found in container — missing `vulkan-tools` package |
+| [[#BUG 14]] | Vulkan silently falls back to CPU — ICD init failure; now auto-detected |
+| [[#BUG 18]] | Pipeline logs lost after EXIT cleanup — added persistent timestamped log |
+| [[#BUG 31]] | Docker Desktop named pipe 500 kills `docker exec` mid-Pass-B — detached pipeline lifecycle |
+| [[#BUG 32]] | Container loses `host.docker.internal` route mid-run — fail-fast after 3 ENETUNREACH |
+| [[#BUG 59]] | HF model download hard-fails on Windows — symlink WinError 1314; set `HF_HUB_DISABLE_SYMLINKS=1` |
+| [[#BUG 62]] | Installing torchcodec broke M3 callbacks in Stage 4 — per-subprocess DLL-dir gap; `sitecustomize.py` fix |
 
 ### Dashboard
 | # | Title |
 |---|---|
-| BUG 3 | Dashboard JSON parsing error — Flask returning HTML, not JSON |
-| BUG 5 | `os.setsid` AttributeError on Windows — Linux-only syscall |
-| BUG 6 | Dashboard can't see VODs — wrong path (`dashboard/vods/` vs project root) |
-| BUG 7 | `processed.log` UnicodeDecodeError — UTF-16 BOM |
-| BUG 8 | Pipeline doesn't start from dashboard — must use `docker exec`, not local bash |
-| BUG 10 | Docker dashboard zombie process — Flask crash, no listener on port 5000 |
-| BUG 16 | LM Studio `/v1/models` flooded by status polls — added 30 s cache |
+| [[#BUG 3]] | Dashboard JSON parsing error — Flask returning HTML, not JSON |
+| [[#BUG 5]] | `os.setsid` AttributeError on Windows — Linux-only syscall |
+| [[#BUG 6]] | Dashboard can't see VODs — wrong path (`dashboard/vods/` vs project root) |
+| [[#BUG 7]] | `processed.log` UnicodeDecodeError — UTF-16 BOM |
+| [[#BUG 8]] | Pipeline doesn't start from dashboard — must use `docker exec`, not local bash |
+| [[#BUG 10]] | Docker dashboard zombie process — Flask crash, no listener on port 5000 |
+| [[#BUG 16]] | LM Studio `/v1/models` flooded by status polls — added 30 s cache |
 
 ### LLM / Model Integration
 | # | Title |
 |---|---|
-| BUG 15 | Qwen3.5 reasoning model returns `content: ""` — use `chat_template_kwargs` |
-| BUG 17 | 35B+ `chat_template_kwargs` ignored — answer in `reasoning_content` |
-| BUG 19 | LM Studio queue backup from short timeouts — cascading abandonment |
-| BUG 20 | 35B-A3B token exhaustion: thinking consumes all `max_tokens` |
-| BUG 21 | Stage 3 `max_tokens=1024` silent misclassification — all segments → `just_chatting` |
-| BUG 30 | HTTP 400 kills all Pass B + Stage 6 with Gemma 4 — `response_format` unsupported |
-| BUG 38 | Stage 3 / Tier-1 Q1 / Tier-3 A1 token starvation on Gemma 4 — three call sites budgeted for Qwen die mid-loop on Gemma's permanent thinking |
-| BUG 39 | Stage 4 raw backticks crash heredoc once Stage 3 stops dying (BUG 29 redux) |
-| BUG 40 | PaddleOCR 2.7+ rejects `use_gpu` arg → chrome masking ships without OCR ground truth |
-| BUG 41 | PaddleOCR 3.x removes `cls=` kwarg AND changes return shape — every OCR call fails after BUG 40's constructor fix |
-| BUG 42 | MOG2 first-frame seed misfire — every chrome window masks 100 % of frame, all chrome detection silently skipped |
-| BUG 43 | Stage 5 chrome stage propagates non-zero exit and kills the rest of the pipeline (`set -e`) — needs subshell isolation + per-moment heartbeat |
-| BUG 44 | Tier-3 grounding cascade timeouts (`[LMSTUDIO] call failed: timed out`) when LM Studio routes to Gemma 4 instead of Lynx |
-| BUG 45 | Stage 7 clip manifest description field unsanitized — newlines / pipes from chatty LLM corrupt bash `read -r` field boundaries |
-| BUG 46 | BUG 39 redux at line 2160 — markdown backticks in my BUG 18 visibility-fix comment crash bash heredoc with `command not found` |
-| BUG 47 | PaddleOCR 3.x PIR-on-oneDNN backend raises `ConvertPirAttribute2RuntimeAttribute` on every inference — disable PIR + oneDNN before paddle imports |
-| BUG 48 | Stage 5 → Stage 6 BUG-31 staleness gate fires during VRAM swap — chrome heartbeat ends but model load takes 20-40 s without STAGE_FILE update |
-| BUG 49 | Chrome PaddleOCR can wedge indefinitely on a single frame — pipeline truncates mid-stage, never reaches Stages 6/7/8; needs SIGALRM per-call + outer wallclock timeout |
-| BUG 50 | MOG2 misfires 100 % on Stage 5's [-2, 0, +1, +2, +3, +5]-second frame layout — fundamental frame-spacing mismatch; BUG 42's first-frame priming was insufficient |
-| BUG 37b | Score-display visibility: 9/10 selected clips show 1.000 because BUG 37's raw-score ranking value is hidden behind the user-facing 0–1 clamp |
-| BUG 37c | A2 callback_confirmed multiplier reintroduced the 1.0 clamp at Stage 6 — A2-boosted callbacks can't sort above plain 1.000s without a `raw_score` field |
-| BUG 53 | Stage 6 vision boost saturated at 1.0 — read clamped score not raw, so `transcript_score × 1.15` re-clamped to 1.000 → "vision BOOST: 1.000 -> 1.000" no-op |
-| BUG 55 | Pass D rubric judge: 10/10 unparseable on thinking models — `s.find("{")` swallowed reasoning prefix into one giant blob; balanced-brace scan from end |
-| BUG 57 | Qwen models "think" on every Pass B call under LM Studio 0.4.14 → slow + occasional empty-content chunk skips. **Narrowed 2026-06-04**: only the *API* `enable_thinking:false` param is ignored — LM Studio's app-side Custom Fields → Enable Thinking toggle DOES work on `qwen3.6-35b-a3b` (verified: `reasoning_tokens=0`). |
-| BUG 60 | Stage 6 vision dumps Pass B `why` field into `title` and `description` — clip filenames render as `Pattern socialcallout Friend roasts streamer for l.mp4` instead of a viral title. Grounding cascade misses this because the raw pattern text technically overlaps the transcript. Observed 2 of 10 clips on 2026-06-05 rakai run. Needs a post-process strip for `^Pattern <id>:\\s*` prefixes in `stage6_vision.py`. |
-| BUG 61 | Dashboard Context Window showed a hardcoded "8192 ⭐ recommended" static label (not GPU-aware) — and 8192 is actually too small for Pass B (prompt ~5k tokens + generation can exceed 8192 on long chunks → silent truncation). The user's `config/models.json` had drifted to `context_length: 8192`. Fixed: removed the static star (dynamic GGUF-exact recommendation replaces it), relabeled tiers honestly, restored config to 32768. |
+| [[#BUG 15]] | Qwen3.5 reasoning model returns `content: ""` — use `chat_template_kwargs` |
+| [[#BUG 17]] | 35B+ `chat_template_kwargs` ignored — answer in `reasoning_content` |
+| [[#BUG 19]] | LM Studio queue backup from short timeouts — cascading abandonment |
+| [[#BUG 20]] | 35B-A3B token exhaustion: thinking consumes all `max_tokens` |
+| [[#BUG 21]] | Stage 3 `max_tokens=1024` silent misclassification — all segments → `just_chatting` |
+| [[#BUG 30]] | HTTP 400 kills all Pass B + Stage 6 with Gemma 4 — `response_format` unsupported |
+| [[#BUG 38]] | Token starvation on Gemma 4 — three Qwen-budgeted call sites die mid-loop on permanent thinking |
+| [[#BUG 39]] | Stage 4 raw backticks crash heredoc once Stage 3 stops dying (BUG 29 redux) |
+| [[#BUG 40]] | PaddleOCR 2.7+ rejects `use_gpu` arg → chrome masking ships without OCR ground truth |
+| [[#BUG 41]] | PaddleOCR 3.x removes `cls=` kwarg + changes return shape — every OCR call fails |
+| [[#BUG 42]] | MOG2 first-frame seed misfire — every chrome window masks 100 % of frame |
+| [[#BUG 43]] | Stage 5 chrome non-zero exit kills pipeline (`set -e`) — subshell isolation + heartbeat |
+| [[#BUG 44]] | Tier-3 grounding timeouts when LM Studio routes Lynx requests to Gemma 4 |
+| [[#BUG 45]] | Stage 7 manifest description unsanitized — newlines/pipes corrupt bash `read -r` fields |
+| [[#BUG 46]] | BUG 39 redux at line 2160 — markdown backticks in a comment crash the bash heredoc |
+| [[#BUG 47]] | PaddleOCR 3.x PIR-on-oneDNN raises `ConvertPirAttribute2RuntimeAttribute` every call |
+| [[#BUG 48]] | Stage 5 → 6 staleness gate fires during VRAM swap — 20-40 s load without STAGE_FILE update |
+| [[#BUG 49]] | Chrome PaddleOCR wedges on a frame — pipeline truncates before Stages 6/7/8 |
+| [[#BUG 50]] | MOG2 misfires 100 % on Stage 5's sparse frame layout — frame-spacing mismatch |
+| [[#BUG 37b]] | Score-display visibility: 9/10 clips show 1.000 because raw ranking is hidden behind the clamp |
+| [[#BUG 37c]] | A2 callback multiplier reintroduced the 1.0 clamp at Stage 6 — needs a `raw_score` field |
+| [[#BUG 53]] | Stage 6 vision boost saturated at 1.0 — boosted the clamped score → "BOOST 1.000 -> 1.000" no-op |
+| [[#BUG 55]] | Pass D rubric judge 10/10 unparseable on thinking models — balanced-brace scan from end |
+| [[#BUG 57]] | Qwen "thinks" on every Pass B call under LM Studio — API toggle ignored, app-side toggle works |
+| [[#BUG 60]] (older) | Stage 6 leaks Pass B `Pattern <id>:` reasoning into clip title/description |
+| [[#BUG 61]] (older) | Dashboard "8192 ⭐ recommended" static label misleading + 8192 too small for Pass B |
 
 ### Pipeline / Rendering
 | # | Title |
 |---|---|
-| BUG 9 | Early-VOD clip bias — fixed by Pass C time-bucket distribution |
-| BUG 23 | Quiet clip audio with TTS/music — `amix normalize=1` default |
-| BUG 24 | Stitch-count `AttributeError: str.get` — `moment_groups.json` schema change |
-| BUG 25 | Vision describes setup, not payoff — wrong frame offsets in Stage 5 |
-| BUG 28 | Float start time triggers `integer expression expected` — use `awk` clamping |
-| BUG 29 | Backtick Markdown in unquoted heredocs — bash command substitution |
-| BUG 35 | Pass B moments stacking at chunk_start — invalid LLM timestamps clamp; reject duplicates |
-| BUG 36 | Pass C overflow biased toward 1-2 buckets — replace global-sort overflow with bucket round-robin |
-| BUG 37 | Pass C score saturation — 9/10 clips at 1.000 cap; soft-cap during ranking, clip only at serialization |
+| [[#BUG 9]] | Early-VOD clip bias — fixed by Pass C time-bucket distribution |
+| [[#BUG 23]] | Quiet clip audio with TTS/music — `amix normalize=1` default |
+| [[#BUG 24]] | Stitch-count `AttributeError: str.get` — `moment_groups.json` schema change |
+| [[#BUG 25]] | Vision describes setup, not payoff — wrong frame offsets in Stage 5 |
+| [[#BUG 28]] | Float start time triggers `integer expression expected` — use `awk` clamping |
+| [[#BUG 29]] | Backtick Markdown in unquoted heredocs — bash command substitution |
+| [[#BUG 35]] | Pass B moments stacking at chunk_start — invalid LLM timestamps clamp; reject duplicates |
+| [[#BUG 36]] | Pass C overflow biased toward 1-2 buckets — bucket round-robin instead of global sort |
+| [[#BUG 37]] | Pass C score saturation — 9/10 clips at 1.000; soft-cap during ranking, clip at serialization |
 | Whisper | Degenerate loop (`... ...`) on long audio — chunk audio to 20-min segments |
-| BUG 51 | Stage 3 + 6 truncate after `Pre-loading` — `\n` artifact + unbounded curl + missing `import os` (3 followups) |
-| BUG 52 | Configured model not in LM Studio — pipeline limps with HTTP 400 fallbacks for hours; needs `verify_models` startup probe |
-| BUG 54 | `HOOK: unbound variable` at stage7_render.sh:19 — bash double-quoted python heredoc bash-expanded `$HOOK` inside a python *comment* under `set -u` |
-| BUG 56 | Title/visual mismatch — Pass C merged keyword (T=1179, "prom") with LLM (T=1187, "bus") but kept keyword's T → Stage 5 frames + Stage 6 transcript window grounded vision in dialog *outside* the rendered clip |
-| BUG 58 | "Force reprocess" never re-transcribed — Stage 2 cache ignored `--force`; now re-transcribes + replaces the cache |
+| [[#BUG 51]] | Stage 3 + 6 truncate after `Pre-loading` — `\n` artifact + unbounded curl + missing `import os` |
+| [[#BUG 52]] | Configured model not in LM Studio — HTTP 400 fallbacks for hours; needs `verify_models` probe |
+| [[#BUG 54]] | `HOOK: unbound variable` at stage7_render.sh:19 — `$HOOK` expanded inside a python comment |
+| [[#BUG 56]] | Title/visual mismatch — Pass C kept keyword's T over LLM's, grounding vision outside the clip |
+| [[#BUG 58]] | "Force reprocess" never re-transcribed — Stage 2 cache ignored `--force`; now replaces cache |
+| BUG 60 (newer) | Vestigial `\`-escaped backticks in JSON fence-stripping (stage4 + stage6) — invalid escape, fence never matched |
+| BUG 61 (newer) | Pass C dedup hard-resets `cross_validated`, silently stripping A1 arcs' ×1.20 boost |
+| [[#BUG 63]] | "Stitch short clips" could never form a group — budget vs min-members arithmetic (3×12 > 32) |
+| [[#BUG 64]] | White-flash transitions painted the ENTIRE clip white — `fade` holds colour outside its ramp |
 
 ### Grounding / Hallucination
 | # | Title |
 |---|---|
-| BUG 26 | Vision hallucinates Twitch jargon absent from transcript |
-| BUG 27 | Semantic hallucinations pass word-overlap gate (inversions) |
-| BUG 33 | *historical* — `lmstudio.py` (then-Tier-3 client) sent `response_format` — HTTP 400 on Gemma silently disabled Lynx (Lynx tier retired 2026-05-01) |
-| BUG 34 | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window, nulling ~88 % of Pass B "why" (MiniCheck tier retired 2026-05-01) |
-| BUG 44 | *historical* — Tier-3 grounding cascade timeouts when LM Studio routed Lynx requests to Gemma 4 (Lynx tier retired 2026-05-01; routing problem moot) |
-| REMOVAL 2026-05-01b | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + main-model LLM judge |
+| [[#BUG 26]] | Vision hallucinates Twitch jargon absent from transcript |
+| [[#BUG 27]] | Semantic hallucinations pass word-overlap gate (inversions) |
+| [[#BUG 33]] | *historical* — Tier-3 client sent `response_format` — HTTP 400 on Gemma disabled Lynx (tier retired 2026-05-01) |
+| [[#BUG 34]] | *historical* — `max_ref_chars=2000` truncated MiniCheck's reference window (tier retired 2026-05-01) |
+| BUG 44 | *historical* — Tier-3 grounding timeouts on Gemma routing (Lynx tier retired 2026-05-01; see LLM row) |
+| [[#REMOVAL 2026-05-01]] | Phase 4.1 chrome stage + Pass A' chat-speed scoring deleted |
+| [[#REMOVAL 2026-05-01b]] | MiniCheck NLI Tier 2 + Lynx-8B Tier 3 retired; cascade collapsed to Tier 1 + LLM judge |
 
 ---
 
@@ -804,7 +815,7 @@ A second site found in the same audit: `scripts/clip-pipeline.sh:3451` had simil
 
 **Cause**: PaddleOCR 3.x renamed `.ocr(image, cls=True)` → `.predict(image)` (with `.ocr()` kept as a thin alias that forwards to `.predict()`). The legacy `cls=True` kwarg was removed entirely — angle classification is now wired at construction time via `use_angle_cls=True`. `chrome_mask.py:339` (legacy code) called `ocr.ocr(p, cls=True)`, which on 3.x routes to `.predict(p, cls=True)` and raises `TypeError`. The per-frame `except Exception` swallows the error and `continue`s, so OCR records stay empty.
 
-The return format also changed: 2.x returned `[[[box, (text, conf)], ...]]` (list of pairs); 3.x returns `[{"rec_texts": [...], "rec_scores": [...], "rec_polys": [...]}]` (one dict per image). Even if we drop the `cls=` kwarg, the existing `_box, (text, conf) = line` unpack would silently produce zero records on the new shape.
+The return format also changed: 2.x returned `[ [ [box, (text, conf)], ... ] ]` (list of pairs); 3.x returns `[{"rec_texts": [...], "rec_scores": [...], "rec_polys": [...]}]` (one dict per image). Even if we drop the `cls=` kwarg, the existing `_box, (text, conf) = line` unpack would silently produce zero records on the new shape.
 
 **Fix** (`scripts/lib/chrome_mask.py`):
 - Cascade through three call shapes per frame, breaking on first non-`TypeError`: `ocr.predict(p)` → `ocr.ocr(p)` → `ocr.ocr(p, cls=True)`. Older 2.x falls through to the third form; 3.x succeeds on the first.

@@ -3,18 +3,24 @@ title: "Open Questions and Feature Requests"
 type: concept
 tags: [open-questions, feature-requests, research, todo, hub]
 sources: 2
-updated: 2026-04-07
+updated: 2026-06-12
 ---
 
 # Open Questions and Feature Requests
 
-Unresolved questions, user requests, and design decisions that haven't been implemented yet. Good starting points for future development sessions.
+Unresolved questions, user requests, and design decisions. Good starting points for future development sessions.
+
+> [!note] Status reviewed 2026-06-12
+> Most of the April questions have since been answered by the bare-metal port, the unified-model swap, and Stage 4 reworks. Each Q below now carries a **Status** line. Q1, Q2, Q3 are **resolved**; Q4 and Q5 are **moot** under the bare-metal/LM-Studio architecture. None remain blocking.
 
 ---
 
-## Q1 — Score normalization: should scores be 0–1 instead of 1–10?
+## Q1 — Score normalization: should scores be 0–1 instead of 1–10? — RESOLVED
 
 **Source**: `fix.txt` (user question, 2026-04-07)
+
+> [!note] Status: RESOLVED — scores are normalized to 0.0–1.0
+> `scripts/lib/stages/stage4_moments.py` now normalizes both passes to 0.0–1.0: Pass A maps threshold→0.0, 10+ signals→1.0; Pass B maps the LLM 1–10 to `(score-1)/9.0`. Merge/cross-validation works on `normalized_score`. The recommendation below was adopted. See [[concepts/highlight-detection]].
 
 **The question**: Would normalizing scores from 0–1 give better range, depth, and accuracy compared to the current 1–10 integer scale?
 
@@ -42,13 +48,16 @@ Unresolved questions, user requests, and design decisions that haven't been impl
 
 ---
 
-## Q2 — Variable clip length: should clips be 15–60 seconds instead of fixed 45?
+## Q2 — Variable clip length: should clips be 15–60 seconds instead of fixed 45? — RESOLVED
 
 **Source**: `fix.txt` (user question, 2026-04-07)
 
+> [!note] Status: RESOLVED — clips carry per-moment `clip_start`/`clip_duration`
+> Stage 4 now emits LLM-annotated boundaries (`clip_start`/`clip_end` → `clip_duration`) per moment, clamped to the chunk and a max duration, with a centered-window fallback. Stage 7 reads them from the manifest instead of a fixed 45 s window (approach 2 below — LLM-annotated boundaries — was chosen). See [[concepts/clip-rendering]] and `scripts/lib/stages/stage4_moments.py`.
+
 **The question**: Should clip length be variable based on content type? A storytime segment might need 60 seconds to include the payoff. A quick reaction might only need 15 seconds. Minimum 15 seconds. How would the pipeline determine length?
 
-**Current state**: Fixed 45-second window (`T - 22s` to `T + 23s`). No content awareness.
+**Historical state (April)**: Fixed 45-second window (`T - 22s` to `T + 23s`). No content awareness.
 
 **How variable length could work**:
 
@@ -78,61 +87,38 @@ Unresolved questions, user requests, and design decisions that haven't been impl
 
 ---
 
-## Q3 — Model switcher UI in the dashboard
+## Q3 — Model switcher UI in the dashboard — RESOLVED
 
 **Source**: `fix.txt` (user question, 2026-04-07)
 
-**The question**: Add a section to the web dashboard showing which AI model is used at each pipeline stage, with the ability to swap models without editing config files. Useful if hardware is upgraded (bigger model) or if wanting to experiment.
+> [!note] Status: RESOLVED — the dashboard has a model panel
+> The dashboard now exposes model selection (`dashboard/_state.py` + the models panel, `dashboard/static/modules/models-panel.js`): `config/models.json` holds `text_model` / `vision_model` / `whisper_model`, the UI offers per-role dropdowns with descriptions, and `/api/models/context-recommendation` computes a per-model context size (GGUF-exact KV-cache estimate against live VRAM). The pipeline reads the selection through `CLIP_*` env vars → `config/models.json` (see `scripts/run_pipeline.py`). See [[entities/dashboard]] and [[concepts/vram-budget]].
 
-**Current model assignments**:
+**The question**: Add a section to the web dashboard showing which AI model is used at each pipeline stage, with the ability to swap models without editing config files.
 
-| Stage | Model | Config location |
-|---|---|---|
-| Discord agent | `qwen2.5:7b` | `config/openclaw.json` |
-| Stage 3 (segment classification) | `qwen3.5:9b` | `scripts/clip-pipeline.sh` |
-| Stage 4 Pass B (LLM analysis) | `qwen3.5:9b` | `scripts/clip-pipeline.sh` |
-| Stage 6 (vision enrichment) | `qwen3-vl:8b` | `scripts/clip-pipeline.sh` |
-| Stages 2 & 7 (transcription) | `whisper large-v3` | `Dockerfile` (baked in) |
-
-**What would need to change for a UI switcher**:
-
-1. **Dashboard UI**: dropdown per stage showing available Ollama models (fetched from `ollama list` API)
-2. **Config storage**: save model selections to a JSON file (e.g., `config/model-overrides.json`)
-3. **Pipeline reads overrides**: `clip-pipeline.sh` checks for `config/model-overrides.json` and substitutes model names
-4. **OpenClaw config**: Discord agent model updated in `openclaw.json` (already a config file, just needs a write endpoint)
-5. **Whisper**: cannot be swapped via UI (baked into Docker image at build time) — could display as read-only
-
-**Risk**: Swapping models without understanding VRAM implications could cause OOM errors. The UI should display model VRAM costs and warn if the selected combination exceeds available VRAM.
-
-**Not yet implemented.** See [[entities/dashboard]].
+**Current model assignments (2026-06)**: text and vision both default to the unified `qwen/qwen3.6-35b-a3b` (`config/models.json`); optional `text_model_passb` / `vision_model_stage6` override Pass B / Stage 6 on bigger rigs; transcription is `whisper large-v3-turbo`; the Discord agent model is in `config/openclaw.json`. See [[concepts/context-management]].
 
 ---
 
-## Q4 — qwen3.5:9b vision broken in Ollama
+## Q4 — qwen3.5:9b vision broken in Ollama — MOOT (architecture changed)
 
 **Source**: Project summary (2026)
 
-**The question**: When will Ollama fix qwen3.5:9b GGUF vision inference? Until then, all vision tasks route to qwen3-vl:8b.
+> [!note] Status: MOOT — Ollama replaced by LM Studio; unified multimodal model
+> This question assumed Ollama as the server and a text/vision model split. Since the bare-metal port (2026-06-04) the pipeline uses native **LM Studio**, and text + vision are served by a single multimodal model (`qwen/qwen3.6-35b-a3b`), so the Ollama GGUF-projector bug no longer applies. A dedicated vision model (`qwen/qwen3-vl-8b`) remains available as an optional `vision_model_stage6` override. See [[concepts/bare-metal-windows]] and [[entities/qwen35]].
 
-**Current state**: The GGUF multimodal projector for qwen3.5:9b isn't handled correctly by Ollama as of early 2026. Vision calls silently fail or produce garbage.
-
-**Implication**: Stage 6 cannot use qwen3.5:9b even though its architecture supports vision. The model routing is `qwen3.5:9b → text tasks only`, `qwen3-vl:8b → all vision tasks`.
-
-**Watch for**: Ollama releases and qwen3.5 GGUF updates. Once fixed, consolidating to one model for both text and vision could reduce VRAM swapping.
+**Original question**: When will Ollama fix qwen3.5:9b GGUF vision inference? Until then, all vision tasks route to qwen3-vl:8b.
 
 ---
 
-## Q5 — Container dashboard zombie process
+## Q5 — Container dashboard zombie process — MOOT (bare-metal)
 
 **Source**: `DEVELOPMENT_SUMMARY.txt` (BUG 10)
 
-**Status**: Open, low priority.
+> [!note] Status: MOOT — the dashboard runs natively, not in a container
+> Since the bare-metal port the Flask dashboard runs as a native Windows process; the Docker-container zombie failure mode no longer occurs in the default architecture. Relevant only to legacy Docker deployments. See [[concepts/bugs-and-fixes]] BUG 10.
 
-The dashboard Flask app inside the Docker container can become a zombie process if it crashes on startup. The local Windows dashboard works fine and is the primary interface, so this is a convenience issue only.
-
-**Needs investigation**: What import or startup error causes the crash inside the container? Likely a missing dependency or path issue not present on the Windows host.
-
-See [[concepts/bugs-and-fixes]] BUG 10.
+The dashboard Flask app inside the Docker container could become a zombie process if it crashed on startup.
 
 ---
 

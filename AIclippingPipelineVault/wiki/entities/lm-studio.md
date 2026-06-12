@@ -3,11 +3,13 @@ title: "LM Studio"
 type: entity
 tags: [inference-server, llm, windows, gpu, openai-compatible, infrastructure, hub]
 sources: 0
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 
 # LM Studio
+
+> [!note] Not to be confused with [[entities/lmstudio]] — this page is the LM Studio inference **server**; lmstudio.py is the small HTTP **client module** that calls it.
 
 Native Windows application for running local LLM models. Replaced [[entities/ollama]] as the LLM inference backend for this project as of 2026-04-18.
 

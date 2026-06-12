@@ -21,12 +21,16 @@ AIclippingPipelineVault/
 │   └── assets/                 ← images downloaded from articles
 ├── wiki/
 │   ├── index.md                ← content catalog (update on every ingest)
-│   ├── log.md                  ← append-only chronological record
+│   ├── hot.md                  ← bounded (~100-line) current-state digest; refreshed every log prepend
+│   ├── log.md                  ← append-only chronological record (rotate by quarter when >~600 lines)
 │   ├── overview.md             ← high-level synthesis of the whole project
 │   ├── entities/               ← pages for specific things: models, tools, services
 │   ├── concepts/               ← pages for ideas, patterns, techniques, stages
 │   └── sources/                ← one summary page per ingested raw source
 ```
+
+> [!note] `hot.md` vs `log.md`
+> `log.md` is the **append-only record** (never edit past entries). `hot.md` is a **mutable cache** of the current state — a hard ~100-line cap, rewritten freely. Any session that prepends a `log.md` entry **also refreshes `hot.md`** (add the one-liner, prune anything stale or older than ~2 weeks, update the state table if defaults/flags/models changed). See `wiki/hot.md` for the contract.
 
 **Rule:** You own `wiki/` entirely — create, update, reorganize freely. You never modify files in `raw/`.
 
@@ -50,6 +54,10 @@ updated: 2026-04-07
 - **concept** — an idea, technique, pattern, stage, or category
 - **source** — a summary of one raw document from `raw/`
 - **overview** — the top-level synthesis page
+
+**`status:` field (plan-type pages only).** Pages that describe planned/forward-looking work carry a lifecycle field in frontmatter so it's grep-able: `status: planned | in-progress | shipped | superseded | retired`. Mirror the value in the page's `index.md` entry (e.g. `— **shipped 2026-05-01**`). Query with `grep -rl "^status: in-progress" wiki/`.
+
+**Naming conventions (new pages).** Dated research snapshots end `-YYYY-MM` (e.g. `vlm-comparison-2026-06`); plan pages start `plan-` or end `-plan`; case studies start `case-`; tombstones keep their original name with a `> [!warning] removed/retired` callout at top. Don't retrofit old names — convention applies going forward.
 
 Use `[[WikiLinks]]` to link between pages. This keeps the Obsidian graph view meaningful.
 
@@ -93,11 +101,10 @@ When the user asks a question:
 
 When the user asks you to health-check the wiki:
 
-1. Read `wiki/index.md` and all pages linked from it
-2. Report:
+1. Run `python scripts/wiki_lint.py` first — it mechanically reports broken wikilinks, orphan pages, index-coverage gaps both ways, `hot.md` over its line cap, stale `updated:` dates, and dead heading anchors. Fix what it flags.
+2. Then read `wiki/index.md` and the pages linked from it for the judgement calls a script can't make:
    - Contradictions between pages
    - Stale claims (if newer sources supersede them)
-   - Orphan pages (no inbound links)
    - Important concepts mentioned but lacking their own page
    - Missing cross-references between related pages
    - Data gaps worth investigating (flag with `> [!todo]`)
@@ -107,6 +114,15 @@ When the user asks you to health-check the wiki:
    ## [2026-04-07] lint | Health check
    Issues found/fixed: ...
    ```
+
+### Searching this wiki (canonical lookups)
+
+- **Current state**: read `wiki/hot.md` (then `wiki/overview.md` for architecture).
+- **Recent activity**: `grep "^## \[" wiki/log.md | head -20`
+- **A specific bug**: `grep -n "^## BUG 47" wiki/concepts/bugs-and-fixes.md` (or use its top quick-nav index)
+- **Plan lifecycle**: `grep -rl "^status: in-progress" wiki/concepts/`
+- **Topic → page**: read `wiki/index.md` section headers first — don't raw-grep the whole vault.
+- **Health check**: `python scripts/wiki_lint.py`
 
 ---
 
@@ -159,3 +175,7 @@ Brief description. Pages touched: [[page1]], [[page2]].
 Operations: `ingest`, `query`, `lint`, `update`
 
 The `## [` prefix makes log entries grep-able: `grep "^## \[" wiki/log.md | head -10`
+
+**Every log prepend also refreshes `wiki/hot.md`** (see the directory-layout note above).
+
+**Rotation.** When the active `log.md` exceeds ~600 lines, move older entries *verbatim* (append-only is sacred even in archives) to `wiki/log-YYYY-Qn.md`, keeping only the current quarter in `log.md`. Archives keep the `## [YYYY-MM-DD]` format so `grep -h "^## \[" wiki/log*.md` still scans full history. (As of 2026-06-12 all entries are 2026-Q2, so no archive exists yet despite the length.)
