@@ -22,6 +22,9 @@ Shipped as five coordinated additions to [[concepts/clipping-pipeline]]:
 
 All waves are independently toggleable through the **Originality & Render** panel in the [[entities/dashboard]].
 
+> [!warning] 2026-06-12 evaluation: the audio channel is the un-perturbed gap
+> Owner's clips are still being flagged "unoriginal" with this stack active. Root cause analysis: the stack is visually strong, but with Wave D OFF (`tts_vo: false`, `music_bed: ""` as of 2026-06-12) the rendered **audio track is essentially raw stream audio** — and TikTok's audio fingerprinting survives the mirror/speed/color edits Wave A leans on. Additive audio layers (punchline-anchored SFX, music bed, VO hook) are the fix. Full analysis + plan: [[concepts/plan-unoriginality-audio-layer]].
+
 ---
 
 ## Wave A — Per-clip randomization

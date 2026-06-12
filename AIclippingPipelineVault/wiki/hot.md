@@ -27,6 +27,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | Docker | legacy, superseded by bare-metal | 2026-06-04 | [[concepts/bare-metal-windows]] |
 
 ## In flight / awaiting validation
+- **2026-06-12 evaluation filed 5 plan pages** — unoriginality root cause = un-perturbed audio channel ([[concepts/plan-unoriginality-audio-layer]]); calibration loop glue ([[concepts/plan-calibration-loop]]); judge decorrelation ([[concepts/plan-decorrelate-judges]]); incongruity anomaly-proposer + micro-clips ([[concepts/case-incongruity-comedy]]); YouTube/informative ingest ([[concepts/plan-youtube-informative]])
 - Transition animations (white-flash + jump-cut compression) shipped flag-gated; BUG 64 fix lands the flash — needs a clean validation run (`CLIP_JUMP_CUTS=gaps` safest first) — [[concepts/transition-animations]]
 - Existing white-flashed clips are unrecoverable (transition pass `os.replace`d the good render) — re-run to regenerate — [[concepts/bugs-and-fixes]]
 - Stitch-short still never forms in production (only 1 eligible per category, not a bug) — verify with `moment_groups.py --explain` — [[concepts/originality-stack]]
@@ -35,6 +36,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-12] Deep evaluation filed as 5 plan/case pages (unoriginality audio layer, calibration loop, decorrelation, incongruity case, YouTube ingest); `self_consistency.py` flagged as the one orphan module — [[log]]
 - [2026-06-12] Wiki maintenance pass: added [[hot]] + `scripts/wiki_lint.py`, `status:` field on plan pages, fixed stale model/arch facts, completed the bugs quick-nav — [[log]]
 - [2026-06-07] Added narrative `[GROUPS]` logging + `moment_groups.py --explain` dry-run to verify stitch/arc grouping — [[concepts/originality-stack]]
 - [2026-06-07] Untracked + gitignored `config/originality.json` (dashboard runtime state tripping the wiki Stop-hook) — [[entities/dashboard]]
@@ -46,8 +48,6 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - [2026-06-06] Dashboard port now `DASHBOARD_PORT`/`PORT` env with auto-fallback (fixed WSAEACCES startup crash) — [[entities/dashboard]]
 - [2026-06-06] Dashboard "Studio" theme imported (teal, merged not overwritten) — [[entities/dashboard]]
 - [2026-06-06] CapCut word-box captions shipped (bundled Montserrat, word-level SRT, 4 caption bugs fixed) — [[concepts/captions]]
-- [2026-06-06] Dashboard multi-VOD selection + `/api/clip-batch` + `run_pipeline.py --vods a,b,c` — [[concepts/clipping-pipeline]]
-- [2026-06-06] Detection fixes 1–4 shipped flag-gated; Fix 4 (length-neutral duration) strongly validated on Lacy run — [[concepts/detection-improvements-plan]]
 
 ## Landmines (top gotchas for the next agent)
 - FFmpeg `fade=...:color=white` holds the colour OUTSIDE its ramp window — use transient `drawbox enable='between(t,a,b)'` instead (BUG 64) — [[concepts/transition-animations]]

@@ -52,6 +52,8 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Pipeline
 - [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities
+- [[concepts/plan-calibration-loop]] — Fit the ~50 hand-tuned multipliers vs Twitch-clip labels: offline re-scorer + fitter (**planned 2026-06-12**)
+- [[concepts/plan-decorrelate-judges]] — Split Pass D / vision-judge onto a different model family via 2 config keys (**planned 2026-06-12**)
 - [[concepts/clipping-quality-overhaul]] — **Roadmap** (**status: in-progress**) to fix bad clips: promote the multimodal model to *judge*, arc-driven duration, hook boundaries, kinetic captions; differentiation stance vs commercial clippers
 - Selection sub-plans (per north-star axis): [[concepts/plan-arc-completeness]], [[concepts/plan-reaction-worthy]], [[concepts/plan-baseline-contrast]], [[concepts/plan-engagement-discussion]] (**in-progress**, axis scorers built 2026-06-04) + [[concepts/plan-batch-diversity]] (**planned**, not yet built)
 - [[concepts/observability]] — **Diagnostics & axis tuning**: `axis_report`/`stage_timings`/`judge_tournament` JSON, rank churn, and the `logtool axes` tune→run→diff view
@@ -61,6 +63,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/detection-walkthrough]] — **End-to-end walkthrough** of Stage 3 (segment) + Stage 4 (moment) detection and how they connect
 - [[concepts/detection-improvements]] — **Design answers** (**shipped**): finer segments, embedding keywords, stitched setup→payoff, length-neutral duration
 - [[concepts/detection-improvements-plan]] — File:line-anchored implementation plans for those 4 fixes (**all 4 shipped 2026-06-06**)
+- [[concepts/plan-youtube-informative]] — Storytime 1.5–3 min fixes + YouTube/informative ingest (`--source youtube`, new category) (**planned 2026-06-12**)
 - [[concepts/clip-duration]] — How clip length is decided (no hard 30s clamp; default-fallback + length_penalty), chunk windowing, cross-chunk limits
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
@@ -68,6 +71,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/transition-animations]] — White flashes + LLM/rule jump-cut compression (Stage 7d.5); flag-gated
 - [[concepts/speed-control]] — Dashboard speed dropdown (1×–1.5×), setpts + rubberband, SRT rescaling
 - [[concepts/originality-stack]] — TikTok 2025 defense: waves A (randomize) + B (framing) + C (groups) + D (TTS/music) + E (camera pan)
+- [[concepts/plan-unoriginality-audio-layer]] — Why clips still get flagged: audio is the un-perturbed channel; SFX/VO/music plan (**planned 2026-06-12**)
 
 ### System
 - [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence; GGUF-exact KV + per-stage max_tokens + "bigger context ≠ better"
@@ -91,6 +95,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/vlm-comparison-2026-06]] — Head-to-head: Qwen3-VL vs Gemma 4 vs Qwen3.5 for the clipper workload; recommends Qwen3-VL-8B
 - [[concepts/text-comparison-2026-06]] — Head-to-head: Qwen 3.6 hybrid (avoid) vs gpt-oss-20b vs Gemma 4 for the text slot; recommends Gemma 4 12B (IFEval 88.9)
 - [[concepts/case-rap-battle-missed]] — Case study: rakai 2026-04-24 Delaware freestyle missed by Pass A + Pass B + audio_events; concrete keyword/prompt/diarization tuning recommendations
+- [[concepts/case-incongruity-comedy]] — Case study: competitor reference clips reveal the cross-channel incongruity blind spot; anomaly-proposer + micro-clip plan (**planned 2026-06-12**)
 - [[concepts/pipeline-optimizations-2026-06]] — Parallelization + RMS-gate + dead-chunk pre-filter sweep; implemented Stage 5/7 ffmpeg parallel + Pass B pre-filter + audio events RMS gate; ~1.6× combined wall-clock lift expected
 - [[concepts/clip-quality-remediation-2026-06]] — **Plan** from the 6/6 session review: fix vision REGEN→garbage titles, gate/parallelize Stage 5.5 (620s), score-display saturation, torchcodec; file:line-anchored
 - [[concepts/pass-b-false-negatives]] — Why Pass B (LLM detection) drops clip-worthy moments + mitigations; failed-chunk re-queue + de-tidy prompt shipped 2026-06-06
