@@ -146,6 +146,35 @@ except Exception as _pe:
 
 PATTERN_IDS = {p["id"] for p in PATTERN_CATALOG if isinstance(p, dict) and p.get("id")}
 
+# Rare-pattern bonus (2026-06-12 — case-rap-battle-missed deferred Phase 2).
+# Per-pattern Pass C multiplier read from the catalog itself: a pattern entry
+# may carry `pass_c_bonus` (default 1.0). This is a style-INDEPENDENT rarity
+# bonus so a rare, high-value pattern (a once-a-VOD rap battle) survives
+# time-bucket competition against everyday patterns — the 2026-06-05 re-run
+# detected the Delaware battle (Pass B 0.878, cross-validated) but Pass C
+# dropped it to a 0.433 competitor riding a 1.55 axis product. Distinct from
+# config/style_pattern_weights.json, which is style-CONDITIONAL and applied in
+# the Phase 4.6 diversity step. CLIP_PATTERN_BONUS=0 disables. Stamped on the
+# moment as `pattern_bonus` for the axis report / future calibration fitter.
+_PATTERN_BONUS_ON = os.environ.get("CLIP_PATTERN_BONUS", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+_PATTERN_BONUS = {}
+if _PATTERN_BONUS_ON:
+    for _p in PATTERN_CATALOG:
+        if not isinstance(_p, dict) or not _p.get("id"):
+            continue
+        try:
+            _b = float(_p.get("pass_c_bonus", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            _b = 1.0
+        # Clamp to a sane envelope so a config typo can't dominate Pass C.
+        _b = max(0.8, min(_b, 1.3))
+        if _b != 1.0:
+            _PATTERN_BONUS[_p["id"]] = _b
+    if _PATTERN_BONUS:
+        print(f"[PATTERNS] rare-pattern Pass C bonuses: {_PATTERN_BONUS}", file=sys.stderr)
+
 # Selection Sub-Plan A — arc-completeness scorer. Structural setup->payoff
 # completeness -> a gentle, category-aware multiplier folded into Pass C
 # raw_score (boost-leaning, never gates). Failure-soft: if the module or
@@ -404,6 +433,85 @@ KEYWORD_SETS = {
     ]
 }
 
+# Per-channel keyword packs (2026-06-12 — clipping-intelligence opportunity D).
+# Mirrors config/streamer_prompts.json: config/channel_keywords.json carries
+# per-channel slang/catchphrase additions, matched case-insensitively against
+# VOD_BASENAME via `filename_substrings` (first match wins, same policy as the
+# Whisper prompt packs). Additive only — extends the KEYWORD_SETS lists above;
+# unknown categories are skipped (weights/thresholds wouldn't know them).
+# Failure-soft: missing/unreadable file or no VOD_BASENAME → base sets only.
+def _merge_channel_keywords(keyword_sets):
+    path = os.environ.get("CLIP_CHANNEL_KEYWORDS") or "/root/.openclaw/channel_keywords.json"
+    vb = (os.environ.get("VOD_BASENAME") or "").lower()
+    if not vb or not os.path.exists(path):
+        return
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        print(f"[PASS A] channel_keywords.json unreadable ({e}); base keyword sets only", file=sys.stderr)
+        return
+    for chan, spec in (data.get("channels") or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        subs = spec.get("filename_substrings") or []
+        if not any(isinstance(s, str) and s and s.lower() in vb for s in subs):
+            continue
+        added = 0
+        for cat, phrases in (spec.get("keywords") or {}).items():
+            if cat not in keyword_sets or not isinstance(phrases, list):
+                continue
+            for ph in phrases:
+                ph_l = ph.lower().strip() if isinstance(ph, str) else ""
+                if ph_l and ph_l not in keyword_sets[cat]:
+                    keyword_sets[cat].append(ph_l)
+                    added += 1
+        print(f"[PASS A] channel keyword pack '{chan}' matched '{vb}': +{added} phrases", file=sys.stderr)
+        break  # first_match policy, mirroring streamer_prompts.json
+
+try:
+    _merge_channel_keywords(KEYWORD_SETS)
+except Exception as _cke:
+    print(f"[PASS A] channel keyword merge failed ({_cke}); base keyword sets only", file=sys.stderr)
+
+# Word-boundary keyword matching (2026-06-12 — clipping-intelligence
+# opportunity D). The scanner previously used plain substring checks, so "pog"
+# fired on "pogo stick" and "lol" on "lollipop" — junk co-fires that inflate
+# Pass A signal counts and, worse, the A∩B cross-validation denominator that
+# Pass C trusts as its strongest lever. Each phrase compiles once to a regex:
+#   - \b word boundaries at both ends,
+#   - \W+ between words (tolerates "no, way!" punctuation/spacing),
+#   - final-letter elongation tolerance ("let's gooo" still matches
+#     "let's goooooo"; \b still keeps "pog" from matching "pogo").
+# CLIP_KEYWORD_BOUNDARY=0 reverts to legacy substring matching.
+_KEYWORD_BOUNDARY = os.environ.get("CLIP_KEYWORD_BOUNDARY", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
+def _compile_keyword(phrase):
+    words = phrase.split()
+    if not words:
+        return None
+    parts = [re.escape(w) for w in words]
+    last = words[-1]
+    if last and last[-1].isalpha():
+        parts[-1] = parts[-1] + re.escape(last[-1]) + "*"
+    try:
+        return re.compile(r"\b" + r"\W+".join(parts) + r"\b")
+    except re.error:
+        return None
+
+_KEYWORD_PATTERNS = {}
+if _KEYWORD_BOUNDARY:
+    for _cat, _phrases in KEYWORD_SETS.items():
+        _KEYWORD_PATTERNS[_cat] = [
+            _kp for _kp in (_compile_keyword(_ph) for _ph in _phrases) if _kp
+        ]
+    print(
+        f"[PASS A] word-boundary keyword matching ON "
+        f"({sum(len(v) for v in _KEYWORD_PATTERNS.values())} compiled patterns)",
+        file=sys.stderr,
+    )
+
 # Segment-specific keyword weight multipliers
 # Boosts keywords that are natural for that segment type
 SEGMENT_KEYWORD_WEIGHTS = {
@@ -518,12 +626,19 @@ def keyword_scan(segments):
             categories_found = {}
             total_signals = 0.0
 
-            # Category-specific keyword matching with segment weights
+            # Category-specific keyword matching with segment weights.
+            # Word-boundary regexes by default (see _KEYWORD_BOUNDARY above);
+            # CLIP_KEYWORD_BOUNDARY=0 restores the legacy substring scan.
             for cat, phrases in KEYWORD_SETS.items():
                 cat_signals = 0
-                for phrase in phrases:
-                    if phrase in combined:
-                        cat_signals += 1
+                if _KEYWORD_BOUNDARY:
+                    for _pat in _KEYWORD_PATTERNS.get(cat, ()):
+                        if _pat.search(combined):
+                            cat_signals += 1
+                else:
+                    for phrase in phrases:
+                        if phrase in combined:
+                            cat_signals += 1
                 if cat_signals > 0:
                     weight = weights.get(cat, 1.0)
                     weighted = cat_signals * weight
@@ -1173,6 +1288,35 @@ style_prompts = {
     "engagement": "Prioritize discussion-worthy takes — a clear, relatable opinion on a topic the audience will argue about in the comments. Pause-and-opine moments, side-notes on a named brand/person/event, confident stances. The streamer doesn't need a big reaction; they need a take worth debating.",
     "variety": "Find ONE moment from EACH category. Maximum diversity across all categories."
 }
+
+# Unified prompt config (2026-06-12 — clipping-intelligence opportunity D).
+# SEGMENT_PROMPTS + style_prompts were code constants that could silently
+# drift from config/patterns.json (the legacy fallback prompt already had).
+# config/prompts.json is now the editable source of truth: entries found
+# there override the in-code defaults above, which remain as the
+# failure-soft fallback when the file is missing or unreadable.
+try:
+    _prompts_path = os.environ.get("CLIP_PROMPTS_CONFIG") or "/root/.openclaw/prompts.json"
+    if os.path.exists(_prompts_path):
+        _pcfg = json.loads(Path(_prompts_path).read_text(encoding="utf-8")) or {}
+        _seg_over = {
+            k: v for k, v in (_pcfg.get("segment_prompts") or {}).items()
+            if isinstance(v, str) and v.strip()
+        }
+        _style_over = {
+            k: v for k, v in (_pcfg.get("style_prompts") or {}).items()
+            if isinstance(v, str) and v.strip()
+        }
+        SEGMENT_PROMPTS.update(_seg_over)
+        style_prompts.update(_style_over)
+        print(
+            f"[PROMPTS] config/prompts.json loaded "
+            f"({len(_seg_over)} segment, {len(_style_over)} style entries)",
+            file=sys.stderr,
+        )
+except Exception as _ppe:
+    print(f"[PROMPTS] prompts config unavailable ({_ppe}); using in-code defaults", file=sys.stderr)
+
 style_hint = style_prompts.get(CLIP_STYLE, style_prompts["auto"])
 
 # Tier-1 Q4: per-segment chunk windows. Storytimes and arguments routinely run
@@ -2620,6 +2764,15 @@ for m in deduped:
     # speaker-only signal.
     if m.get("speaker_count", 0) >= 2 and (m.get("dominant_speaker_share") or 1.0) < 0.7:
         styled_score *= 1.15
+
+    # Rare-pattern bonus (case-rap-battle-missed Phase 2): style-independent
+    # rarity multiplier from the Pattern Catalog's `pass_c_bonus` field, so a
+    # rare high-value pattern survives bucket competition. See _PATTERN_BONUS
+    # at module top. Stamped for observability; 1.0 when no pattern matched.
+    _pb = _PATTERN_BONUS.get(m.get("primary_pattern") or "", 1.0)
+    if _pb != 1.0:
+        styled_score *= _pb
+        m["pattern_bonus"] = _pb
 
     # --- Selection axes (Plans A/B/C/E) ------------------------------------
     # Each axis returns a bounded, failure-soft multiplier. They ACCUMULATE into

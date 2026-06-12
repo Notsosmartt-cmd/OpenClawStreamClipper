@@ -218,11 +218,12 @@ class Paths:
         env["CLIP_BOUNDARIES_CONFIG"] = str(self.config("boundaries.json"))
         env["CLIP_DENYLIST_PATH"] = str(self.config("denylist.json"))
         env["CLIP_GROUNDING_CONFIG"] = str(self.config("grounding.json"))
-        env["CLIP_SELF_CONSISTENCY_CONFIG"] = str(self.config("self_consistency.json"))
         env["CLIP_DISCOURSE_MARKERS"] = str(self.config("discourse_markers.json"))
         env["CLIP_RUBRIC_CONFIG"] = str(self.config("rubric.json"))
         env["CLIP_PATTERNS_CONFIG"] = str(self.config("patterns.json"))
         env["CLIP_STYLE_PATTERN_WEIGHTS"] = str(self.config("style_pattern_weights.json"))
+        env["CLIP_PROMPTS_CONFIG"] = str(self.config("prompts.json"))
+        env["CLIP_CHANNEL_KEYWORDS"] = str(self.config("channel_keywords.json"))
         env["CLIP_JUDGE_CONFIG"] = str(self.config("judge.json"))
         env["CLIP_SELECTION_AXES_CONFIG"] = str(self.config("selection_axes.json"))
         # Asset dirs + module dir.
