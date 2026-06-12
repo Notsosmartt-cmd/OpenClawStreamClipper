@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "_note": "Per-channel Pass A keyword packs (2026-06-12, clipping-intelligence opportunity D). Mirrors streamer_prompts.json: filename_substrings are checked case-insensitively against the VOD basename, first matching channel wins. Matched packs EXTEND the base KEYWORD_SETS lists in stage4_moments.py (additive only — you cannot remove base keywords here). Categories must be one of: hype, funny, emotional, hot_take, storytime, reactive, dancing, controversial — unknown categories are skipped. Channel slang and recurring catchphrases are exactly what the generic lists can never carry; word-boundary matching applies to these too.",
+  "match_policy": "first_match",
+  "channels": {
+    "example_channel": {
+      "description": "Template — copy this block per streamer. Phrases are matched lowercase with word boundaries; prefer 2+ word phrases or unmistakable slang to keep precision.",
+      "filename_substrings": ["example", "demo"],
+      "keywords": {
+        "funny": ["signature catchphrase here", "recurring bit name"],
+        "hype": ["channel-specific hype call"],
+        "controversial": ["recurring feud reference"]
+      }
+    }
+  }
+}
