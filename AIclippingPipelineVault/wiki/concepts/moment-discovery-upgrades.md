@@ -3,7 +3,7 @@ title: "Moment Discovery Upgrades — Tier 1/2/3/4"
 type: concept
 tags: [moment-discovery, upgrade-plan, tier-1, tier-2, tier-3, tier-4, pass-a, pass-b, pass-c, pass-d, hub, lacy-penthouse]
 sources: 1
-updated: 2026-05-01
+updated: 2026-06-12
 ---
 
 # Moment Discovery Upgrades
@@ -11,7 +11,7 @@ updated: 2026-05-01
 Hub page for the moment-discovery upgrade plan. Tiers 1/2/3 documented in `MOMENT_DISCOVERY_UPGRADE_PLAN.md` at the project root (outside the vault); **Tier-4** detailed in [[concepts/tier-4-conversation-shape]] (shipped 2026-05-01). All implementation pages backlink here.
 
 > [!note] Tier-4 (2026-05-01) shipped
-> Adds conversation-shape detection (turn graphs, discourse markers, off-screen voice intrusions, monologue runs, topic boundaries), a Pattern Catalog ([[concepts/tier-4-conversation-shape#phase-43---pattern-catalog--pass-b-prompt-rewrite]]), Pass D rubric judge (NEW phase between Pass C and Phase 4.2 boundary snap), Stage 6 shape detection, MMR diversity ranking, 5 new style presets (`conversational` / `informational` / `freestyle` / `chatlive` / `spicy`), and an eval harness. See [[concepts/tier-4-conversation-shape]].
+> Adds conversation-shape detection (turn graphs, discourse markers, off-screen voice intrusions, monologue runs, topic boundaries), a Pattern Catalog ([[concepts/tier-4-conversation-shape#Phase 4.3 — Pattern Catalog + Pass B prompt rewrite]]), Pass D rubric judge (NEW phase between Pass C and Phase 4.2 boundary snap), Stage 6 shape detection, MMR diversity ranking, 5 new style presets (`conversational` / `informational` / `freestyle` / `chatlive` / `spicy`), and an eval harness. See [[concepts/tier-4-conversation-shape]].
 
 The plan targets three classes of clip-worthy moments the original pipeline systematically missed:
 
@@ -100,6 +100,6 @@ A3 originally shipped as additive (MiniCheck + Lynx kept as fallbacks per CLAUDE
 - [[entities/diarization]] — M1 module
 - [[entities/callback-module]] — M3 module
 - [[entities/grounding]] — A3 host module
-- [[entities/grounding-ab]] — A3 validation harness
+- ~~grounding-ab~~ — A3 validation harness, **removed 2026-05-01** with the MiniCheck/Lynx retirement (see [[concepts/bugs-and-fixes]] REMOVAL 2026-05-01b)
 - [[concepts/open-questions]] — what's still un-validated after the upgrade
 - [[concepts/bugs-and-fixes]] — running bug ledger including the M2 hang fix

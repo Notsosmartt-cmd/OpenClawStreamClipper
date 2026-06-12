@@ -2,35 +2,39 @@
 
 Content catalog. Updated on every ingest. Read this first when answering queries — find relevant pages here, then drill in.
 
+> **Searching this wiki**: current state → [[hot]]; recent activity → `grep "^## \[" log.md | head`; a bug → quick-nav at top of [[concepts/bugs-and-fixes]]; plan lifecycle → `grep -rl "^status: in-progress" concepts/`; health check → `python scripts/wiki_lint.py`.
+
 ---
 
 ## Overview
+- [[hot]] — **Start here**: bounded current-state digest (models, in-flight work, recent changes, landmines)
 - [[overview]] — Full synthesis: architecture, pipeline, models, interfaces, design decisions
 - [[concepts/moment-discovery-upgrades]] — Hub for the Tier-1/2/3 moment-discovery upgrade plan (Q1–Q5, M1–M3, A1–A3)
-- [[concepts/tier-4-conversation-shape]] — Tier-4 plan: conversation shape detection + Pass D rubric judge (per-phase 4.1–4.8)
+- [[concepts/tier-4-conversation-shape]] — Tier-4 plan (**status: planned**): conversation shape detection + Pass D rubric judge (per-phase 4.1–4.8)
 - [[sources/implementation-plan]] — Hub for the Phase 0–5 implementation plan (frame sampling, grounding, chat, speech, masking, model split)
 
 ## Entities
 
 ### Models
 - [[entities/faster-whisper]] — Speech-to-text; WhisperX (VAD+align) + faster-whisper fallback; CTranslate2 + cuDNN on GPU; Stages 2 and 7
-- [[entities/qwen35]] — Qwen text family (3.5-9b current, 3.6-27b/35b-a3b available); **Qwen 3.6 is ALSO multimodal** (vision baked in, top-tier benches; new consolidation pick — 2026-06-04)
-- [[entities/qwen3-vl]] — **un-retired 2026-06-04** — dedicated VLM family (8B Instruct + 30B-A3B Instruct); recommended vision migration target
-- [[entities/gemma4]] — Google's unified multimodal family (12B current vision_model, 26B-A4B / 31B available); watch open llama.cpp vision bugs
-- [[entities/qwen25]] — Discord agent model (older reference; current setup uses same LM Studio model for agent and pipeline)
+- [[entities/qwen35]] — Qwen text family; pipeline runs the **unified `qwen3.6-35b-a3b`** (text+vision, multimodal, ~3B active) per `config/models.json`; `qwen3.5-9b` is the separate Discord agent model
+- [[entities/qwen3-vl]] — **un-retired 2026-06-04** — dedicated VLM family (8B Instruct + 30B-A3B Instruct); the agent's fallback model
+- [[entities/gemma4]] — Google's unified multimodal family; was the `vision_model` (12B), **now superseded by `qwen3.6-35b-a3b`**; 26B-A4B is the quality-tier alternative
+- [[entities/qwen25]] — *Superseded* — original Discord agent model (`qwen2.5:7b` on Ollama); agent is now `qwen3.5-9b` on LM Studio
 - [[entities/piper]] — local CPU TTS for wave-D voiceover layer
 - [[entities/librosa]] — audio feature extraction for tier-C music matching
 - [[entities/face-pan]] — OpenCV Haar face tracker for wave-E camera pan
 
 ### Infrastructure
 - [[entities/openclaw]] — Agent framework (Node.js); Discord gateway; runs exec tool to invoke pipeline
+- [[entities/pipeline-orchestrator]] — `scripts/run_pipeline.py`; post-bare-metal-port orchestrator that drives the 8 stages; `--vod`/`--vods`/`--all`/`--force` semantics, persistent-log slugs
 - [[entities/lm-studio]] — LLM inference server (native, localhost:1234); HTTP inference + **lms-CLI** model load/unload; 9B vs 35B thinking; reasoning_content fallback
 - [[entities/ollama]] — *Retired* — former LLM inference container; replaced by LM Studio as of 2026-04-18
 - [[entities/ffmpeg]] — Video/audio processing; blur-fill 9:16 rendering; subtitle burn-in
 - [[entities/discord-bot]] — Primary user interface; natural-language commands; delivers clip attachments
-- [[entities/dashboard]] — Web UI (Flask, port 5000); 8-stage monitor; SSE streaming; docker exec bridge; Models + Hardware panels
+- [[entities/dashboard]] — Web UI (Flask, native port 5001; 5000 legacy); 8-stage monitor; SSE streaming; Models + Hardware panels
 - [[entities/grounding]] — 2-tier grounding cascade (regex denylist + content overlap → main-model LLM judge); used by Pass B and Stage 6
-- [[entities/lmstudio]] — minimal HTTP client used by the grounding cascade's LLM judge call
+- [[entities/lmstudio]] — `lmstudio.py` HTTP **client module** for the grounding judge call (not the [[entities/lm-studio]] server)
 - [[entities/vision-judge]] — **Stage 5.5** multimodal tournament re-ranker; lets vision *select* which moments win (Plan 1.a)
 - [[entities/chat-fetch]] — VOD chat acquisition (anonymous Twitch GraphQL + TwitchDownloader importer)
 - [[entities/chat-features]] — stdlib feature extractor for Pass A' chat scoring and prompt grounding
@@ -48,15 +52,15 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Pipeline
 - [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities
-- [[concepts/clipping-quality-overhaul]] — **Approved plan/roadmap** to fix bad clips: promote the multimodal model to *judge*, arc-driven duration, hook boundaries, kinetic captions; differentiation stance vs commercial clippers
-- Selection sub-plans (per north-star axis, for future sessions): [[concepts/plan-arc-completeness]], [[concepts/plan-reaction-worthy]], [[concepts/plan-baseline-contrast]], [[concepts/plan-batch-diversity]], [[concepts/plan-engagement-discussion]]
+- [[concepts/clipping-quality-overhaul]] — **Roadmap** (**status: in-progress**) to fix bad clips: promote the multimodal model to *judge*, arc-driven duration, hook boundaries, kinetic captions; differentiation stance vs commercial clippers
+- Selection sub-plans (per north-star axis): [[concepts/plan-arc-completeness]], [[concepts/plan-reaction-worthy]], [[concepts/plan-baseline-contrast]], [[concepts/plan-engagement-discussion]] (**in-progress**, axis scorers built 2026-06-04) + [[concepts/plan-batch-diversity]] (**planned**, not yet built)
 - [[concepts/observability]] — **Diagnostics & axis tuning**: `axis_report`/`stage_timings`/`judge_tournament` JSON, rank churn, and the `logtool axes` tune→run→diff view
 - [[concepts/clipping-pipeline]] — All stages (incl. optional 4.5 and 6.5) with detail, performance table, temp files
 - [[concepts/segment-detection]] — Stage 3: 5-type classification, stream profile, segment-aware weighting
 - [[concepts/highlight-detection]] — Stage 4: keywords + LLM + Pass C re-rank (selection axes A/B/C/E) + Pass D rubric → Stage 5.5 [[entities/vision-judge]]
 - [[concepts/detection-walkthrough]] — **End-to-end walkthrough** of Stage 3 (segment) + Stage 4 (moment) detection and how they connect
-- [[concepts/detection-improvements]] — **Design answers**: finer segments, embedding keywords, stitched setup→payoff, length-neutral duration
-- [[concepts/detection-improvements-plan]] — **Detailed file:line-anchored implementation plans** for those 4 fixes (order 4→3→2→1)
+- [[concepts/detection-improvements]] — **Design answers** (**shipped**): finer segments, embedding keywords, stitched setup→payoff, length-neutral duration
+- [[concepts/detection-improvements-plan]] — File:line-anchored implementation plans for those 4 fixes (**all 4 shipped 2026-06-06**)
 - [[concepts/clip-duration]] — How clip length is decided (no hard 30s clamp; default-fallback + length_penalty), chunk windowing, cross-chunk limits
 - [[concepts/vision-enrichment]] — Stage 6: non-gatekeeping design, score blending, originality hints
 - [[concepts/clip-rendering]] — Stage 7: framing modes, per-clip randomization, stitch concat, audio mix
@@ -72,12 +76,12 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/bare-metal-windows]] — **native Windows (no Docker)**: Python orchestrator, venv, dashboard + Discord native mode (2026-06-04)
 - [[concepts/deployment]] — Hardware requirements, LM Studio setup, Docker setup, step-by-step guide (legacy; superseded by bare-metal-windows)
 - [[concepts/image-slimming]] — Externalized model caches, requirements files, ORIGINALITY_STACK build arg, Asset Cache panel
-- [[concepts/modularization-plan]] — 4-phase plan to break clip-pipeline.sh, dashboard/app.py, dashboard/static/app.js into focused modules
+- [[concepts/modularization-plan]] — 4-phase plan to break clip-pipeline.sh, dashboard/app.py, dashboard/static/app.js into focused modules (**shipped 2026-05-01**)
 - [[concepts/asset-libraries]] — CC0 SFX/music/B-roll/Twemoji seed pack and `scripts/seed_libraries.py`; data layer for the editing-profile plan
 - [[concepts/style-profiles]] — Per-category AI editing profiles (zoom punches, freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues, kinetic captions, fingerprint perturbation); dispatched by Stage 7 when `chk-style-profiles` is on
 
 ### Reference
-- [[concepts/bugs-and-fixes]] — 62 bugs documented (latest: BUG 62 torchcodec install broke M3 in Stage 4 subprocess, BUG 61 Pass C dedup strips arcs' cross_validated); quick-nav by category
+- [[concepts/bugs-and-fixes]] — Bug + removal registry (64 bugs + 2 removals as of 2026-06-12; latest BUG 64 white-flash regression, BUG 63 stitch never fired); complete quick-nav by category at top
 - [[concepts/open-questions]] — Score normalization, variable clip length, model switcher UI, known gaps
 - [[concepts/chat-signal]] — Phase 2 Pass A' architecture: Twitch chat → burst / emote density / hard event counts
 - [[concepts/speech-pipeline]] — Phase 3 Stage 2 architecture: WhisperX VAD + batched ASR + forced alignment, with faster-whisper fallback
@@ -93,7 +97,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/self-consistency]] — Phase 5.2 N-candidate ranking for hallucination suppression
 - [[concepts/callback-detection]] — Tier-2 M3 architecture: cosine search + LLM judgment for cross-chunk arcs
 - [[concepts/two-stage-passb]] — Tier-3 A1 architecture: per-chunk skeleton + single global Gemma call for arc detection (+ §Evaluation: 15-word-summary weakness)
-- [[concepts/arc-aware-extraction]] — Plan: fix A1's 15-word bottleneck with structured "chunk cards" (Chain-of-Density + claim/prediction extraction); research-backed, phased
+- [[concepts/arc-aware-extraction]] — Fix A1's 15-word bottleneck with structured "chunk cards" (Chain-of-Density + claim/prediction extraction) (**in-progress**: phases 1–3 shipped)
 - [[concepts/moment-discovery-upgrades]] — Tier-1/2/3 hub page: how Q1–Q5, M1–M3, A1–A3 fit together
 
 ## Sources

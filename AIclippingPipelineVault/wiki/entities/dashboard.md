@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub]
 sources: 3
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Web Dashboard
@@ -54,16 +54,17 @@ New panel driving the [[concepts/originality-stack]]. Every control posts to `PU
 
 ## Running the dashboard
 
-**On Windows host (recommended for development):**
+**On Windows host (current, bare-metal):**
 ```bash
 pip install flask
 python dashboard/app.py
-# Open http://localhost:5000
+# Open http://localhost:5001   (default; DASHBOARD_PORT/PORT override, auto-rolls forward if taken)
 ```
-The Windows dashboard detects the running Docker container and executes the pipeline inside it via `docker exec`. Docker containers must be running.
+Natively it runs the pipeline directly as a subprocess (`scripts/run_pipeline.py`) — no Docker. The `INSIDE_DOCKER` check selects the bridge mode; when unset and no container is detected it uses the native path.
 
-**Inside Docker (automatic):**
-Dashboard starts automatically inside the container on port 5000 (via `entrypoint.sh`). Access at `http://localhost:5000` after `docker compose up`.
+**Legacy — Windows host with Docker:** if a `stream-clipper` container is running, the host dashboard detects it and executes the pipeline inside it via `docker exec`.
+
+**Legacy — inside Docker (automatic):** the container started the dashboard via `entrypoint.sh` on port 5000.
 
 > [!warning] Container dashboard known issue (zombie process)
 > The dashboard Flask app inside Docker can become a zombie process (`<defunct>`) if it crashes on startup (e.g., missing dependency). Since `entrypoint.sh` launches it with `&`, Docker still forwards port 5000 but nothing is listening. **Workaround**: run the dashboard locally on Windows host instead. The local Windows dashboard is the primary interface.

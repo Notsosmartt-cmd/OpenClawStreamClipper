@@ -1,9 +1,10 @@
 ---
 title: "Detection improvements (design answers — segment granularity, keywords, setup→payoff, duration skew)"
 type: concept
+status: shipped
 tags: [design, plan, stage-3, stage-4, segment-detection, keywords, embeddings, setup-payoff, stitch, length-penalty, clip-duration, research]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Detection improvements (design answers)

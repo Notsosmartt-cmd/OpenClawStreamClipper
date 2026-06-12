@@ -1,9 +1,10 @@
 ---
 title: "Detection improvements — detailed implementation plans"
 type: concept
+status: shipped
 tags: [plan, implementation, stage-3, stage-4, embeddings, stitch, length-penalty, boundary-inference, segment-detection, research]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Detection improvements — detailed implementation plans

@@ -3,7 +3,7 @@ title: "Stage-Specific Model Split — Phase 5.1"
 type: concept
 tags: [models, vram, phase-5, configuration, stage-4, stage-6, infrastructure]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Stage-Specific Model Split (Phase 5.1)
@@ -43,7 +43,10 @@ Phase 5.1 adds **optional** per-stage model overrides in `config/models.json`. B
 
 ---
 
-## Active config — 16 GB rig (2026-06-04)
+## Active config — historical 16 GB-rig split (2026-06-04, since reverted)
+
+> [!note] Current config (2026-06-12): back to the unified model
+> `config/models.json` now sets BOTH `text_model` and `vision_model` to **`qwen/qwen3.6-35b-a3b`** again. The 16 GB-fit split below was a stopgap; once the **AMD RX 6700 XT 12 GB** joined the NVIDIA card to form a **~28 GB dual-GPU Vulkan pool** ([[concepts/vram-budget]]), the 22 GB MoE fits with the thinking toggle off, so the split's motivation (not fitting 16 GB) no longer applies. The split section below is retained as the decision record + the fallback config for a CUDA-only 16 GB rig.
 
 On the real deployment GPU (**RTX 5060 Ti, 16 GB** — see [[concepts/vram-budget]]), running the unified `qwen3.6-35b-a3b` for every LLM stage was doubly slow: at **22.1 GB (Q4_K_M) it does not fit 16 GB** (spills ~6 GB to CPU), and as a Qwen *thinking* build it burns ~3–6k reasoning tokens per Pass B call — the pipeline's API `enable_thinking:false` is **ignored** ([[concepts/bugs-and-fixes]] BUG 57; LM Studio's per-model toggle is the only lever, and even that is uncertain on dedicated thinking builds). One VOD took **135.8 min, Stage 4 alone = 67 min / 49%** ([[concepts/observability]]).
 
@@ -110,7 +113,7 @@ See [[concepts/vlm-comparison-2026-06]] for vision; [[concepts/text-comparison-2
 |---|---|---|---|---|---|
 | **🆕 Max-quality single-model consolidation (recommended)** | `qwen3.6-35b-a3b` w/ Enable Thinking OFF | same | 22 GB | Vulkan pool | **One model, zero swap, top-tier both modalities.** MMMU 81.7 / MMBench 92.8 / OmniDocBench 89.9. MoE 3B active offsets ~half the pool tax. BUG 57 toggle verified. |
 | **CUDA-only consolidation (smallest)** | `qwen3.5-9b` | `qwen3.5-9b` | 6.5 GB | CUDA single-card | Smallest VRAM, fastest per-token. Lower quality ceiling; vision benches single-source (Alibaba MMMU 78.4). |
-| **Status quo (currently running)** | `qwen3.5-9b` | `gemma-4-12b` | 14.1 GB | CUDA single-card | Defensible; both fit CUDA. Gemma 4 has llama.cpp vision bug surface. |
+| **16 GB-rig fallback** (was running 2026-06-04 → 06-12) | `qwen3.5-9b` | `gemma-4-12b` | 14.1 GB | CUDA single-card | Defensible CUDA-only option; both fit 16 GB. Superseded by the unified `qwen3.6-35b-a3b` on the 28 GB Vulkan pool. |
 | **IFEval-max for Pass B (small)** | `gemma-4-12b` | `gemma-4-12b` | 7.6 GB | CUDA single-card | Best JSON adherence in small class (anchored to Gemma 3 27B IFEval 90.4; Gemma 4 unpublished). Lower vision benches than Qwen 3.6 35B-A3B. |
 | **IFEval-max for Pass B (big)** | `gemma-4-26b-a4b` | `gemma-4-26b-a4b` | 18 GB | Vulkan pool | MoE 4B active. Lower vision benches than Qwen 3.6 35B-A3B. |
 | **Best-per-slot specialists (with downloads)** | `gemma-4-26b-a4b` | `Qwen3-VL-30B-A3B-Instruct` (download) | swap | Both Vulkan pool | ScreenSpot 94.7% UI grounding for chrome_regions. Requires download. |

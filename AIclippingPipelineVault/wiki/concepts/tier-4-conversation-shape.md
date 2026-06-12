@@ -3,7 +3,8 @@ title: "Tier-4 — Conversational Shape Detection + Rubric Judge"
 type: concept
 tags: [moment-discovery, upgrade-plan, tier-4, shipped, pass-d, pattern-catalog, conversation-shape, rubric, llm-judge, multimodal, hub]
 sources: 1
-updated: 2026-05-01
+status: planned
+updated: 2026-06-12
 ---
 
 > [!note] Tier-4 SHIPPED 2026-05-01 (all 8 phases)
@@ -109,7 +110,7 @@ Conservatively stated, what matters for this plan:
 - `dashboard/routes/models.py` (or whichever dashboard route handles model state post-modularization) — read/write `active_profile`
 - `dashboard/static/modules/models-panel.js` — profile dropdown alongside existing inputs
 - `dashboard/templates/index.html` — dropdown HTML
-- `entities/model-profile.md` (new) — documents the contract
+- [[entities/model-profile]] *(page to be created when the module ships)* — documents the contract
 - Updates to `entities/qwen35.md`, `entities/lm-studio.md` to point at it
 
 **Steps:**
@@ -266,7 +267,7 @@ Reject moments that don't satisfy any pattern's signature. Don't invent patterns
 **Files touched:**
 - `config/patterns.json` (new)
 - `scripts/lib/stages/stage4_moments.py` — prompt rewrite, JSON schema extension, `primary_pattern` + `secondary_patterns` fields propagated through Pass C
-- `entities/pattern-catalog.md` (new wiki page documenting schema)
+- [[entities/pattern-catalog]] *(page to be created when the module ships)* (new wiki page documenting schema)
 
 **Why this is better than today:**
 - LLM grounds picks in named structures the user can audit
@@ -370,7 +371,7 @@ RETURN JSON: {scores: {...}, pattern_confirmed: "<id or null>", pattern_match_st
 - `scripts/lib/stages/stage4_rubric.py` (new)
 - `stages/stage4_moments.sh` — add Pass D call after Pass C
 - `config/rubric.json` (new, weights)
-- `entities/rubric-judge-module.md` (new wiki page)
+- [[entities/rubric-judge-module]] *(page to be created when the module ships)* (new wiki page)
 
 **Diagnostics:** `clips/.diagnostics/<vod>_diagnostics.json` gains a `rubric_scores` field per moment. Dashboard surfaces the `audit_one_liner` per clip.
 
@@ -568,7 +569,7 @@ Total: ~3.5 min added to a 2-hr VOD that currently takes ~45-90 min. Negligible.
 ## Wiki pages — created and updated
 
 **New pages (created with each phase):**
-- [[entities/conversation-shape-module]] — Phase 4.2
+- [[entities/conversation-shape-module]] *(page to be created when the module ships)* — Phase 4.2
 - [[entities/pattern-catalog]] — Phase 4.3
 - [[entities/rubric-judge-module]] — Phase 4.4
 - [[entities/model-profile]] — Phase 4.1

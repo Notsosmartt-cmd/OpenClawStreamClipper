@@ -3,7 +3,7 @@ title: "AI Editing Profiles (Per-Category)"
 type: concept
 tags: [editing, profiles, style, originality, fingerprint, kinetic-captions, sfx, broll, memes, zoom-punch, freeze-frame, slow-mo, chat-overlay, stage-7]
 sources: 0
-updated: 2026-05-02
+updated: 2026-06-12
 ---
 
 # AI Editing Profiles
@@ -37,7 +37,7 @@ Stage 7 render loop
    └── legacy render path (blur_fill + originality + Whisper subs)
 ```
 
-Stage 6 is **not** modified — to avoid the HTTP 400 cascades we hit when stuffing the vision prompt before. The renderer **synthesizes** zoom punches and SFX cues from the resolved profile when no `edit_plan` field is present on the moment, so every clip gets meaningful effects regardless of vision behavior.
+[[concepts/vision-enrichment|Stage 6]] is **not** modified — to avoid the HTTP 400 cascades we hit when stuffing the vision prompt before. The renderer **synthesizes** zoom punches and SFX cues from the resolved profile when no `edit_plan` field is present on the moment, so every clip gets meaningful effects regardless of vision behavior.
 
 ---
 
@@ -175,7 +175,7 @@ When `profile.chat_overlay` is True, `chat_overlay.py` searches for a chat dump 
 
 ## Dashboard surface
 
-Single checkbox in the Originality panel: **"AI editing profiles (per-category)"**. Default OFF.
+Single checkbox in the [[entities/dashboard|dashboard]]'s Originality panel: **"AI editing profiles (per-category)"**. Default OFF.
 
 A second button: **"Scan Libraries"** — runs `scripts/seed_libraries.py --scan` to rebuild `library.json` files under `assets/` after the user drops in their own SFX / memes / B-roll / music. Backed by `/api/libraries/scan` (`dashboard/routes/library_routes.py`).
 
@@ -259,3 +259,5 @@ Missing assets degrade silently — e.g., empty meme library → no cutaway, emp
 - [[concepts/originality-stack]] — Wave A–E originality plan (profiles overlap with Wave A but extend with editing-style fingerprint)
 - [[concepts/captions]] — existing Whisper subtitle burn-in (replaced by kinetic ASS when profiles are on)
 - [[concepts/bugs-and-fixes]] — BUG 51 context for why Stage 6 wasn't extended
+- [[concepts/vision-enrichment]] — Stage 6, the unmodified upstream that supplies `category` + optional `edit_plan`
+- [[entities/dashboard]] — the Originality panel checkbox + "Scan Libraries" button that drive this mode

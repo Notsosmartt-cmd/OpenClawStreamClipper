@@ -1,9 +1,10 @@
 ---
 title: "Selection Sub-Plan B — Reaction-Worthy (genuine, earned peak)"
 type: concept
+status: in-progress
 tags: [plan, selection, clip-worthiness, reaction, multimodal, audio-events, chat-features, diarization, vision-judge, stage-4, stage-5-5, future-session]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Selection Sub-Plan B — Reaction-Worthy

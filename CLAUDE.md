@@ -55,6 +55,8 @@ Any of the following require a wiki update:
    ```
    Use today's date. Operation type: `update` for code changes, `ingest` for new sources, `query` for answered questions, `lint` for health checks.
 
+   Then **refresh `wiki/hot.md`** (the bounded current-state digest): add the one-line change, prune anything stale or older than ~2 weeks, and update its state table if defaults/flags/models changed. Keep it ≤100 lines — `log.md` is the record, `hot.md` is the cache.
+
 4. **Create new pages if needed**: if you built something significant that doesn't have a wiki page yet, create one. Follow the page format in `AIclippingPipelineVault/CLAUDE.md` (the vault schema).
 
 ### What good wiki updates look like

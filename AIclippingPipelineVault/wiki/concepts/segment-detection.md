@@ -3,7 +3,7 @@ title: "Segment Detection (Stage 3)"
 type: concept
 tags: [segment-detection, stream-profiling, classification, qwen35, stage-3, text]
 sources: 2
-updated: 2026-04-07
+updated: 2026-06-12
 ---
 
 # Segment Detection (Stage 3)
@@ -24,14 +24,19 @@ Stage 3 identifies these boundaries so Stage 4 can be smarter.
 
 ## Classification process
 
-1. Transcript chunked into **10-minute windows**
-2. Each chunk: first ~600 words sent to [[entities/qwen35]] (`qwen3.5:9b`)
-3. Prompt is cheap: `num_predict=10` — model outputs exactly one word
+Implemented in `scripts/lib/stages/stage3_segments.py`.
+
+1. Transcript chunked into windows of `CLIP_SEGMENT_CHUNK` seconds (**default 600 = 10 min**)
+2. Each chunk: first ~600 words sent to the text model (`TEXT_MODEL`, the unified `qwen/qwen3.6-35b-a3b` as of 2026-06; see [[entities/qwen35]] for the historical 9B)
+3. Prompt forces one-word output (`temperature=0.1`, prefixed `/no_think`); on thinking models the answer is recovered from `reasoning_content`/the truncated reasoning tail if `content` comes back empty
 4. Model classifies into one of five types: `gaming` | `irl` | `just_chatting` | `reaction` | `debate`
 5. Adjacent same-type chunks merged into contiguous segments
-6. Optional `--type` hint (from Discord message) biases classification for known stream types — soft bias, individual segments can still differ
+6. Optional `--type` hint (from Discord message) biases classification for known stream types — soft bias, individual segments can still differ. `variety` maps to "no hint."
 
-Speed: ~1 second per chunk.
+Speed: ~1 second per chunk on a fast text model (more on thinking models, which can burn 1.5k–6k reasoning tokens per call — `max_tokens` is budgeted at 6000 to avoid mid-reasoning truncation).
+
+> [!note] Window size is a tunable knob (Fix 1, 2026-06-06)
+> `CLIP_SEGMENT_CHUNK` (default 600) sets the classification window. Smaller (e.g. `300`) gives finer granularity so a short off-type pocket — a 2-min debate inside a gaming stream — gets its own label instead of being absorbed, at ~2× the (cheap) classification calls. `CLIP_SEGMENT_OVERLAP` (default 0) adds read-context to each window without overlapping the recorded (nominal, non-overlapping) segments. Default left at 600 deliberately (measure-first; A/B 300 vs 600 via the env). See [[concepts/detection-improvements-plan]] Fix 1.
 
 ---
 
@@ -49,15 +54,19 @@ Speed: ~1 second per chunk.
 
 ## Stream profile
 
-After classification, the pipeline generates `stream_profile.json`:
+After classification, the pipeline generates `stream_profile.json` (percentages by total segment **duration**, not chunk count):
 
 ```json
 {
   "dominant_type": "gaming",
-  "breakdown": {"gaming": 0.65, "just_chatting": 0.25, "irl": 0.10},
-  "variety": true
+  "dominant_pct": 65.0,
+  "type_breakdown": {"gaming": 65.0, "just_chatting": 25.0, "irl": 10.0},
+  "is_variety": false,
+  "hint_used": "none"
 }
 ```
+
+`is_variety` is true when the dominant type holds < 60% of total duration.
 
 The stream profile is used in Stage 6 (Vision Enrichment) to provide context to the vision model. A frame from a gaming segment gets analyzed differently than a frame from an IRL segment.
 
@@ -90,7 +99,7 @@ Each segment type changes how Stage 4 behaves:
 ## Output files
 
 - `segments.json`: array of `{start, end, type}` for each segment
-- `stream_profile.json`: dominant type, percentage breakdown, variety flag
+- `stream_profile.json`: `dominant_type`, `dominant_pct`, `type_breakdown`, `is_variety`, `hint_used`
 
 Both files persist in `/tmp/clipper/` during the pipeline run. The stream profile is read by Stage 6 when constructing vision prompts.
 

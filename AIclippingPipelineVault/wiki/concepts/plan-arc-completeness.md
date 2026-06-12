@@ -1,9 +1,10 @@
 ---
 title: "Selection Sub-Plan A — Arc Completeness (self-contained setup→payoff)"
 type: concept
+status: in-progress
 tags: [plan, selection, clip-worthiness, arc-completeness, pattern-catalog, conversation-shape, vision-judge, stage-4, stage-5-5, future-session]
 sources: 2
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Selection Sub-Plan A — Arc Completeness

@@ -3,10 +3,12 @@ title: "lmstudio.py — minimal LM Studio HTTP client"
 type: entity
 tags: [lmstudio, http-client, grounding, judge, module, text]
 sources: 1
-updated: 2026-05-01
+updated: 2026-06-12
 ---
 
 # `scripts/lib/lmstudio.py`
+
+> [!note] Not to be confused with [[entities/lm-studio]] — that page is the LM Studio inference **server**; THIS page is scripts/lib/lmstudio.py, the minimal HTTP **client module**.
 
 A ~90-line HTTP client for LM Studio's OpenAI-compatible `/v1/chat/completions` endpoint. Introduced 2026-04-23 to back the grounding cascade's external-judge calls so the cascade module doesn't have to reimplement HTTP + JSON extraction + reasoning-content fallback from scratch. After the 2026-05-01 cascade simplification (MiniCheck + Lynx retired), it now backs the cascade's main-model LLM judge call.
 

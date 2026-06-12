@@ -1,9 +1,10 @@
 ---
 title: "Clipping-Quality Overhaul — Plan (Harness the Multimodal LLM)"
 type: concept
+status: in-progress
 tags: [plan, roadmap, clipping-quality, vision-judge, tournament-ranking, boundaries, duration, captions, multimodal, differentiation, virality-score]
 sources: 3
-updated: 2026-06-04
+updated: 2026-06-12
 ---
 
 # Clipping-Quality Overhaul — Plan

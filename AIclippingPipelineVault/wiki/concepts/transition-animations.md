@@ -3,7 +3,7 @@ title: "Transition Animations (jump-cuts + white flashes)"
 type: concept
 tags: [rendering, transitions, jump-cut, flash, edit-plan, stage-7, ffmpeg, originality, engagement]
 sources: 0
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Transition Animations
@@ -19,7 +19,7 @@ Both are driven by the per-moment **`edit_plan`** ([[concepts/captions]] neighbo
 
 ## Architecture (the key decision: post-render pass)
 
-Transitions run as **Stage 7d.5**, a pass over the **finished clip files**, AFTER the normal render (`stage7._render_clip` solo path or `profile_render.py` profile path) and BEFORE 7e stitch. This one decision buys three things:
+Transitions run as **Stage 7d.5**, a pass over the **finished clip files**, AFTER the normal render (the [[concepts/clip-rendering|`stage7._render_clip` solo path]] or the [[concepts/style-profiles|`profile_render.py` profile path]]) and BEFORE 7e stitch. This one decision buys three things:
 
 - **Path-agnostic** — works for both render paths without touching either filter graph.
 - **Caption-safe** — captions/effects are already burned (pixels) by 7d.5, so cutting the clip cuts the captions *with* it. **No SRT remap** of the live timeline is needed — the hardest part of the original plan is sidestepped entirely.
@@ -67,7 +67,7 @@ Crucially, the **rule-based modes work without the LLM**: `gaps` (silence-drop) 
 | `CLIP_JUMP_CUTS` | `off` (default) · `gaps` · `llm` · `on` | `gaps`=drop silence only (safe); `llm`=model-inferred cuts; `on`=both |
 | `CLIP_FLASH_CUTS` | `off` (default) · `on` | seeded cadence flashes + any model-picked beats |
 
-Dashboard toggles (Originality & Render panel): **"White-flash transitions"** checkbox + **"Jump-cut compression"** select (Off / Silence only / Smart + silence) → `config_io.originality_to_env`.
+[[entities/dashboard|Dashboard]] toggles (Originality & Render panel): **"White-flash transitions"** checkbox + **"Jump-cut compression"** select (Off / Silence only / Smart + silence) → `config_io.originality_to_env`.
 
 **Guardrails** (so a cut can't wreck a clip): per-category max-drop fraction (`clip_cuts.CATEGORY_MAX_DROP` — storytime/informational 0.5, hype 0.25, …), a protected tail (`GUARANTEE_TAIL` 2 s — never cut the payoff), `MIN_KEEP` 1.5 s slivers skipped, cut edges snapped to natural pauses, flashes capped at 6/clip with a min spacing.
 
@@ -81,3 +81,14 @@ Dashboard toggles (Originality & Render panel): **"White-flash transitions"** ch
 
 > [!note] Needs a validation run
 > All layers are unit/FFmpeg-tested in isolation, but the full Stage-6→7 path needs an end-to-end run with a flag on (`CLIP_JUMP_CUTS=gaps` is the safest first try) to confirm in production. Default-off, so normal runs are unaffected.
+
+---
+
+## Related
+
+- [[concepts/clip-rendering]] — the legacy Stage-7 solo render this pass runs *after* (and the 7e stitch that follows it — see [[concepts/bugs-and-fixes]] BUG 63 for the stitch-never-fired fix)
+- [[concepts/style-profiles]] — the alternate `profile_render.py` render path the transition pass is also path-agnostic to
+- [[concepts/originality-stack]] — white flashes + jump-cuts are part of the engagement/originality layer
+- [[entities/dashboard]] — Originality & Render panel exposes both toggles
+- [[concepts/captions]] — captions are already burned in before 7d.5, which is why no SRT remap is needed
+- [[concepts/bugs-and-fixes]] — BUG 64 (white-flash painted the whole clip white) is the regression this design avoids with transient `drawbox`

@@ -3,12 +3,12 @@ title: "Originality Stack (TikTok 2025 defense)"
 type: concept
 tags: [originality, rendering, fingerprinting, tiktok, framing, stitch, tts, music, camera-pan, stage-7, video, hub]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Originality Stack
 
-A composable set of render-time transformations added in April 2026 to defeat TikTok's September 2025 unoriginal-content detection. The baseline 9:16 blur-fill + burned-captions + speed-shift output is now a documented TikTok flag pattern ([[sources/tiktok-originality-2026]]) — every feature on this page exists to differentiate each rendered clip from the bare source and from every other clip in a batch.
+A composable set of render-time transformations added in April 2026 to defeat TikTok's September 2025 unoriginal-content detection. The baseline 9:16 blur-fill + burned-captions + speed-shift output is now a documented TikTok flag pattern (TikTok originality research, 2026) — every feature on this page exists to differentiate each rendered clip from the bare source and from every other clip in a batch.
 
 Shipped as five coordinated additions to [[concepts/clipping-pipeline]]:
 
@@ -131,7 +131,7 @@ Fallbacks:
 - Source already portrait → rc=2, nothing to do.
 - Zero faces across the entire clip → rc=3, clip falls back to `blur_fill`.
 
-Cost: +2–4 s CPU per clip for detection, +1–2 s for the per-frame-expression render. Requires `opencv-python-headless` (added in the [[entities/dockerfile]]).
+Cost: +2–4 s CPU per clip for detection, +1–2 s for the per-frame-expression render. Requires `opencv-python-headless` (added in the Dockerfile).
 
 ---
 

@@ -3,7 +3,7 @@ title: "librosa (tier-C music matching)"
 type: entity
 tags: [music, librosa, features, tier-c, originality, wave-d, infrastructure, audio, stage-7]
 sources: 0
-updated: 2026-04-22
+updated: 2026-06-12
 ---
 
 # librosa
@@ -42,7 +42,7 @@ Distance is a weighted sum of `|delta_tempo|/80 + 2·|delta_energy| + 1.5·|delt
 
 ### Install
 
-Added to the [[entities/dockerfile]] as `pip install librosa soundfile`. CPU-only — no GPU usage.
+Added to the Dockerfile as `pip install librosa soundfile`. CPU-only — no GPU usage.
 
 ### Related
 - [[concepts/originality-stack]] — wave D

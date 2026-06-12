@@ -3,11 +3,11 @@ title: "VRAM Budget and Model Orchestration"
 type: concept
 tags: [vram, gpu, memory, performance, models, orchestration, infrastructure, observability]
 sources: 3
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 > [!success] Cross-vendor VRAM observability + deterministic context prediction (2026-06-05)
-> Three modules + a dashboard feature give per-stage VRAM trajectory across **both NVIDIA and AMD** cards plus GGUF-exact context recommendations.
+> Three modules + a dashboard feature give per-stage VRAM trajectory across **both NVIDIA and AMD** cards plus GGUF-exact context recommendations. The code, commands, and design decisions live in [[concepts/vram-context-tooling]]; this page holds the budget math + per-model tables.
 >
 > - **NVIDIA**: `nvidia-smi` (total / used / free / util% / temp)
 > - **AMD on Windows**: PowerShell `Get-Counter '\GPU Adapter Memory(*)\Dedicated Usage'` for used + registry `HardwareInformation.qwMemorySize` for total (verified: RTX 5060 Ti 16311 MB + RX 6700 XT 12272 MB → 28583 MB pool)
@@ -62,7 +62,7 @@ The KV-cache rates above are **measured from each model's GGUF header**, not est
 | gpt-oss-20b | 3040 MB | 1536 MB | +98% |
 | **gemma-4-12b** | **12792 MB** | **1152 MB** | **+1010%** ⚠️ |
 
-Gemma 4's 11× error comes from its **sliding-window attention**: 40 of 48 layers only cache a 1024-token window, so its KV cache barely grows with context. The flat-rate heuristic treated all layers as full-attention. **Consequence**: the old tool said gemma-4-12b could only fit 16K context on a 16 GB card; the GGUF-exact math correctly says it fits the full **256K native** with room to spare.
+[[entities/gemma4|Gemma 4]]'s 11× error comes from its **sliding-window attention**: 40 of 48 layers only cache a 1024-token window, so its KV cache barely grows with context. The flat-rate heuristic treated all layers as full-attention. **Consequence**: the old tool said gemma-4-12b could only fit 16K context on a 16 GB card; the GGUF-exact math correctly says it fits the full **256K native** with room to spare.
 
 Projection formula: `total_mb = weights_mb + kv_cache_mb(ctx) + 300 MB overhead + 500 MB safety`.
 Live calculation: `python scripts/lib/model_registry.py recommend <model> <pool_mb>` or `predict <model> <ctx>`.
@@ -228,3 +228,7 @@ The tested hardware is an RTX 5060 Ti (16GB). An RTX 3090 (24GB) or RTX 4090 wou
 - [[entities/faster-whisper]] — uses GPU VRAM separately from LM Studio (runs in Docker)
 - [[entities/qwen35]] — highest VRAM consumer
 - [[concepts/deployment]] — hardware requirements table
+- [[concepts/vram-context-tooling]] — the code/commands behind the `logtool vram` + GGUF-exact recommendations cited here
+- [[concepts/model-split]] — per-role text/vision model + thinking guidance referenced in the orchestration notes
+- [[concepts/clipping-pipeline]] — the chunked pipeline whose ~14K-token peak sets the 32K context target
+- [[entities/gemma4]] — the sliding-window model whose KV-cache math drove the GGUF-exact correction

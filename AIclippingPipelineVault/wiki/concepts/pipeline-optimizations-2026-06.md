@@ -3,7 +3,7 @@ title: "Pipeline parallelization & optimization sweep (2026-06-04)"
 type: concept
 tags: [performance, parallelization, multiprocessing, threadpool, ffmpeg, librosa, optimization, hub]
 sources: 1
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # Pipeline optimization sweep — 2026-06-04
@@ -87,7 +87,7 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 **File**: `scripts/lib/stages/stage6_vision.py`
 **Mechanism**: Refactored the 600-line `for moment in moments:` loop body into a `_process_moment(moment) -> entry` function defined at module scope. Dispatch via `ThreadPoolExecutor(max_workers=STAGE6_WORKERS)` with `pool.map(_process_moment, moments)` so input order is preserved. Each moment's VLM call (~30-90 s) runs concurrently; the nested `_vision_call` closure now updates `_VISION_NET_FAIL_STREAK` under a `threading.Lock` to avoid read-modify-write races on the circuit-breaker counter.
 **Knobs**: `STAGE6_WORKERS` env var; default 2 (conservative for VLM); set to 1 to force serial.
-**Expected lift**: 2-3× on the per-moment phase (13 min → ~5 min). Real lift depends on whether LM Studio internally serializes VLM calls — measure on a real VOD.
+**Expected lift**: 2-3× on the per-moment phase (13 min → ~5 min). Real lift depends on whether [[entities/lm-studio|LM Studio]] internally serializes VLM calls — measure on a real VOD.
 **Risk**: Low — selection-neutral by construction (each moment's enrichment is fully independent; no cross-moment state beyond the failure counter). The "3 consecutive failures" semantic loosens to "3 since last success" under concurrency, which is the right behaviour when LM Studio is down (skip remaining moments faster, not block on retries).
 **Verification**: AST parse OK (901 lines, +82 from 819); `_process_moment` at module scope; 1 nested closure (`_vision_call`); 6 return statements; dispatch at line 870 (after function def, after `moments` + `enriched` initialization at lines 90/94).
 
@@ -211,7 +211,7 @@ Implication for the Delaware case (see [[concepts/case-rap-battle-missed]] §202
 
 ### 3. Chat features disabled — selection signal loss
 
-`dependencies.chat_features: False` because `vods/.chat/<vod>.jsonl` doesn't exist and chat auto-fetch is disabled. Effects:
+[[entities/chat-features|`dependencies.chat_features`]]`: False` because `vods/.chat/<vod>.jsonl` doesn't exist and chat auto-fetch is disabled. Effects:
 - Pass A loses chat hard-events (sub/raid/donation) for boost
 - Pass B prompts run without chat context
 - Stage 6 can't verify sub/raid/donation claims against actual chat (grounding hard-event check no-ops)
@@ -267,7 +267,7 @@ If this 40% rate is consistent across runs, the first-pass Stage 6 prompt is let
 
 ## Dashboard UI (added round 4, 2026-06-04)
 
-The Pass B dead-chunk gate mode is exposed as a dropdown in the dashboard's clip control panel — `Pass B gate` next to the Speed dropdown. Options match the env var values: `Off` (default — no skips, safest), `Multi` (6-signal), `Sample` (multi + 1-in-3 pass-through), `Strict` (legacy 2-signal). The selected mode is forwarded to the pipeline as `CLIP_PASSB_DEAD_GATE` in both Docker (`docker exec -e`) and bare-metal (`Popen env=`) paths. The other knobs in the env-var table below remain env-only — they're tuner knobs more than user-facing modes.
+The Pass B dead-chunk gate mode is exposed as a dropdown in the [[entities/dashboard|dashboard]]'s clip control panel — `Pass B gate` next to the Speed dropdown. Options match the env var values: `Off` (default — no skips, safest), `Multi` (6-signal), `Sample` (multi + 1-in-3 pass-through), `Strict` (legacy 2-signal). The selected mode is forwarded to the pipeline as `CLIP_PASSB_DEAD_GATE` in both Docker (`docker exec -e`) and bare-metal (`Popen env=`) paths. The other knobs in the env-var table below remain env-only — they're tuner knobs more than user-facing modes.
 
 ## Prior performance work (pre-round-2 context)
 
@@ -277,7 +277,7 @@ Round 2 was *not* the first performance pass on this pipeline. Earlier rounds ex
 |---|---|---|---|
 | 2026-04-20 | `e285a72` "speed and caption update" | speed-control dropdown (1×–1.5× setpts + rubberband), bash pipeline trims | ~10-15 % render-side |
 | 2026-04-28 | (in-file, pre-modularization) audio_events per-window-load → load-once-and-slice | `scripts/lib/audio_events.py` | Hung "scanning audio events..." for minutes → minutes total (still serial; round 1 made it parallel) |
-| 2026-06-03 | `51dfedb` "Whisper large-v3-turbo as default" | `config/models.json::whisper_model` | ~2.5× transcription speedup for <1 % WER loss |
+| 2026-06-03 | `51dfedb` "Whisper large-v3-turbo as default" | `config/models.json::whisper_model` ([[entities/faster-whisper]]) | ~2.5× transcription speedup for <1 % WER loss |
 
 So the round numbering started with round 1 = audio_events multiprocessing because that was the first sweep where the team explicitly thought of performance as a tracked workstream. The prior wins were one-shot improvements driven by specific symptoms (slow renders, scan hangs, slow transcription) rather than a sweep.
 
@@ -302,3 +302,7 @@ So the round numbering started with round 1 = audio_events multiprocessing becau
 - [[concepts/clipping-pipeline]] — full pipeline ordering
 - [[concepts/observability]] — `logtool axes` for measuring lift
 - [[concepts/case-rap-battle-missed]] — example of a stage where pre-filter doesn't help (rap battle had Pass A zero, BUT also audio_events skipped on cached transcript)
+- [[entities/lm-studio]] — the LLM server whose concurrency ceiling bounds the Stage 4/6 parallel-HTTP wins
+- [[entities/faster-whisper]] — large-v3-turbo default (2026-06-03 transcription speedup)
+- [[concepts/clip-rendering]] — the Stage 7 render loop parallelized in item 3
+- [[concepts/bugs-and-fixes]] — BUG 60 (Pass-B reasoning-text title pollution) surfaced in the post-shipment review

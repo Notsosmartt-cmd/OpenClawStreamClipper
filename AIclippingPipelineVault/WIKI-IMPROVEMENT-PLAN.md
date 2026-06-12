@@ -1,9 +1,19 @@
 # Wiki Improvement Plan — density, references, hot.md, and search
 
-> **STATUS: NOT YET EXECUTED.** This is a plan authored 2026-06-12 for a future agent
-> session to carry out. Nothing described here has been applied. When you execute it,
-> work phase-by-phase, log each phase in `wiki/log.md` as an `update` operation, and
-> delete this file (or convert it to a `wiki/concepts/` page marked shipped) when done.
+> **STATUS: EXECUTED 2026-06-12** (see `wiki/log.md` → "Wiki maintenance overhaul"). Retained as
+> the design record. Delivered via an 8-agent writer workflow + a 5-agent adversarial-verification
+> workflow + orchestrator-owned edits to the shared files (index/log/both CLAUDE.mds).
+>
+> **Divergences from the plan as written** (recon-driven, documented in the log):
+> - **3a (bugs-and-fixes split)** — done *in place* (completed the quick-nav, refreshed status) rather
+>   than split into archive files: ~20 anchored deep-links (`#BUG NN`/`#REMOVAL`, several in the
+>   append-only `log.md`) would have broken. All 69 `## BUG`/`## REMOVAL` headings kept byte-identical.
+> - **1d (lmstudio rename)** — replaced with mutual "not to be confused with" disambiguation notes on
+>   `lm-studio.md`/`lmstudio.md`. A rename would have broken 4 append-only `log.md` links for cosmetic gain.
+> - **3b (log rotation)** — convention documented; no archive created (all 162 entries are 2026-Q2).
+> - **4e (concepts/ folder split)** — considered and rejected (recorded), as the plan recommended.
+> - **Bonus**: adversarial verification surfaced a model-swap staleness tail the plan didn't anticipate
+>   (qwen35/gemma4/model-split/text-comparison still showed the pre-2026-06-12 split as live) — all fixed.
 
 This plan is **self-contained** — it embeds all the audit data it relies on, so you do
 not need the conversation that produced it. Re-verify anything that looks stale with the
