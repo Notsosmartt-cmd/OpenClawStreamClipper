@@ -10,6 +10,9 @@ updated: 2026-06-06
 
 The two text overlay layers burned into every rendered clip. Both are drawn by [[entities/ffmpeg]] as part of the Stage 7 filter chain. Detail on the surrounding render pipeline: [[concepts/clip-rendering]].
 
+> [!note] Hook-text + density guidance (2026-06-12 research)
+> [[concepts/hook-engineering-2026-06]] gives the evidence-backed rules for the **hook card**: keep on-screen text ≤ **5–10 words/sec** (TikTok-official), make the clip's proposition **readable by the 3 s mark** (hook by 6 s), and fill the hook line from a **category-keyed template library** (storytime / informative / hot-take / authority / funny). The cold-open teaser that would precede the hook card is planned in [[concepts/plan-unoriginality-audio-layer]] P2.
+
 ---
 
 ## Subtitle style — CapCut word-box captions (default, 2026-06-06)

@@ -62,7 +62,7 @@ Sources: [TikTok Creator Academy originality policy](https://www.tiktok.com/crea
 ### P2 — Structural edits (change the temporal fingerprint AND read as editing)
 
 - Flip `CLIP_JUMP_CUTS` to `gaps` (silence removal) after the pending clean validation run ([[concepts/transition-animations]]). Re-times every downstream frame.
-- **Cold-open hook reorder** (new feature, medium effort): prepend a 1.5–3 s teaser of the payoff before the setup, whoosh + white flash into the start. Buildable as a 2-segment stitch variant on `stitch_render.py`; payoff timestamp already known.
+- **Cold-open hook reorder** (new feature, medium effort): prepend a teaser of the most-striking moment before the setup, whoosh + white flash into the start. Buildable as a 2-segment stitch variant on `stitch_render.py`; payoff timestamp already known. **Rules now researched in [[concepts/hook-engineering-2026-06]]: ~1–2 s teaser (heuristic, A/B-test it), TEASE don't spoil (resolution stays at the end), proposition readable by 3 s / hook by 6 s.**
 
 ### P3 — Visual engagement sync
 
@@ -82,7 +82,7 @@ Add a small `posted.log` (clip → treatments applied → flagged? → views). T
 
 1. ~~**TikTok originality mechanics (2026)**~~ — **DONE 2026-06-12**, filed as [[concepts/tiktok-originality-mechanics-2026-06]] (ranked Tier A/B/C transformation list + the refinement above).
 2. ~~**Sound-design pattern library**~~ — **DONE 2026-06-12**, filed as [[concepts/sfx-cue-taxonomy-2026-06]] (beat→sound→offset→mix taxonomy + CC0 sources + JSON drop-in).
-3. **Hook engineering:** "What opening-second patterns maximize retention for 60–180 s storytime and informative clips in 2026 (cold-open payoff teaser, text hook phrasing, caption density, pacing)? Output: implementable rules for an automated clipper (teaser length, where to cut the teaser from, hook-text templates by category)."
+3. ~~**Hook engineering**~~ — **DONE 2026-06-12**, filed as [[concepts/hook-engineering-2026-06]] (cold-open teaser rules, caption density, hook-text template library; informs the P2 cold-open reorder + the Stage 6 hook card).
 
 ---
 
