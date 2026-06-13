@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "_note": "Acoustic-anchor SFX cue taxonomy (implements wiki concepts/sfx-cue-taxonomy-2026-06). Read by scripts/lib/sfx_cues.py at Stage 7 (profile-mode) to place sound effects on the moment's beats instead of the vision/zoom-tied guess. Gated by CLIP_SFX_ANCHOR (default on); CLIP_SFX_ANCHOR=0 reverts to the legacy profile synthesis. Failure-soft: a missing/unreadable file falls back to the in-code defaults in sfx_cues.py. CONFIDENCE: beat->sound mappings are practitioner convention (cross-source, not formally proven) and licensing-only claims were the verified ones in the research; treat offsets/gains as starting defaults to A/B-test.",
+  "enabled": true,
+  "max_cues": 4,
+  "_dedup_note": "Min gap between cues (s). Kept BELOW the build-up lead (1.0s) so a riser and its payoff hit coexist as a one-two punch; large enough to merge genuinely coincident cues (e.g. two laughter markers).",
+  "dedup_window_s": 0.6,
+  "_beat_defaults_note": "Per beat-type: an ORDERED list of sound options. The builder emits the FIRST kind whose assets/sfx/<kind>/ folder has audio (sfx_inject.has_assets), so the feature works today with the seeded whoosh/impact/ding/riser/boom libraries and automatically upgrades to the ideal kind (scratch, sad_trombone, applause, crickets, bruh, pop) once those are seeded. offset_s is added to the beat time (negative = before). gain_db is relative to the source audio (0 = at speech level, negative = ducked under speech); linear = 10^(gain_db/20).",
+  "beat_defaults": {
+    "punchline":       [{"kind": "boom",         "offset_s": 0.10,  "gain_db": 0.0},
+                        {"kind": "impact",       "offset_s": 0.08,  "gain_db": -3.0}],
+    "punchline_light": [{"kind": "pop",          "offset_s": 0.08,  "gain_db": -8.0},
+                        {"kind": "impact",       "offset_s": 0.08,  "gain_db": -6.0},
+                        {"kind": "ding",         "offset_s": 0.08,  "gain_db": -8.0}],
+    "fail":            [{"kind": "scratch",      "offset_s": 0.05,  "gain_db": -6.0},
+                        {"kind": "sad_trombone", "offset_s": 0.80,  "gain_db": -8.0},
+                        {"kind": "sad_violin",   "offset_s": 0.80,  "gain_db": -8.0},
+                        {"kind": "whoosh",       "offset_s": 0.05,  "gain_db": -7.0}],
+    "reveal":          [{"kind": "applause",     "offset_s": 0.15,  "gain_db": -12.0},
+                        {"kind": "ding",         "offset_s": 0.10,  "gain_db": -8.0}],
+    "transition":      [{"kind": "whoosh",       "offset_s": 0.05,  "gain_db": -6.0}],
+    "_buildup_note":   "offset_s is 0.0 here: the build-up anchor is already placed buildup_lead_s before the payoff in sfx_cues.py, so the riser must NOT subtract a second lead (that double-penalty put it ~2s early, outside the research's 0.4-1.25s window).",
+    "buildup":         [{"kind": "riser",        "offset_s": 0.0,   "gain_db": -10.0}],
+    "awkward_silence": [{"kind": "crickets",     "offset_s": 2.50,  "gain_db": -12.0}],
+    "disbelief":       [{"kind": "bruh",         "offset_s": 0.10,  "gain_db": -6.0},
+                        {"kind": "scratch",      "offset_s": 0.10,  "gain_db": -6.0}]
+  },
+  "_category_beats_note": "Maps the moment's primary_category to which beat the payoff is + which supplementary beats to scan for. payoff=null means no SFX for that category (emotional clips stay clean, matching style_profiles' empty SFX pools). scan_laughter adds a punchline beat at each transcript laughter marker inside the clip; buildup adds a riser before the payoff.",
+  "category_beats": {
+    "funny":         {"payoff": "punchline", "scan_laughter": true,  "buildup": false},
+    "reactive":      {"payoff": "punchline", "scan_laughter": true,  "buildup": false},
+    "hype":          {"payoff": "punchline", "scan_laughter": false, "buildup": true},
+    "dancing":       {"payoff": "punchline", "scan_laughter": false, "buildup": true},
+    "controversial": {"payoff": "punchline", "scan_laughter": false, "buildup": false},
+    "hot_take":      {"payoff": "punchline", "scan_laughter": false, "buildup": true},
+    "storytime":     {"payoff": "reveal",    "scan_laughter": false, "buildup": true},
+    "emotional":     {"payoff": null,        "scan_laughter": false, "buildup": false}
+  },
+  "buildup_lead_s": 1.0,
+  "_global_mix_note": "RESERVED / informational. The ACTIVE per-cue mix policy is the gain_db on each beat_defaults entry (applied by sfx_inject._cue_volume): boom rides hot at gain_db 0.0 (the research's 'loud = funny' Vine-boom exception) while every other kind ducks under speech (negative dB). duck_speech_db and hot_kinds below are not read by code today — kept for a future calibration loop that may fit the mix globally. loudnorm_target_lufs is likewise deferred (not applied — pumping/perf risk on the existing audio chain).",
+  "global_mix": {
+    "duck_speech_db": -6.0,
+    "loudnorm_target_lufs": -14.0,
+    "hot_kinds": ["boom"]
+  },
+  "_kind_sources_note": "Which assets/sfx/<kind>/ folders back each semantic kind, and which still need CC0 seeding. boom is aliased to the impact library via assets/sfx/boom/library.json so punchline SFX work immediately. The rest fall through the beat_defaults priority list to a seeded kind until their own CC0 assets are added (Freesound CC0 / ZapSplat CC0 per the research; exclude CC-BY-NC for monetized channels).",
+  "kind_sources": {
+    "boom":         {"have_assets": true,  "via": "alias->impact", "label": "Vine boom / deep thud"},
+    "impact":       {"have_assets": true,  "via": "seeded",        "label": "impact / hit"},
+    "whoosh":       {"have_assets": true,  "via": "seeded",        "label": "whoosh / transition"},
+    "ding":         {"have_assets": true,  "via": "seeded",        "label": "chime / ding"},
+    "riser":        {"have_assets": true,  "via": "seeded",        "label": "riser / build-up"},
+    "scratch":      {"have_assets": false, "via": "needs CC0",     "label": "record scratch"},
+    "sad_trombone": {"have_assets": false, "via": "needs CC0",     "label": "sad trombone (wah-wah)"},
+    "sad_violin":   {"have_assets": false, "via": "needs CC0",     "label": "sad violin"},
+    "crickets":     {"have_assets": false, "via": "needs CC0",     "label": "crickets / awkward silence"},
+    "applause":     {"have_assets": false, "via": "needs CC0",     "label": "applause"},
+    "boing":        {"have_assets": false, "via": "needs CC0",     "label": "cartoon boing"},
+    "pop":          {"have_assets": false, "via": "needs CC0",     "label": "percussive pop/beep"},
+    "bruh":         {"have_assets": false, "via": "needs CC0",     "label": "'bruh' vocal"}
+  }
+}

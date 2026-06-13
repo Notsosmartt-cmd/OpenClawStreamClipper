@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "_note": "Vine-boom / deep-thud kind. Aliased to the seeded impact library (the cannon/explosion samples are credible Vine-boom stand-ins) via relative '../impact/' paths so punchline SFX work immediately without a separate download. To use a dedicated CC0 Vine-boom re-creation instead (recommended — see concepts/sfx-cue-taxonomy-2026-06), drop the file(s) into this folder and add them as entries here; own-folder files take priority. Do NOT rip the copyrighted original.",
+  "entries": [
+    {
+      "file": "../impact/cannon.mp3",
+      "tags": ["boom", "deep", "thud"],
+      "license": "CC0",
+      "source": "alias: assets/sfx/impact/cannon.mp3"
+    },
+    {
+      "file": "../impact/explosion_ls100155.ogg",
+      "tags": ["boom", "deep", "impact"],
+      "license": "CC0",
+      "source": "alias: assets/sfx/impact/explosion_ls100155.ogg"
+    },
+    {
+      "file": "../impact/muffled_distant_explosion.wav",
+      "tags": ["boom", "muffled", "bass"],
+      "license": "CC0",
+      "source": "alias: assets/sfx/impact/muffled_distant_explosion.wav"
+    }
+  ]
+}

@@ -208,6 +208,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
                 "--music-folder", ctx.music_bed,
             ], env=env, check=False)
             if r.returncode == 0 and clip_output.exists():
+                _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
                 _record_clip(ctx, row, clip_output, clip_length, profile=True)
                 return
             log.warn(f"Profile render failed for T={T} — falling back to legacy render")
@@ -303,7 +304,65 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
             return
 
     if clip_output.exists():
+        _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
         _record_clip(ctx, row, clip_output, clip_length)
+
+
+def _probe_duration(path: str) -> float | None:
+    """ffprobe a file's duration (seconds), or None on any failure. Used to
+    integrity-check the cold-open output before atomically replacing the clip —
+    ffmpeg can exit 0 with a truncated file (disk full / OOM mid-write)."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=30,
+        )
+        return float(r.stdout.strip())
+    except (subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _maybe_cold_open(ctx, row, clip_output: Path, clip_start, clip_length) -> None:
+    """When CLIP_COLD_OPEN is on, prepend a cold-open teaser (tease of the
+    run-up to the payoff + whoosh/flash into the clip) in place. Implements
+    concepts/hook-engineering-2026-06. Failure-soft: on any non-zero / error the
+    original clip is left untouched (cold_open.py writes a temp and we only swap
+    it in on success)."""
+    if not getattr(ctx, "cold_open", False):
+        return
+    try:
+        T = row["t"]
+        tmp = ctx.paths.work(f"clip_{T}_coldopen.mp4")
+        r = common.run_module(ctx.log, "cold_open.py", [
+            "--vod", str(ctx.vod_path), "--clip", str(clip_output),
+            "--out", str(tmp), "--payoff", str(float(T)),
+            "--clip-start", str(float(clip_start)),
+            "--clip-duration", str(float(clip_length)),
+        ], env=ctx.child_env(), check=False)
+        if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 1024:
+            # Integrity gate before the atomic swap: the cold-open output is the
+            # clip PLUS the teaser, so its duration must be >= ~the original
+            # clip. A shorter result means a truncated/corrupt encode — keep the
+            # good clip rather than os.replace-ing it away (the BUG 64 lesson).
+            dur = _probe_duration(str(tmp))
+            if dur is not None and dur >= float(clip_length) * 0.9:
+                os.replace(str(tmp), str(clip_output))
+                ctx.log.log(f"  [cold-open] prepended teaser to T={T} ({dur:.1f}s)")
+            else:
+                ctx.log.warn(f"cold-open output failed integrity check "
+                             f"(dur={dur}, expected >= {clip_length}); keeping original T={T}")
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+        elif tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    except Exception as e:
+        ctx.log.warn(f"cold-open teaser failed for T={row.get('t')}: {e}")
 
 
 def _wrap_hook(hook: str) -> str:

@@ -31,6 +31,7 @@ export function collectOriginality() {
         music_bed:      (q("inp-music-bed")?.value || "").trim(),
         music_tier_c:   !!q("chk-music-tier-c")?.checked,
         style_profiles: !!q("chk-style-profiles")?.checked,
+        cold_open:      !!q("chk-cold-open")?.checked,
     };
 }
 
@@ -56,6 +57,7 @@ export async function fetchOriginality() {
         if (q("inp-music-bed")) q("inp-music-bed").value = cfg.music_bed || "";
         if (q("chk-music-tier-c")) q("chk-music-tier-c").checked = !!cfg.music_tier_c;
         if (q("chk-style-profiles")) q("chk-style-profiles").checked = !!cfg.style_profiles;
+        if (q("chk-cold-open")) q("chk-cold-open").checked = !!cfg.cold_open;
     } catch (e) { /* ignore */ }
 }
 

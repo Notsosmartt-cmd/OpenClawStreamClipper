@@ -86,6 +86,11 @@ DEFAULT_ORIGINALITY = {
     # Off by default — when on, Stage 7 dispatches each clip through
     # scripts/lib/profile_render.py instead of the legacy render path.
     "style_profiles": False,
+    # 2026-06-13: cold-open teaser (concepts/hook-engineering-2026-06). Prepends
+    # a ~1-2s tease of the run-up to the payoff + whoosh/flash into the clip.
+    # Off by default — a Stage 7 post-step, failure-soft (keeps the original
+    # clip if the teaser can't be built).
+    "cold_open": False,
 }
 
 DEFAULT_MODELS = {

@@ -196,6 +196,67 @@ def _derive_baseline_title(why, category, T):
     return f"{cat_pretty} at {mm}:{ss:02d}"
 
 
+# Hook-text template fallback (concepts/hook-engineering-2026-06). Every clip
+# should ship a top-of-video hook card; the vision model produces one when it
+# can, but when vision is skipped/fails (or grounding nulls the hook) the card
+# was previously absent. These category-keyed templates fill that gap so the
+# clip still opens with a curiosity hook. Vision always overrides the template.
+_HOOK_TEMPLATES_CACHE: dict | None = None
+
+
+def _load_hook_templates():
+    """Load config/hook_templates.json with the standard env -> Linux -> repo
+    fallback. Cached. Returns {} on any failure so the hook simply stays empty
+    (the prior behavior) rather than crashing."""
+    global _HOOK_TEMPLATES_CACHE
+    if _HOOK_TEMPLATES_CACHE is not None:
+        return _HOOK_TEMPLATES_CACHE
+    candidates = [
+        os.environ.get("CLIP_HOOK_TEMPLATES_CONFIG"),
+        "/root/.openclaw/hook_templates.json",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "hook_templates.json"),
+    ]
+    cfg: dict = {}
+    for c in candidates:
+        if c and os.path.exists(c):
+            try:
+                cfg = json.loads(open(c, encoding="utf-8").read()) or {}
+                break
+            except (OSError, ValueError):
+                cfg = {}
+    _HOOK_TEMPLATES_CACHE = cfg
+    return cfg
+
+
+def _hook_from_template(category, title, T):
+    """Pick a deterministic fallback hook for a category. {title} slots are
+    filled with a short cleaned title; slotless templates are used verbatim.
+    Returns "" when templates are disabled/missing (-> no hook card)."""
+    cfg = _load_hook_templates()
+    if not cfg or not cfg.get("enabled", True):
+        return ""
+    templates = cfg.get("templates", {}) or {}
+    cat = str(category or "").strip().lower()
+    pool = templates.get(cat) or templates.get("default") or []
+    if not pool:
+        return ""
+    try:
+        idx = int(T) % len(pool)
+    except Exception:
+        idx = 0
+    tmpl = str(pool[idx])
+    if "{title}" in tmpl:
+        short = re.sub(r"^\s*Pattern\s+[A-Za-z0-9_]+\s*:\s*", "", str(title or ""), flags=re.IGNORECASE)
+        short = short.strip().rstrip(".")
+        words = short.split()
+        if len(words) > 6:
+            short = " ".join(words[:6])
+        if not short:
+            return ""
+        tmpl = tmpl.replace("{title}", short)
+    return tmpl.strip()
+
+
 # Fix 1A — grounding is field-aware. `title` and `hook` are intentionally
 # CREATIVE (the Stage 6 prompt asks for a "viral title" and a hook "in the
 # voice of a content creator"), so they have low literal overlap with the
@@ -294,6 +355,14 @@ def _process_moment(moment):
         "category": transcript_category,
         "title": _derive_baseline_title(transcript_why, transcript_category, T),
         "description": transcript_why[:100] if transcript_why else "",
+        # Category hook-text fallback (concepts/hook-engineering-2026-06). A
+        # vision-generated hook overrides this below; when vision is skipped or
+        # grounding nulls the hook, this curiosity hook still ships a hook card.
+        "hook": _hook_from_template(
+            transcript_category,
+            _derive_baseline_title(transcript_why, transcript_category, T),
+            T,
+        ),
         "hype_score": transcript_score,
         "transcript_category": transcript_category,
         "segment_type": segment_type,

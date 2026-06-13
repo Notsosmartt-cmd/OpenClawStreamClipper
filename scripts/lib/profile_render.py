@@ -275,6 +275,26 @@ def render(*,
     # and SFX cues. Fields populated by vision are preserved.
     plan = _synthesize_plan(plan, profile, profile_seed, clip_duration)
 
+    # Acoustic-anchor SFX cues (concepts/sfx-cue-taxonomy-2026-06): replace the
+    # profile/zoom-tied SFX guess with cues anchored on the moment's actual beats
+    # (payoff = the moment timestamp, a build-up riser before it, transcript
+    # laughter), each carrying a per-kind mix (gain_db) so a punchline boom rides
+    # hot while most SFX duck under speech. Gated by CLIP_SFX_ANCHOR (default on);
+    # =0 keeps the legacy synthesis. Failure-soft — any error keeps the existing
+    # cues. The cues replace (not append to) the synthesized ones so placement is
+    # beat-driven, not punch-driven.
+    if os.environ.get("CLIP_SFX_ANCHOR", "1").strip().lower() not in ("0", "false", "no", "off"):
+        try:
+            import sfx_cues as _sfxc
+            _anchor = _sfxc.build(moment, clip_start, clip_duration,
+                                  temp_dir=temp_dir, seed=profile_seed)
+            if _anchor:
+                plan["sfx_cues"] = _anchor
+                _log("sfx-anchor: " + ", ".join(
+                    f"{c['kind']}@{c['t']}s" for c in _anchor))
+        except Exception as _sae:
+            _log(f"sfx-anchor unavailable ({_sae}); keeping profile SFX cues")
+
     # Probe source FPS once per clip
     source_fps = _ffprobe_fps(src) or 30.0
     _log(f"category={cat_canon} fps={source_fps:.1f} preset={plan['caption_preset']} "

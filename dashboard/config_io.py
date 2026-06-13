@@ -58,6 +58,8 @@ def originality_to_env(orig: dict) -> dict:
         # flash_cuts: white-flash engagement beats (seeded cadence + LLM picks).
         "CLIP_JUMP_CUTS": str(orig.get("jump_cuts", "off") or "off"),
         "CLIP_FLASH_CUTS": "on" if orig.get("flash_cuts") else "off",
+        # Cold-open teaser (concepts/hook-engineering-2026-06) — Stage 7 post-step.
+        "CLIP_COLD_OPEN": "true" if orig.get("cold_open") else "false",
     }
 
 
@@ -130,7 +132,7 @@ def extract_originality_fields(data: dict) -> dict | None:
     disk = load_originality_config()
     keys = ("framing", "originality", "stitch", "arc_stitch", "narrative",
             "camera_pan", "tts_vo", "music_bed", "music_tier_c",
-            "style_profiles", "jump_cuts", "flash_cuts")
+            "style_profiles", "jump_cuts", "flash_cuts", "cold_open")
     touched = False
     merged = dict(disk)
     for k in keys:

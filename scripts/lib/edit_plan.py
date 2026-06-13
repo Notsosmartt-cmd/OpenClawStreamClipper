@@ -38,7 +38,16 @@ from typing import Any
 
 
 VALID_PRESETS = {"neon", "bouncy", "clean", "news", "soft"}
-VALID_SFX_KINDS = {"whoosh", "impact", "scratch", "ding", "riser"}
+# 2026-06-13: extended with the comedy/reaction register from the SFX cue-taxonomy
+# research (concepts/sfx-cue-taxonomy-2026-06). The new kinds resolve to
+# assets/sfx/<kind>/ once seeded; until then the acoustic cue builder falls
+# through to a seeded kind (see config/sfx_cues.json beat_defaults), and
+# sfx_inject silently drops any cue whose kind has no assets.
+VALID_SFX_KINDS = {
+    "whoosh", "impact", "scratch", "ding", "riser",
+    "boom", "sad_trombone", "sad_violin", "crickets", "applause", "boing",
+    "pop", "bruh",
+}
 
 
 def _to_float(x: Any, default: float | None = None) -> float | None:
