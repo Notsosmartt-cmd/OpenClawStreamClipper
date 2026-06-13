@@ -37,6 +37,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-12] SFX cue-taxonomy research filed ([[concepts/sfx-cue-taxonomy-2026-06]]) — beat→sound→offset→mix + CC0 sources + JSON drop-in for `sfx_cues`; feeds the audio-layer plan P1 (deep-research verify layer crashed on session limits → synthesized from sourced corpus) — [[log]]
 - [2026-06-12] Evaluation fixes executed: word-boundary keywords (default ON), `config/channel_keywords.json` packs, `config/prompts.json` unification, `CLIP_SEGMENT_VOTES` confidence+smoothing (opt-in), rare-pattern Pass C bonus (rap_battle 1.15), `self_consistency.py` REMOVED — [[log]]
 - [2026-06-12] Deep evaluation filed as 5 plan/case pages (unoriginality audio layer, calibration loop, decorrelation, incongruity case, YouTube ingest); `self_consistency.py` flagged as the one orphan module — [[log]]
 - [2026-06-12] Wiki maintenance pass: added [[hot]] + `scripts/wiki_lint.py`, `status:` field on plan pages, fixed stale model/arch facts, completed the bugs quick-nav — [[log]]
