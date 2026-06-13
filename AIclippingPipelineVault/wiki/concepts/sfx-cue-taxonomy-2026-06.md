@@ -3,13 +3,16 @@ title: "SFX Cue Taxonomy for Short-Form Comedy/Reaction Editing (2026-06 researc
 type: concept
 tags: [research, sfx, audio, originality, edit-plan, sound-design, reference, tiktok]
 sources: 0
-status: reference
-updated: 2026-06-12
+status: shipped
+updated: 2026-06-13
 ---
 
 # SFX Cue Taxonomy (2026-06 research)
 
 Deep-research output: the sound-effect vocabulary high-performing TikTok/Shorts clip channels use, mapped **beat-type → sound-kind → timing offset → mix level**, with CC0/royalty-free sourcing. Commissioned to feed [[concepts/plan-unoriginality-audio-layer]] P1 (punchline-anchored SFX) — the un-perturbed audio channel is the leading suspect for the owner's TikTok "unoriginal" flag, and competitor clips that *do* get reach carry exactly these cues.
+
+> [!success] Shipped 2026-06-13 — acoustic-anchor SFX cues
+> The taxonomy is now wired into the render path. **`config/sfx_cues.json`** holds the beat→sound→offset→mix table (the §5 JSON, lightly adapted). **`scripts/lib/sfx_cues.py`** is a deterministic cue builder run in `profile_render.py` (after `_synthesize_plan`, gated `CLIP_SFX_ANCHOR`, default ON; `=0` reverts to the legacy zoom-tied synthesis): it maps the moment's `category` → beat-types (`category_beats`) → the **first sound kind whose `assets/sfx/<kind>/` folder has audio** (`sfx_inject.has_assets`), anchoring on the payoff (moment timestamp), a build-up riser before it, and transcript laughter markers. Each cue carries `gain_db`; **`sfx_inject.build_sfx_layer` now applies per-cue volume** (`_cue_volume`, dB→linear) so a punchline **boom rides hot (~0 dB, at speech)** while most SFX duck under speech — the research's per-kind mix policy. **New kinds** (boom, sad_trombone, sad_violin, crickets, applause, boing, pop, bruh) added to `edit_plan.py` `VALID_SFX_KINDS`. **boom works today** via `assets/sfx/boom/library.json` aliasing the seeded impact library; the other new kinds fall through the priority list to a seeded kind until their own CC0 assets are added (the `category_beats`→`beat_defaults` "first available kind" logic). `emotional` stays silent (payoff=null). **Deferred:** the −14 LUFS `loudnorm` in `global_mix` is documented but not applied (kept out to avoid pumping/perf risk on the existing audio chain). Smoke-tested: funny moment → boom at payoff + laughter; per-kind gain exact (−6 dB → 0.5012).
 
 > [!warning] Methodology + confidence caveat (read first)
 > Produced by the `deep-research` workflow across **two runs** (~46 sources, ~218 extracted claims). The 5-search + fetch + claim-extraction phases completed; the **3-vote adversarial verification layer crashed both times on Anthropic session limits**, so almost every claim carries a 0-0 "abstain" verdict that the harness mislabels as "refuted." Those are *not* genuine refutations. **Only 4 claims got real votes before the first crash** — all licensing/inventory facts (marked ✅ VERIFIED below). Everything else is **single-/multi-source practitioner convention**, and confidence here comes from **cross-source agreement**, not the formal panel. Treat timing-frame numbers (esp. from `sfxengine.com`, which cites an unsourced "65%" stat) as **starting defaults to A/B-test**, not measured ground truth. Re-running the verify layer after the limit resets would upgrade these.

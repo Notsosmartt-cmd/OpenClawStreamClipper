@@ -72,9 +72,9 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/speed-control]] — Dashboard speed dropdown (1×–1.5×), setpts + rubberband, SRT rescaling
 - [[concepts/originality-stack]] — TikTok 2025 defense: waves A (randomize) + B (framing) + C (groups) + D (TTS/music) + E (camera pan)
 - [[concepts/plan-unoriginality-audio-layer]] — Why clips still get flagged: audio is the un-perturbed channel; SFX/VO/music plan (**planned 2026-06-12**)
-- [[concepts/sfx-cue-taxonomy-2026-06]] — Research: beat→sound→offset→mix cue taxonomy + CC0 sources; JSON drop-in for `sfx_cues` (**reference 2026-06-12**)
+- [[concepts/sfx-cue-taxonomy-2026-06]] — Research **+ shipped**: beat→sound→offset→mix cue taxonomy; `config/sfx_cues.json` + `sfx_cues.py` acoustic anchors, per-kind mix (**shipped 2026-06-13**)
 - [[concepts/tiktok-originality-mechanics-2026-06]] — Research: how TikTok's unoriginal flag works; ranked Tier A/B/C transforms; VO > SFX/music, account-level risk (**reference 2026-06-12**)
-- [[concepts/hook-engineering-2026-06]] — Research: cold-open teaser (tease≠spoil), 6s/3s windows, 5–10 wps captions, hook-text templates by category (**reference 2026-06-12**)
+- [[concepts/hook-engineering-2026-06]] — Research **+ shipped**: cold-open teaser (`cold_open.py`, `CLIP_COLD_OPEN`) + category hook-text templates (`hook_templates.json`) (**shipped 2026-06-13**)
 
 ### System
 - [[concepts/vram-budget]] — Per-model VRAM, stage-by-stage orchestration, explicit unloading sequence; GGUF-exact KV + per-stage max_tokens + "bigger context ≠ better"
