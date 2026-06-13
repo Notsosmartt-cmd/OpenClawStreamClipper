@@ -14,6 +14,14 @@ Filed from the 2026-06-12 deep evaluation. **Problem:** the owner's posted clips
 > [!note] Core finding
 > The [[concepts/originality-stack]] is visually strong but ships clips whose **audio track is essentially raw stream audio**. TikTok fingerprints audio and explicitly survives mirror/speed/color tweaks — the exact transformations Wave A leans on. The fix is **additive creative layers** (SFX/VO/music/dense captions), which is also precisely what TikTok's own policy rewards as originality. Sub-perceptual perturbation is the wrong theory of the problem.
 
+> [!warning] Refined by deeper research — [[concepts/tiktok-originality-mechanics-2026-06]] (2026-06-12)
+> A full-verification deep-research pass **sharpens (and partly corrects) this plan**:
+> - **Voiceover/commentary is the strongest lever, not SFX/music** — it's TikTok's #1 prescribed remedy AND structurally strong (your own audio isn't in any fingerprint/cover DB). **Promote P1.3 (Piper VO) to P1 #1**, and make it *real commentary*, not the current 8-14 word hook.
+> - **"Music bed breaks the fingerprint" is refuted** (0-3): matchers isolate foreground audio, so background beds don't hide the original. Keep the music bed as a *creative/engagement* layer, not as fingerprint evasion.
+> - **The frame itself is wrong**: don't try to "perturb the fingerprint" (the matcher is robust; pitch/tempo/speed/crop/flip are all weak or refuted). Invest in *genuine transformation* — VO, creator-presence/face-cam, restructuring — which is the only thing that both satisfies TikTok and makes better clips.
+> - **Account-level risk is real**: the flag escalates from per-video to account-wide FYF ineligibility for accounts that repeatedly post ineligible content — exactly the automated-repost profile. Half-measures are account-risky, not just per-clip-ineffective.
+> See the ranked Tier A/B/C transformation list in [[concepts/tiktok-originality-mechanics-2026-06]].
+
 ---
 
 ## What TikTok flags (researched June 2026)
@@ -72,7 +80,7 @@ Add a small `posted.log` (clip → treatments applied → flagged? → views). T
 
 ## Research prompts (ready to fire via deep research)
 
-1. **TikTok originality mechanics (2026):** "How does TikTok's unoriginal-content / For-You-ineligibility classification work as of mid-2026 for streamer clip channels? Cover: audio fingerprinting (ACRCloud derivative-works detection) robustness to pitch/tempo/EQ changes vs additive layers (SFX, VO, music); visual perceptual hashing robustness; what 'significant creative editing' demonstrably satisfies reviewers/appeals; account-level vs per-video flagging; documented experiences of clip channels that recovered from the label. Output: a ranked list of transformations by evidence of effectiveness, each with implementation cost for an FFmpeg pipeline."
+1. ~~**TikTok originality mechanics (2026)**~~ — **DONE 2026-06-12**, filed as [[concepts/tiktok-originality-mechanics-2026-06]] (ranked Tier A/B/C transformation list + the refinement above).
 2. ~~**Sound-design pattern library**~~ — **DONE 2026-06-12**, filed as [[concepts/sfx-cue-taxonomy-2026-06]] (beat→sound→offset→mix taxonomy + CC0 sources + JSON drop-in).
 3. **Hook engineering:** "What opening-second patterns maximize retention for 60–180 s storytime and informative clips in 2026 (cold-open payoff teaser, text hook phrasing, caption density, pacing)? Output: implementable rules for an automated clipper (teaser length, where to cut the teaser from, hook-text templates by category)."
 

@@ -24,6 +24,8 @@ All waves are independently toggleable through the **Originality & Render** pane
 
 > [!warning] 2026-06-12 evaluation: the audio channel is the un-perturbed gap
 > Owner's clips are still being flagged "unoriginal" with this stack active. Root cause analysis: the stack is visually strong, but with Wave D OFF (`tts_vo: false`, `music_bed: ""` as of 2026-06-12) the rendered **audio track is essentially raw stream audio** — and TikTok's audio fingerprinting survives the mirror/speed/color edits Wave A leans on. Additive audio layers (punchline-anchored SFX, music bed, VO hook) are the fix. Full analysis + plan: [[concepts/plan-unoriginality-audio-layer]].
+>
+> **Evidence re-grading (2026-06-12):** the full-verification [[concepts/tiktok-originality-mechanics-2026-06]] research ranks these waves' transforms by how well they actually beat the flag — Wave A's mirror/color/speed are **Tier C (weak/refuted as evasion)**, Wave D **voiceover is Tier A (strongest)**, music bed is **downgraded as evasion** (keep for engagement, not fingerprint defeat). The durable strategy is *genuine transformation* (VO/commentary/restructuring), not perturbation — and the flag escalates to account level for repeat offenders.
 
 ---
 

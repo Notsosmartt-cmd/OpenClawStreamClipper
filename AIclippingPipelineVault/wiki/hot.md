@@ -28,6 +28,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 
 ## In flight / awaiting validation
 - **2026-06-12 detection fixes shipped, need a real-VOD validation run**: word-boundary keywords (default ON — watch Pass A recall), rare-pattern bonus (re-run rakai VOD: does the Delaware battle win its bucket now?), `CLIP_SEGMENT_VOTES=3` opt-in A/B — [[concepts/clipping-intelligence]] §Opportunity D
+- **Audio-layer plan reframed (2026-06-12)** by [[concepts/tiktok-originality-mechanics-2026-06]]: the win is *genuine transformation* (voiceover/commentary Tier A) not fingerprint perturbation (Tier C, refuted); turn on `tts_vo` with real commentary first; account-level escalation makes half-measures risky — [[concepts/plan-unoriginality-audio-layer]]
 - **2026-06-12 evaluation filed 5 plan pages** — unoriginality root cause = un-perturbed audio channel ([[concepts/plan-unoriginality-audio-layer]]); calibration loop glue ([[concepts/plan-calibration-loop]]); judge decorrelation ([[concepts/plan-decorrelate-judges]]); incongruity anomaly-proposer + micro-clips ([[concepts/case-incongruity-comedy]]); YouTube/informative ingest ([[concepts/plan-youtube-informative]])
 - Transition animations (white-flash + jump-cut compression) shipped flag-gated; BUG 64 fix lands the flash — needs a clean validation run (`CLIP_JUMP_CUTS=gaps` safest first) — [[concepts/transition-animations]]
 - Existing white-flashed clips are unrecoverable (transition pass `os.replace`d the good render) — re-run to regenerate — [[concepts/bugs-and-fixes]]
@@ -37,6 +38,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-12] TikTok originality-mechanics research filed ([[concepts/tiktok-originality-mechanics-2026-06]], full verify 14✓/11✗) — refines the audio plan: **VO > SFX/music**, "music bed breaks fingerprint" REFUTED, perturbation is the wrong frame, **flag escalates to account-level**; ranked Tier A/B/C transform list — [[log]]
 - [2026-06-12] SFX cue-taxonomy research filed ([[concepts/sfx-cue-taxonomy-2026-06]]) — beat→sound→offset→mix + CC0 sources + JSON drop-in for `sfx_cues`; feeds the audio-layer plan P1 (deep-research verify layer crashed on session limits → synthesized from sourced corpus) — [[log]]
 - [2026-06-12] Evaluation fixes executed: word-boundary keywords (default ON), `config/channel_keywords.json` packs, `config/prompts.json` unification, `CLIP_SEGMENT_VOTES` confidence+smoothing (opt-in), rare-pattern Pass C bonus (rap_battle 1.15), `self_consistency.py` REMOVED — [[log]]
 - [2026-06-12] Deep evaluation filed as 5 plan/case pages (unoriginality audio layer, calibration loop, decorrelation, incongruity case, YouTube ingest); `self_consistency.py` flagged as the one orphan module — [[log]]
