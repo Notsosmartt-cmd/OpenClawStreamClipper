@@ -62,6 +62,36 @@ def pick_sfx(kind: str, seed: object) -> Path | None:
     return rng.choice(pool)
 
 
+_HAS_ASSETS_CACHE: dict[str, bool] = {}
+
+
+def has_assets(kind: str) -> bool:
+    """True when assets/sfx/<kind>/ resolves at least one usable audio file
+    (honors library.json aliases like boom -> ../impact/*). Cached per kind so
+    the acoustic cue builder can cheaply pick the first available kind for a
+    beat. See scripts/lib/sfx_cues.py."""
+    k = str(kind or "").strip().lower()
+    if k in _HAS_ASSETS_CACHE:
+        return _HAS_ASSETS_CACHE[k]
+    r = bool(k) and len(_candidates_for_kind(k)) > 0
+    _HAS_ASSETS_CACHE[k] = r
+    return r
+
+
+def _cue_volume(cue: dict, default_volume: float) -> float:
+    """Per-cue linear volume. A cue may carry `gain_db` (dB relative to the
+    source audio, 0 = at speech level, negative = ducked under speech) — the
+    research's per-kind mix policy that lets a Vine boom ride hot on a punchline
+    while most SFX sit below speech. Falls back to the layer default volume."""
+    g = cue.get("gain_db")
+    if g is None:
+        return default_volume
+    try:
+        return max(0.05, min(10.0 ** (float(g) / 20.0), 1.5))
+    except (TypeError, ValueError):
+        return default_volume
+
+
 def build_sfx_layer(cues: list[dict], seed: object,
                     base_input_index: int = 1,
                     sfx_volume: float = 0.7) -> dict:
@@ -96,9 +126,10 @@ def build_sfx_layer(cues: list[dict], seed: object,
         delay_ms = int(round(t * 1000))
         idx = base_input_index + len(inputs) - 1
         label = f"sfx{i}"
+        vol = _cue_volume(cue, sfx_volume)
         defs.append(
             f"[{idx}:a]adelay={delay_ms}|{delay_ms},"
-            f"volume={sfx_volume}[{label}]"
+            f"volume={vol:.4f}[{label}]"
         )
         mix_labels.append(f"[{label}]")
 

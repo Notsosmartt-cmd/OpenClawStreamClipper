@@ -201,6 +201,10 @@
                 <input type="checkbox" id="chk-style-profiles" onchange="onOriginalityChange()">
                 <label for="chk-style-profiles" title="Per-category editing profiles: zoom punches, freeze frames, slow-mo, meme cutaways, B-roll, SFX, kinetic captions + audio/container fingerprinting. Reads assets under assets/. Off by default.">AI editing profiles</label>
             </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="chk-cold-open" onchange="onOriginalityChange()">
+                <label for="chk-cold-open" title="Cold-open teaser: prepend a ~1-2s tease of the run-up to the payoff, then a whoosh + white flash into the clip (tease, don't spoil). Stage 7 post-step; keeps the original clip if the teaser can't be built. Off by default.">Cold-open teaser</label>
+            </div>
 
             <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
                 <button id="btn-scan-music" class="btn-secondary btn-sm"

@@ -93,6 +93,18 @@ class Ctx:
         self.music_tier_c = _bool_env("CLIP_MUSIC_TIER_C", False)
         self.camera_pan = _bool_env("CLIP_CAMERA_PAN", False)
         self.style_profiles = _bool_env("CLIP_STYLE_PROFILES", False)
+        # Cold-open teaser: prepend a ~1-2s tease of the run-up to the payoff +
+        # whoosh/flash into the clip (concepts/hook-engineering-2026-06). Opt-in;
+        # a Stage 7 post-step (cold_open.py), failure-soft.
+        self.cold_open = _bool_env("CLIP_COLD_OPEN", False)
+        # Acoustic-anchor SFX placement inside profile-mode (consumed by
+        # profile_render.py / sfx_cues.py; concepts/sfx-cue-taxonomy-2026-06).
+        # Default ON (deliberate, unlike most new flags): profile-mode already
+        # emits SFX by default, so this only improves WHERE they land (beat
+        # anchors vs zoom-punch timing) and has a clean kill switch. Wired here
+        # for discoverability/auditability; CLIP_SFX_ANCHOR=0 reverts to the
+        # legacy zoom-tied synthesis.
+        self.sfx_anchor = _bool_env("CLIP_SFX_ANCHOR", True)
 
         # Runtime state populated by stages
         self.vod_path: Path | None = None
@@ -119,6 +131,8 @@ class Ctx:
         env["CLIP_STYLE"] = self.style
         env["STREAM_TYPE_HINT"] = self.type_hint
         env["CLIP_STYLE_PROFILES"] = "true" if self.style_profiles else "false"
+        env["CLIP_COLD_OPEN"] = "true" if self.cold_open else "false"
+        env["CLIP_SFX_ANCHOR"] = "true" if self.sfx_anchor else "false"
         if self.vod_path:
             env["VOD_PATH"] = str(self.vod_path)
             env["VOD_BASENAME"] = self.vod_basename

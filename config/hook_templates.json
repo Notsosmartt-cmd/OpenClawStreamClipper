@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "_note": "Category-keyed hook-card text templates (implements wiki concepts/hook-engineering-2026-06). Used as a FALLBACK in Stage 6 so every clip gets a top-of-video hook card even when the vision model produced none (or grounding nulled it). A vision-generated hook always overrides these. Failure-soft: enabled=false or a missing file -> no template hook (current behavior). Keys are the moment's primary_category; 'default' covers anything unmapped. {title} is filled with the clip's short title when present; templates without slots are used verbatim. Keep hooks punchy (<= ~8 words / readable by the 3s mark). These are documented practitioner patterns, NOT individually retention-proven — rotate them and let a future calibration loop learn which land.",
+  "enabled": true,
+  "max_words": 8,
+  "templates": {
+    "funny": [
+      "Wait for it",
+      "You can't make this up",
+      "It only gets worse",
+      "He really said that"
+    ],
+    "storytime": [
+      "The story of {title}",
+      "You won't believe what happened",
+      "This actually happened",
+      "Storytime: it gets wild"
+    ],
+    "hot_take": [
+      "Unpopular opinion incoming",
+      "Most people get this wrong",
+      "Hot take you'll hate",
+      "Say what you want"
+    ],
+    "controversial": [
+      "This started a war",
+      "He said the quiet part",
+      "Drama incoming",
+      "Caught in 4K"
+    ],
+    "hype": [
+      "Watch this go off",
+      "No way this happened",
+      "Peak moment incoming",
+      "This is insane"
+    ],
+    "reactive": [
+      "His reaction says it all",
+      "Watch this face",
+      "Did not see that coming",
+      "He lost it"
+    ],
+    "emotional": [
+      "This one hits different",
+      "A real moment",
+      "He opened up",
+      "Genuinely emotional"
+    ],
+    "dancing": [
+      "He went off",
+      "The moves though",
+      "Wait for the drop",
+      "This goes hard"
+    ],
+    "default": [
+      "Wait for it",
+      "You have to see this",
+      "It gets better",
+      "Watch till the end"
+    ]
+  }
+}
