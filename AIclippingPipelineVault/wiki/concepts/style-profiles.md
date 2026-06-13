@@ -3,10 +3,13 @@ title: "AI Editing Profiles (Per-Category)"
 type: concept
 tags: [editing, profiles, style, originality, fingerprint, kinetic-captions, sfx, broll, memes, zoom-punch, freeze-frame, slow-mo, chat-overlay, stage-7]
 sources: 0
-updated: 2026-06-12
+updated: 2026-06-13
 ---
 
 # AI Editing Profiles
+
+> [!note] SFX placement upgraded 2026-06-13 — acoustic anchors + per-kind mix
+> The profile's SFX cues are no longer placed only on zoom-punch timing. When `CLIP_SFX_ANCHOR` is on (default), `scripts/lib/sfx_cues.py` builds beat-anchored cues (payoff / build-up / laughter) from `config/sfx_cues.json` and they **replace** the zoom-tied synthesis in `profile_render.py`. `edit_plan.py` `VALID_SFX_KINDS` gained boom/sad_trombone/sad_violin/crickets/applause/boing/pop/bruh, and `sfx_inject.build_sfx_layer` now honors a per-cue `gain_db` so a punchline boom rides hot while most SFX duck under speech. See [[concepts/sfx-cue-taxonomy-2026-06]].
 
 A new render mode that swaps Stage 7's uniform blur-fill+originality look for **per-category editing templates**. Each clip category (hype/comedy/skill/reactive/controversy/emotional/storytime/irl/dancing/hot_take) drives a different mix of zoom punches, freeze frames, slow-mo (FPS-gated), meme cutaways, B-roll inserts, SFX cues, kinetic captions, and audio + container fingerprint perturbation.
 

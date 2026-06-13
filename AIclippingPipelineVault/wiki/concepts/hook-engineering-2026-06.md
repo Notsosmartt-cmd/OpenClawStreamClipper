@@ -3,13 +3,16 @@ title: "Hook Engineering for Storytime/Informative Clips (2026-06 research)"
 type: concept
 tags: [research, hooks, retention, captions, cold-open, storytime, informative, reference]
 sources: 0
-status: reference
-updated: 2026-06-12
+status: shipped
+updated: 2026-06-13
 ---
 
 # Hook Engineering (2026-06 research)
 
 Deep-research output answering research prompt #3 of [[concepts/plan-unoriginality-audio-layer]]: what opening-second patterns maximize retention for 60–180 s storytime/informative clips, as implementable rules for the clipper (teaser length, where to cut it from, hook-text template library by category).
+
+> [!success] Shipped 2026-06-13 — hook templates + cold-open teaser
+> Both deliverables are implemented. **(1) Hook-text templates:** `config/hook_templates.json` holds the category-keyed library; `stage6_vision.py` (`_load_hook_templates`/`_hook_from_template`) fills the hook card from it in the baseline entry, so **every clip ships a hook card** even when vision is skipped or grounding nulls the hook — a vision-generated hook still overrides it. `{title}` slots are filled from a cleaned short title; slotless templates used verbatim. Failure-soft (`enabled:false`/missing file → no template hook = prior behavior). **(2) Cold-open teaser:** `scripts/lib/cold_open.py` is a Stage 7 post-step (`_maybe_cold_open`, gated `CLIP_COLD_OPEN`, default OFF, dashboard toggle "Cold-open teaser") that re-cuts a **tease of [payoff−1.5 s, payoff−0.3 s]** from the VOD — strictly **before** the payoff (tease-don't-spoil) — and concats teaser + clip with a white-flash `drawbox` + whoosh at the seam, `os.replace`-ing the clip only on success (failure-soft → original clip untouched). Lead/tail are heuristic defaults (`CLIP_COLD_OPEN_LEAD`/`_TAIL`) — the research gave opening *windows*, not a teaser length, so tune via A/B. The 5–10 wps caption-density anchor is documented for the hook card in [[concepts/captions]]; numeric retention thresholds were deliberately NOT hard-coded (all refuted).
 
 > [!note] Methodology — verified cleanly; most numbers got killed
 > Full pipeline ran (no crash): 20 sources → 82 claims → 25 adversarially verified → **9 confirmed / 16 refuted** → 6 findings. **The headline methodological result: adversarial review knocked out (0-3) nearly every specific numeric retention threshold** as un-sourced blog folklore. What survived is a small set of platform-official anchors + qualitative technique. Source quality is mixed — only the TikTok-ads anchors rest on a primary source; the technique/templates come from creator/vendor blogs (opus.pro/OpusClip and fluxnote.io both *sell* AI hook tools), so treat templates as "documented and usable," not "each empirically proven."

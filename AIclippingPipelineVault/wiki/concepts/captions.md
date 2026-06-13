@@ -10,8 +10,8 @@ updated: 2026-06-06
 
 The two text overlay layers burned into every rendered clip. Both are drawn by [[entities/ffmpeg]] as part of the Stage 7 filter chain. Detail on the surrounding render pipeline: [[concepts/clip-rendering]].
 
-> [!note] Hook-text + density guidance (2026-06-12 research)
-> [[concepts/hook-engineering-2026-06]] gives the evidence-backed rules for the **hook card**: keep on-screen text ≤ **5–10 words/sec** (TikTok-official), make the clip's proposition **readable by the 3 s mark** (hook by 6 s), and fill the hook line from a **category-keyed template library** (storytime / informative / hot-take / authority / funny). The cold-open teaser that would precede the hook card is planned in [[concepts/plan-unoriginality-audio-layer]] P2.
+> [!note] Hook-text + density guidance (2026-06-12 research; shipped 2026-06-13)
+> [[concepts/hook-engineering-2026-06]] gives the evidence-backed rules for the **hook card**: keep on-screen text ≤ **5–10 words/sec** (TikTok-official), make the clip's proposition **readable by the 3 s mark** (hook by 6 s), and fill the hook line from a **category-keyed template library**. **Shipped 2026-06-13:** the template library is `config/hook_templates.json`, wired into `stage6_vision.py` so every clip's hook card gets a category fallback (vision overrides). The **cold-open teaser** that precedes the hook card also shipped (`scripts/lib/cold_open.py`, `CLIP_COLD_OPEN`, default off) — see [[concepts/hook-engineering-2026-06]].
 
 ---
 
