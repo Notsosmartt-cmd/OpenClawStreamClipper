@@ -44,6 +44,20 @@ Cached per run already: `transcript.json`, `audio_events.json`, chat JSONL.
 3. **Outcome labels** — [[concepts/plan-unoriginality-audio-layer]] P5's `posted.log` (clip → treatments → flagged?/views) joins Twitch-clip labels; the system learns from actual platform reward. Also evaluates the `src=ANOMALY` proposer lane from [[concepts/case-incongruity-comedy]].
 4. **DPO/LoRA on Pass B** with the bootstrap dataset (its docs already envision DPO triples); long-term, a dedicated highlight model — only after 1–3 prove value.
 
+> [!note] "Logistic ranker" vs "DPO/LoRA" are very different scales — don't conflate them
+> Steps 2 and 4 are *not* the same kind of thing, and the bullet above understates the gap:
+> - **Steps 1–3 need no GPU and no new model.** The "log-space / logistic ranker" (step 2) is **not an LLM** — it's a ~50-weight logistic regression (one weight per feature already stamped on each moment). "Log-space" just means summing the logs of the factors instead of multiplying them, which makes the Pass C chain a plain weighted sum. It trains in **under a second on CPU** (`sklearn.linear_model.LogisticRegression().fit(...)`), no download, no VRAM. It is essentially the fitter's output in a fittable form. This is the high-leverage step and it is trivial to run on the [[hardware-specs|RTX 5060 Ti rig]].
+> - **Step 4 (DPO/LoRA) IS real LLM fine-tuning** and is the heavy, optional, last-resort tail. It does **not** mean downloading a new smaller model — **LoRA** trains small adapter matrices (a few MB) *on top of the Pass B model you already run*; **DPO** is the training objective (feed `(prompt, chosen, rejected)` pairs — the `bootstrap_twitch_clips` triples are exactly that shape). With 4-bit **QLoRA** a 7–9B model is fine-tunable on 16 GB but it's hours-per-run, tight, and only worth it after steps 1–3 prove value.
+>
+> | Step | What it is | Local? | Cost |
+> |---|---|---|---|
+> | 1 Fit constants | grid-search the ~50 numbers | ✅ | CPU, minutes |
+> | 2 Logistic/log-space ranker | ~50-weight regression over stamped features | ✅ | **CPU, <1 s** |
+> | 3 Outcome-label feedback | add posted→views/flag labels to the fit | ✅ | CPU |
+> | 4 DPO/LoRA on Pass B | fine-tune the actual LLM (QLoRA adapter) | ✅ but heavy | GPU, hours |
+>
+> Bottom line: the core value of this plan stops at **step 2** — a CPU-trivial fit, not a model you train or download.
+
 ## Related
 
 - [[concepts/clipping-intelligence]] — Opportunities A/B this plan executes
