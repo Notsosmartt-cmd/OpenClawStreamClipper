@@ -134,10 +134,14 @@ assets/memes/**/*.webp
 # README and human-authored .notes.json annotations stay in git.
 # ============================================================
 reference_clips/*.mp4
+reference_clips/*.MP4
 reference_clips/*.mov
+reference_clips/*.MOV
 reference_clips/*.webm
 reference_clips/*.mkv
 reference_clips/*.m4v
+# clip_forensics analysis cache (regenerable)
+reference_clips/.cache/
 
 # ============================================================
 # Reference / scratch (not part of this project)

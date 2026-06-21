@@ -226,6 +226,7 @@ class Paths:
         env["CLIP_CHANNEL_KEYWORDS"] = str(self.config("channel_keywords.json"))
         env["CLIP_SFX_CUES_CONFIG"] = str(self.config("sfx_cues.json"))
         env["CLIP_HOOK_TEMPLATES_CONFIG"] = str(self.config("hook_templates.json"))
+        env["CLIP_AUDIO_SENSE_LABELS"] = str(self.config("audio_sense_labels.json"))
         env["CLIP_JUDGE_CONFIG"] = str(self.config("judge.json"))
         env["CLIP_SELECTION_AXES_CONFIG"] = str(self.config("selection_axes.json"))
         # Asset dirs + module dir.
