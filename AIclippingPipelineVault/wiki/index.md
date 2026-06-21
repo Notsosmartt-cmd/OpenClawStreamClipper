@@ -54,7 +54,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/evaluation-status-2026-06]] — **Consolidated tracker**: the whole 2026-06 originality+calibration evaluation in one file with a verified done/not-done audit
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/plan-clip-forensics]] — Plan + research handoff: semantic audio/visual sensing (CLAP/PANNs…) + decompose curated reference clips → style profiles (**in-progress 2026-06-13**)
-- [[concepts/clip-forensics-research-2026-06]] — Research output: verified tool matrix + license flags + architecture + engineering prompt for the forensics build (**reference 2026-06-13**)
+- [[concepts/clip-forensics-research-2026-06]] — Research output: verified tool matrix + license flags + architecture + engineering prompt; **Phase 1 built 2026-06-13** (`audio_sense.py` + `clip_forensics.py`)
 - [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities
 - [[concepts/plan-calibration-loop]] — Fit the ~50 hand-tuned multipliers vs Twitch-clip labels: offline re-scorer + fitter (**planned 2026-06-12**)
 - [[concepts/plan-decorrelate-judges]] — Split Pass D / vision-judge onto a different model family via 2 config keys (**planned 2026-06-12**)

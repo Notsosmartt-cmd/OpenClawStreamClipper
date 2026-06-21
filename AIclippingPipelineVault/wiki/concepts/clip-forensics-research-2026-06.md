@@ -11,6 +11,9 @@ updated: 2026-06-13
 
 Executes the Unified Research Handoff Brief in [[concepts/plan-clip-forensics]]. This is the **filled-in answer**: verified tool selection + license flags, the architecture spec, data schemas, and a self-contained engineering prompt to hand a coding agent.
 
+> [!success] Phase 1 of the engineering prompt is BUILT (2026-06-13)
+> `scripts/lib/audio_sense.py` + `scripts/research/clip_forensics.py` + `config/audio_sense_labels.json` + `requirements-forensics.txt` shipped and verified on real curated clips (PySceneDetect cuts run for real; audio backends failure-soft pending model downloads). See the Phase-1 callout in [[concepts/plan-clip-forensics]]. The architecture/schemas/engineering-prompt below were the spec; they're now partially realized (Phase 1) with 2-4 stubbed.
+
 > [!note] Methodology + confidence
 > `deep-research` ran clean through search → fetch → **adversarial verify (25 sources → 114 claims → 25 verified → 18 confirmed / 7 refuted)**; only the final *synthesis* step crashed on the Anthropic session limit, so this synthesis is authored by hand from the 18 confirmed claims (each cited with its vote). Confidence: **V** = vote-verified this run · **S** = sourced (in the 25-source set) but its specific claim wasn't in the 25-claim verify sample → treat as medium · **K** = orchestrator domain knowledge, unverified. License facts are the highest-value verified output and drive the picks.
 
