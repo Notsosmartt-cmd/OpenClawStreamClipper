@@ -1,0 +1,12 @@
+{
+  "clip": "example.mp4",
+  "source": "competitor account / platform",
+  "why_it_works": "Free-text: what makes this clip get reach (pacing, the SFX on the punchline, the cold-open, etc).",
+  "events": [
+    {"t": 0.0, "kind": "cold_open_teaser", "note": "payoff snippet flashed before the setup"},
+    {"t": 4.0, "kind": "music_in", "note": "suspenseful music bed fades up under the speech"},
+    {"t": 9.0, "kind": "censor", "note": "quack/beep over a curse word"},
+    {"t": 12.0, "kind": "sfx", "note": "vine boom on the punchline"},
+    {"t": 13.5, "kind": "music_out", "note": "bed cuts on the reaction"}
+  ]
+}

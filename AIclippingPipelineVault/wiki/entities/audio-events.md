@@ -18,6 +18,9 @@ Boost-only audio-feature scanner that surfaces three classes of clip-worthy sign
 
 Introduced 2026-04-27 as Tier-2 M2 of the [[concepts/moment-discovery-upgrades]].
 
+> [!note] Upgrade path: DSP dials → semantic sensing
+> These three scalars are **signal energy, not recognition** — they can't name a sound (boom/quack/applause/music-mood). [[concepts/plan-clip-forensics]] proposes replacing/augmenting this with a semantic audio-sensing layer (`audio_sense.py` — CLAP zero-shot + an AudioSet tagger) so the pipeline can actually identify SFX/music events. That layer is the shared dependency behind the [[concepts/case-incongruity-comedy]] anomaly proposer and better [[concepts/sfx-cue-taxonomy-2026-06]] placement. See [[concepts/model-senses]] for the full perception gap.
+
 ---
 
 ## Pipeline integration

@@ -129,6 +129,17 @@ assets/memes/**/*.webp
 !assets/caption_styles/**
 
 # ============================================================
+# Reference clips — curated competitor/source clips for clip-forensics
+# (concepts/plan-clip-forensics). Media is large/binary → ignored; the
+# README and human-authored .notes.json annotations stay in git.
+# ============================================================
+reference_clips/*.mp4
+reference_clips/*.mov
+reference_clips/*.webm
+reference_clips/*.mkv
+reference_clips/*.m4v
+
+# ============================================================
 # Reference / scratch (not part of this project)
 # ============================================================
 # VideoToText-main is a separate repo dropped in as reference for the bare-metal
