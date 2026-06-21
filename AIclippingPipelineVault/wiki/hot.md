@@ -2,7 +2,7 @@
 title: "Hot — current state & recent activity"
 type: overview
 tags: [hot, hub, status]
-updated: 2026-06-12
+updated: 2026-06-21
 ---
 
 # Hot
@@ -27,7 +27,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | Docker | legacy, superseded by bare-metal | 2026-06-04 | [[concepts/bare-metal-windows]] |
 
 ## In flight / awaiting validation
-- **Clip-forensics Phase 1 BUILT (2026-06-13)** — `scripts/lib/audio_sense.py` (CLAP+PANNs, failure-soft) + `scripts/research/clip_forensics.py` (timeline JSON, scores vs `.notes.json`) + `config/audio_sense_labels.json` + `requirements-forensics.txt`. Verified real on curated clips (scenedetect cuts run; audio backends fail-soft pending model installs). To light up audio events: `pip install -r requirements-forensics.txt` then re-run on the GPU rig (downloads CLAP/PANNs ckpts). Owner curated ~25 clips into `reference_clips/` (no `.notes.json` annotations yet — add them for the recall metric). Phase 2-4 stubbed. Research + license matrix: [[concepts/clip-forensics-research-2026-06]]; plan [[concepts/plan-clip-forensics]] (in-progress).
+- **Clip-forensics Phase 1+2 SHIPPED + models verified (2026-06-21)** — offline lane done: `audio_sense.py` (CLAP default; PANNs opt-in) + `clip_forensics.py` (cuts/censor/music-bed) + config + requirements. **Models installed + verified producing real output** on `ReemKnocksClip.MP4` (CLAP 14 events, faster-whisper 18 words, scenedetect 6 cuts); censor + music-bed unit-verified. Install record + env caveats: **[[entities/audio-sense-module]]**. Defaults set by 3 env fixes: **PANNs opt-in** (`CLIP_AUDIO_SENSE_PANNS=1` — stalls on torch≥2.9), **CPU default** (`--cuda` opts in), **numpy onset** (librosa hung). Phase 3-4 (caption OCR, optical-flow, exact-SFX, LLM style-profile) stubbed. Plan [[concepts/plan-clip-forensics]]; research [[concepts/clip-forensics-research-2026-06]]. *Open: CLAP cosines run low (~0.26–0.32) → `clap_threshold` 0.30, needs per-corpus calibration vs `reference_clips/*.notes.json`.*
 - **One-file status tracker: [[concepts/evaluation-status-2026-06]]** (2026-06-13) — verified done/not-done for the whole originality+calibration evaluation. Honest gap: the audio plan's *strongest* unoriginality levers (VO `tts_vo`, `music_bed`, `eq_tilt`) are still OFF, so what shipped (SFX/hooks/cold-open) is Tier-B engagement, not the fingerprint fix. Not started: calibration loop, decorrelation, YouTube/informative, anomaly-proposer.
 - **2026-06-13 SFX + hook impl shipped, needs a real-VOD render check**: acoustic SFX cues are ON by default *inside profile-mode* (`CLIP_SFX_ANCHOR`, punchline boom rides hot); cold-open teaser (`CLIP_COLD_OPEN`) + hook templates are off/fallback. Watch: boom asset alias plays, SFX don't drown speech, cold-open seam is clean. Only boom has assets among the new kinds — scratch/sad_trombone/applause/crickets/bruh still need CC0 seeding — [[concepts/sfx-cue-taxonomy-2026-06]]
 - **2026-06-12 detection fixes shipped, need a real-VOD validation run**: word-boundary keywords (default ON — watch Pass A recall), rare-pattern bonus (re-run rakai VOD: does the Delaware battle win its bucket now?), `CLIP_SEGMENT_VOTES=3` opt-in A/B — [[concepts/clipping-intelligence]] §Opportunity D
@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-21] **Clip-forensics Phase 2 shipped + models verified**: CLAP (1.2GB) + faster-whisper base (142MB) + PANNs (327MB, opt-in) installed & producing real output; censor + music-bed unit-verified; PANNs gated opt-in (torch≥2.9 stall), CPU default, librosa-onset→numpy. Install doc [[entities/audio-sense-module]] — [[log]]
 - [2026-06-13] **Implemented** the SFX cue-taxonomy + hook-engineering research: `config/sfx_cues.json` + `sfx_cues.py` acoustic-anchor cues (punchline boom hot, per-kind `gain_db`, `CLIP_SFX_ANCHOR` default on), new SFX kinds + boom asset alias; `config/hook_templates.json` hook-card fallback; `cold_open.py` teaser (`CLIP_COLD_OPEN`, off). Understand+review workflows; smoke-tested — [[log]]
 - [2026-06-12] Hook-engineering research filed ([[concepts/hook-engineering-2026-06]], full verify 9✓/16✗) — cold-open teaser (TEASE≠spoil), 6s/3s windows + 5–10 wps captions (TikTok-official), category hook-text templates; **nearly all numeric retention thresholds refuted as folklore**. Completes all 3 audio-plan research prompts — [[log]]
 - [2026-06-12] TikTok originality-mechanics research filed ([[concepts/tiktok-originality-mechanics-2026-06]], full verify 14✓/11✗) — refines the audio plan: **VO > SFX/music**, "music bed breaks fingerprint" REFUTED, perturbation is the wrong frame, **flag escalates to account-level**; ranked Tier A/B/C transform list — [[log]]
@@ -60,6 +61,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - [2026-06-06] CapCut word-box captions shipped (bundled Montserrat, word-level SRT, 4 caption bugs fixed) — [[concepts/captions]]
 
 ## Landmines (top gotchas for the next agent)
+- `panns_inference` **deadlocks (uncatchable stall) on torch≥2.9** in `SoundEventDetection.__init__`, CUDA *and* CPU — it's opt-in (`CLIP_AUDIO_SENSE_PANNS=1`); CLAP is the default audio backend. Also: panns shells out to `wget` (absent on Windows) → pre-place its ckpt+CSV in `~/panns_data/` — [[entities/audio-sense-module]]
 - FFmpeg `fade=...:color=white` holds the colour OUTSIDE its ramp window — use transient `drawbox enable='between(t,a,b)'` instead (BUG 64) — [[concepts/transition-animations]]
 - Stitch-short needs ≥3 same-category eligibles ≤28s within budget; the invariant is `target+4 ≥ min×cap` (BUG 63) — [[concepts/bugs-and-fixes]]
 - `config/originality.json` is untracked dashboard runtime state — edit `DEFAULT_ORIGINALITY` / `config/originality.example.json` for committed defaults — [[entities/dashboard]]

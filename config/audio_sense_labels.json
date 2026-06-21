@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "_note": "Label vocab + thresholds for scripts/lib/audio_sense.py (concepts/clip-forensics-research-2026-06). CLAP zero-shot scores each window against the `prompt` text and emits `label` when cosine >= clap_threshold. PANNs framewise emits any AudioSet class whose name contains a panns_keep substring (case-insensitive) above panns_threshold. Thresholds are STARTING DEFAULTS to calibrate on your own reference_clips/ — CLAP cosine is uncalibrated, so expect to tune clap_threshold.",
-  "clap_threshold": 0.45,
+  "_note": "Label vocab + thresholds for scripts/lib/audio_sense.py (concepts/clip-forensics-research-2026-06). CLAP zero-shot scores each window against the `prompt` text and emits `label` when cosine >= clap_threshold. PANNs framewise emits any AudioSet class whose name contains a panns_keep substring (case-insensitive) above panns_threshold. Thresholds are STARTING DEFAULTS to calibrate on your own reference_clips/ — CLAP cosine is uncalibrated and runs LOW (verified: top labels ~0.26-0.32 on real clips), so 0.30 is a deliberately low floor; raise it (per-corpus) if you get noise. PANNs is opt-in (CLIP_AUDIO_SENSE_PANNS=1) because panns_inference stalls on torch>=2.9; CLAP covers the common classes via the music/laughter/cheering/quack prompts.",
+  "clap_threshold": 0.30,
   "panns_threshold": 0.30,
   "clap_labels": [
     {"label": "boom",         "prompt": "a deep bass boom impact sound effect, vine boom"},
@@ -15,12 +15,15 @@
     {"label": "bruh",         "prompt": "the bruh meme sound effect"},
     {"label": "sad_trombone", "prompt": "a sad trombone womp womp wah-wah fail sound"},
     {"label": "suspense_music","prompt": "suspenseful tense dramatic background music"},
-    {"label": "beep_censor",  "prompt": "a censorship beep tone bleeping over speech"}
+    {"label": "beep_censor",  "prompt": "a censorship beep tone bleeping over speech"},
+    {"label": "music",        "prompt": "background music playing"},
+    {"label": "laughter",     "prompt": "people laughing"},
+    {"label": "cheering",     "prompt": "a crowd cheering and shouting"}
   ],
   "_panns_keep_note": "Substrings matched against the 527 AudioSet class names panns_inference returns (case-insensitive). Kept small and generic so it survives exact-name drift across PANNs versions.",
   "panns_keep": [
     "music", "speech", "laughter", "giggle", "applause", "cheering", "crowd",
-    "whoosh", "swoosh", "boom", "explosion", "gunshot", "beep", "bleep",
+    "whoosh", "swoosh", "boom", "explosion", "gunshot", "beep", "bleep", "quack",
     "sound effect", "cartoon", "boing", "scratch", "siren", "alarm"
   ]
 }

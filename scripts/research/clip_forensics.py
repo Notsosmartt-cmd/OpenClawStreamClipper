@@ -92,18 +92,76 @@ def _detect_cuts(clip: Path) -> list[dict]:
         return []
 
 
-def _music_with_added_flag(music: list[dict], events: list[dict]) -> list[dict]:
-    """Phase-2 stub heuristic: leave `added` null for now (Demucs-stem + abrupt-
-    onset heuristic is deferred). Just annotate the 'suspense_music' CLAP hits."""
-    suspense = any(e.get("label") == "suspense_music" for e in events)
-    out = []
-    for m in music:
-        mm = dict(m)
-        mm["added"] = None  # TODO Phase 2: Demucs stem energy vs speech-quiet + abrupt onset
-        if mm.get("kind") == "music" and suspense:
-            mm["mood"] = "suspenseful?"
-            mm["mood_conf"] = "low"
-        out.append(mm)
+# Sounds editors use to censor a curse (CLAP/PANNs labels). beep_censor + quack
+# are the unambiguous ones; the rest can also co-occur with an audible curse.
+_CENSOR_SFX = ("beep_censor", "quack", "beep", "bleep", "airhorn", "boom", "scratch")
+
+
+def _detect_censor(words: list[dict], events: list[dict], tol: float = 0.6) -> list[dict]:
+    """Phase 2 — censor detection (concepts/clip-forensics-research-2026-06 RQ5):
+    (1) a profane word (better-profanity) with a co-located censor SFX = high-conf
+    'quack-over-the-curse'; (2) a beep/quack SFX in a word-gap (curse bleeped out
+    of the transcript) = medium-conf. Masks the curse in the output. [] soft."""
+    try:
+        from better_profanity import profanity
+        profanity.load_censor_words()
+    except Exception as e:
+        _log(f"better-profanity unavailable ({type(e).__name__}); censor=[]")
+        return []
+    censor_sfx = [e for e in events
+                  if any(k in str(e.get("label", "")).lower() for k in _CENSOR_SFX)]
+    out: list[dict] = []
+    used: list[int] = []
+    # Pass 1: profane word + nearby censor SFX (high confidence).
+    for w in words:
+        tok = str(w.get("word", "")).strip(" .,!?\"'-").lower()
+        if not tok:
+            continue
+        try:
+            if not profanity.contains_profanity(tok):
+                continue
+        except Exception:
+            continue
+        wt = (float(w["start"]) + float(w["end"])) / 2.0
+        near = min((e for e in censor_sfx), key=lambda e: abs(e["t"] - wt), default=None)
+        if near is not None and abs(near["t"] - wt) <= tol:
+            used.append(id(near))
+            out.append({"t": round(wt, 3), "word": "***", "sfx": near["label"],
+                        "via": "word+sfx", "confidence": "high", "score": near.get("score")})
+    # Pass 2: unambiguous censor SFX sitting in a word-gap (curse bleeped away).
+    for e in censor_sfx:
+        if id(e) in used or str(e.get("label", "")).lower() not in ("beep_censor", "quack", "beep", "bleep"):
+            continue
+        if not any(float(w["start"]) <= e["t"] <= float(w["end"]) for w in words):
+            out.append({"t": e["t"], "word": "?", "sfx": e["label"],
+                        "via": "sfx-gap", "confidence": "medium", "score": e.get("score")})
+    return sorted(out, key=lambda c: c["t"])
+
+
+def _music_bed(events: list[dict], words: list[dict], onsets: list[float]) -> list[dict]:
+    """Phase 2 — music-bed spans + an `added` heuristic (no TF/Demucs): merge
+    music-ish events (CLAP suspense_music + PANNs *music*) into spans, then flag
+    `added` when a span starts on an abrupt onset AND overlaps speech — i.e. a
+    bed an editor dropped under the talking, vs stream-native ambient music."""
+    music_ev = sorted((e for e in events if "music" in str(e.get("label", "")).lower()),
+                      key=lambda e: e["t"])
+    spans: list[dict] = []
+    for e in music_ev:
+        suspense = e.get("label") == "suspense_music"
+        if spans and e["t"] <= spans[-1]["end"] + 2.0:
+            spans[-1]["end"] = max(spans[-1]["end"], e["end"])
+            spans[-1]["_suspense"] = spans[-1].get("_suspense") or suspense
+        else:
+            spans.append({"start": e["t"], "end": e["end"], "kind": "music", "_suspense": suspense})
+    out: list[dict] = []
+    for sp in spans:
+        abrupt = any(abs(o - sp["start"]) <= 0.4 for o in onsets)
+        speech = any(float(w["start"]) < sp["end"] and float(w["end"]) > sp["start"] for w in words)
+        rec = {"start": round(sp["start"], 3), "end": round(sp["end"], 3), "kind": "music",
+               "abrupt_onset": abrupt, "added": bool(abrupt and speech)}
+        if sp.get("_suspense"):
+            rec["mood"], rec["mood_conf"] = "suspenseful?", "low"
+        out.append(rec)
     return out
 
 
@@ -114,6 +172,7 @@ def _score_against_notes(timeline: dict, notes: dict, tol: float = 1.0) -> dict:
     detected_t += [e["t"] for e in timeline.get("audio_events", [])]
     detected_t += [c["t"] for c in timeline.get("cuts", [])]
     detected_t += [m["start"] for m in timeline.get("music", [])]
+    detected_t += [c["t"] for c in timeline.get("censor", [])]
     ann = [a for a in (notes.get("events") or []) if isinstance(a.get("t"), (int, float))]
     rows = []
     hit = 0
@@ -140,19 +199,21 @@ def decompose(clip: Path, *, device: str | None = None,
     events = audio_sense.sense_events(
         str(clip), window_s=window_s, hop_s=hop_s, device=device,
         cache_path=str(cache_dir / f"{stem}.events.json"))
-    music = audio_sense.music_segments(
-        str(clip), cache_path=str(cache_dir / f"{stem}.music.json"))
+    words = audio_sense.transcribe_words(
+        str(clip), device=device, cache_path=str(cache_dir / f"{stem}.words.json"))
+    onsets = audio_sense.onset_times(str(clip))
     cuts = _detect_cuts(clip)
 
     timeline = {
         "clip": clip.name,
         "duration_s": dur,
         "fps": fps,
+        "n_words": len(words),
         "audio_events": events,
-        "music": _music_with_added_flag(music, events),
+        "music": _music_bed(events, words, onsets),          # Phase 2: spans + `added` heuristic
         "cuts": cuts,
-        # --- Phase 2-4 stubs (deferred per the research phasing) ---
-        "censor": [],       # TODO Phase 2: Whisper word-gaps + better-profanity + burst
+        "censor": _detect_censor(words, events),             # Phase 2: profanity + censor-SFX
+        # --- Phase 3-4 stubs (deferred per the research phasing) ---
         "captions": None,   # TODO Phase 3: EasyOCR caption density / wps
         "motion": [],       # TODO Phase 3: OpenCV optical-flow zoom/punch detection
         "sfx_matches": [],  # TODO Phase 4: audfprint vs a seeded SFX library
@@ -175,7 +236,10 @@ def _cli() -> int:
     ap = argparse.ArgumentParser(description="Decompose a reference clip into an editing-essence timeline")
     ap.add_argument("--clip", required=True, help="path or a name under reference_clips/")
     ap.add_argument("--out", help="write timeline JSON here (default: stdout)")
-    ap.add_argument("--no-cuda", action="store_true")
+    ap.add_argument("--cuda", action="store_true",
+                    help="use GPU. Default is CPU — safer for this offline tool; "
+                         "Windows CUDA can hang the PANNs/whisper checkpoint load.")
+    ap.add_argument("--no-cuda", action="store_true", help="(default) force CPU")
     ap.add_argument("--window", type=float, default=1.0)
     ap.add_argument("--hop", type=float, default=0.5)
     args = ap.parse_args()
@@ -185,8 +249,8 @@ def _cli() -> int:
         _log(f"clip not found: {args.clip!r} (looked in {REF_DIR})")
         return 1
     _log(f"decomposing {clip.name} ...")
-    timeline = decompose(clip, device="cpu" if args.no_cuda else None,
-                         window_s=args.window, hop_s=args.hop)
+    device = None if args.cuda else "cpu"  # default CPU (offline; avoids Windows CUDA hangs)
+    timeline = decompose(clip, device=device, window_s=args.window, hop_s=args.hop)
     text = json.dumps(timeline, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
@@ -195,7 +259,8 @@ def _cli() -> int:
         print(text)
     # Console summary
     _log(f"events={len(timeline['audio_events'])} cuts={len(timeline['cuts'])} "
-         f"music={len(timeline['music'])} dur={timeline['duration_s']}s")
+         f"music={len(timeline['music'])} censor={len(timeline['censor'])} "
+         f"words={timeline['n_words']} dur={timeline['duration_s']}s")
     if "notes_eval" in timeline and timeline["notes_eval"].get("recall") is not None:
         ne = timeline["notes_eval"]
         _log(f"notes recall={ne['recall']} ({ne['matched']}/{ne['annotated']} annotated events recovered)")

@@ -6,10 +6,19 @@
 # Already present in the base env (do not reinstall): numpy, librosa, soundfile, torch, opencv (cv2).
 
 # --- Phase 1: semantic audio sensing + scene cuts ---
-panns-inference>=0.1.0        # MIT  — AudioSet CNN14 framewise SED. Downloads ~300MB ckpt to ~/panns_data on first use.
-transformers>=4.40.0          # Apache-2.0 — CLAP zero-shot via ClapModel (laion/clap-htsat-unfused, ~600MB on first use).
+transformers>=4.40.0          # Apache-2.0 — CLAP zero-shot via ClapModel (laion/clap-htsat-unfused, ~1.2GB on first use). DEFAULT backend.
+faster-whisper>=1.0           # MIT  — word timings for censor detection (base model ~142MB on first use).
+better-profanity>=0.7.0       # MIT  — profanity lexicon for predicted curse positions.
+scenedetect[opencv]>=0.6.4    # BSD-3 — scene-cut detection (ContentDetector). On Windows w/ existing cv2: `pip install --no-deps scenedetect && pip install click platformdirs tqdm`.
+panns-inference>=0.1.0        # MIT  — AudioSet CNN14 SED. OPT-IN (CLIP_AUDIO_SENSE_PANNS=1): STALLS on torch>=2.9 (verified), and uses `wget` (absent on Windows) to fetch its ckpt. See install notes below; CLAP covers the common classes without it.
+torchlibrosa>=0.1.0           # (panns dep)
 # laion-clap>=1.1.6           # ALT CLAP backend (used automatically if transformers CLAP is unavailable).
-scenedetect[opencv]>=0.6.4    # BSD-3 — scene-cut detection (ContentDetector).
+#
+# PANNs manual model placement (panns_inference shells out to wget, which Windows lacks):
+#   ~/panns_data/class_labels_indices.csv  <- raw.githubusercontent.com/qiuqiangkong/audioset_tagging_cnn/master/metadata/class_labels_indices.csv
+#   ~/panns_data/Cnn14_DecisionLevelMax.pth (327MB) <- zenodo.org/record/3987831/files/Cnn14_DecisionLevelMax_mAP%3D0.385.pth?download=1
+# Run the forensics tool with KMP_DUPLICATE_LIB_OK=TRUE (OpenMP guard). It defaults to CPU
+# (--cuda to opt in; Windows CUDA hung the checkpoint loads). See entities/audio-sense-module.
 
 # --- Phase 2: censor detection + music-bed segmentation ---
 better-profanity>=0.7.0       # MIT  — profanity lexicon for predicted curse positions.
