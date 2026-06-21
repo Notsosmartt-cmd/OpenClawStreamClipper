@@ -53,7 +53,10 @@ def _log(msg: str) -> None:
 _LABELS_CACHE: dict | None = None
 
 _DEFAULT_LABELS: dict[str, Any] = {
-    "clap_threshold": 0.45,
+    # CLAP raw audio-text cosines run LOW + uncalibrated (verified 2026-06-21:
+    # top labels ~0.26-0.32 on real clips). 0.30 is a starting default — TUNE
+    # per corpus against your reference_clips/.notes.json. Higher = fewer/cleaner.
+    "clap_threshold": 0.30,
     "panns_threshold": 0.30,
     "clap_labels": [
         {"label": "boom", "prompt": "a deep bass boom impact sound effect, vine boom"},
@@ -63,9 +66,12 @@ _DEFAULT_LABELS: dict[str, Any] = {
         {"label": "riser", "prompt": "a rising tension riser build-up sweep"},
         {"label": "suspense_music", "prompt": "suspenseful tense dramatic background music"},
         {"label": "beep_censor", "prompt": "a censorship beep tone bleeping over speech"},
+        {"label": "music", "prompt": "background music playing"},
+        {"label": "laughter", "prompt": "people laughing"},
+        {"label": "cheering", "prompt": "a crowd cheering and shouting"},
     ],
     "panns_keep": ["music", "speech", "laughter", "applause", "cheering", "crowd",
-                   "whoosh", "boom", "explosion", "beep", "sound effect", "cartoon"],
+                   "whoosh", "boom", "explosion", "beep", "quack", "sound effect", "cartoon"],
 }
 
 
@@ -138,6 +144,15 @@ _PANNS = {"sed": None, "labels": None}
 
 
 def _panns_events(media: str, labels_cfg: dict, device: str) -> list[dict]:
+    # PANNs is OPT-IN (CLIP_AUDIO_SENSE_PANNS=1). panns_inference 0.1.1 +
+    # torchlibrosa STALLS during SoundEventDetection init on torch >= 2.9
+    # (verified 2026-06-21: both CUDA and CPU, even with OMP guards) — and a
+    # stall isn't catchable by try/except, so it would hang the whole tool.
+    # CLAP covers the common classes (music/laughter/applause/beep/quack) via
+    # prompts, so it's the default. Re-enable PANNs on a saner torch build.
+    if os.environ.get("CLIP_AUDIO_SENSE_PANNS", "").strip().lower() not in ("1", "true", "yes", "on"):
+        _log("PANNs disabled by default (CLIP_AUDIO_SENSE_PANNS=1 to enable; stalls on torch>=2.9). CLAP covers common classes.")
+        return []
     try:
         import numpy as np
         import panns_inference
@@ -239,6 +254,12 @@ def _clap_init(labels_cfg: dict, device: str) -> bool:
 
 def _clap_events(media: str, labels_cfg: dict, device: str,
                  window_s: float, hop_s: float, max_duration_s: float) -> list[dict]:
+    # Opt-out knob: CLAP's checkpoint is a large first-run download and the
+    # per-window pass is the heavy part — set CLIP_AUDIO_SENSE_NO_CLAP=1 to run
+    # PANNs-only (covers music/laughter/applause/beep/quack via AudioSet).
+    if os.environ.get("CLIP_AUDIO_SENSE_NO_CLAP", "").strip().lower() in ("1", "true", "yes", "on"):
+        _log("CLAP disabled via CLIP_AUDIO_SENSE_NO_CLAP; PANNs-only")
+        return []
     if not _clap_init(labels_cfg, device):
         return []
     try:
@@ -280,7 +301,7 @@ def _clap_window_sims(chunk, sr):
         if _CLAP["backend"] == "hf":
             import torch
             with torch.no_grad():
-                ai = _CLAP["proc"](audios=chunk, sampling_rate=sr, return_tensors="pt")
+                ai = _CLAP["proc"](audio=chunk, sampling_rate=sr, return_tensors="pt")
                 ai = {k: v.to(_CLAP["model"].device) for k, v in ai.items()}
                 aemb = _CLAP["model"].get_audio_features(**ai)
                 aemb = aemb / aemb.norm(dim=-1, keepdim=True)
@@ -328,6 +349,83 @@ def music_segments(media: str, *, cache_path: str | None = None) -> list[dict]:
         except OSError:
             pass
     return out
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — word-level transcription (faster-whisper) for censor detection
+# ---------------------------------------------------------------------------
+_WHISPER: dict = {}
+
+
+def transcribe_words(media: str, *, model_size: str | None = None,
+                     device: str | None = None, cache_path: str | None = None) -> list[dict]:
+    """Word-level transcript via faster-whisper. [{"word","start","end"}, ...].
+    Defaults to a small model (CLIP_FORENSICS_WHISPER, default 'base') — censor
+    detection needs word POSITIONS, not perfect ASR. Failure-soft -> []."""
+    if cache_path and os.path.exists(cache_path):
+        try:
+            return json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    try:
+        from faster_whisper import WhisperModel
+    except Exception as e:
+        _log(f"faster-whisper unavailable ({type(e).__name__}); transcribe_words=[]")
+        return []
+    size = model_size or os.environ.get("CLIP_FORENSICS_WHISPER", "base")
+    dev = _resolve_device(device)
+    ctype = "float16" if dev == "cuda" else "int8"
+    key = (size, dev, ctype)
+    try:
+        if key not in _WHISPER:
+            _WHISPER[key] = WhisperModel(size, device=dev, compute_type=ctype)
+        segs, _info = _WHISPER[key].transcribe(str(media), word_timestamps=True)
+        out: list[dict] = []
+        for s in segs:
+            for w in (getattr(s, "words", None) or []):
+                txt = (getattr(w, "word", "") or "").strip()
+                if txt:
+                    out.append({"word": txt, "start": round(float(w.start), 3),
+                                "end": round(float(w.end), 3)})
+        if cache_path and out:
+            try:
+                Path(cache_path).write_text(json.dumps(out), encoding="utf-8")
+            except OSError:
+                pass
+        return out
+    except Exception as e:
+        _log(f"transcribe_words failed ({type(e).__name__}: {e}); []")
+        return []
+
+
+def onset_times(media: str, *, sr: int = 22050, min_strength: float = 1.0,
+                hop: int = 512, min_gap_s: float = 0.2) -> list[float]:
+    """Abrupt audio onsets (seconds) — used to flag music that STARTS on a cut
+    (editor-added bed) vs fades in. Pure-numpy energy-flux peak picker: frame
+    RMS -> positive first-difference -> local maxima above mean + k*std. No
+    librosa/numba (librosa's onset path deadlocks on this Windows/torch env, and
+    a hang isn't catchable; this stays fast + dependency-light). [] on failure."""
+    try:
+        import numpy as np
+        y = _extract_audio(media, sr)
+        n = y.size // hop
+        if n < 3:
+            return []
+        rms = np.sqrt((y[: n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-9)
+        flux = np.clip(np.diff(rms, prepend=rms[0]), 0.0, None)
+        thr = float(flux.mean() + float(min_strength) * (flux.std() or 1.0))
+        out: list[float] = []
+        last = -10.0
+        for i in range(1, n - 1):
+            if flux[i] >= thr and flux[i] >= flux[i - 1] and flux[i] >= flux[i + 1]:
+                t = i * hop / sr
+                if t - last >= min_gap_s:
+                    out.append(round(t, 3))
+                    last = t
+        return out
+    except Exception as e:
+        _log(f"onset_times failed ({type(e).__name__}); []")
+        return []
 
 
 # ---------------------------------------------------------------------------
