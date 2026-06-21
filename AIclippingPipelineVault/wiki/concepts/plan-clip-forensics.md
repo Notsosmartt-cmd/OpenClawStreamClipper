@@ -3,13 +3,16 @@ title: "Plan — Clip Forensics + Semantic Audio/Visual Sensing"
 type: concept
 tags: [plan, forensics, audio, clap, panns, vision, sensing, reverse-engineering, style-profiles, research-handoff]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-06-13
 ---
 
 # Plan — Clip Forensics + Semantic Audio/Visual Sensing
 
 Filed 2026-06-13. **Goal:** give the pipeline the *senses* it lacks ([[concepts/model-senses]]) so it can (a) **decompose a curated competitor clip into its editing "essence"** — what SFX/music/censor/cut happened where — and emit a **replicable style profile**, and (b) reuse that same semantic-sensing layer in the live pipeline (anomaly proposer + acoustic SFX placement). One shared sensing layer, two consumers.
+
+> [!success] Research handoff executed (2026-06-13) → [[concepts/clip-forensics-research-2026-06]]
+> The deep-research run answered the brief below (25 sources, 18 verified claims). The verified tool picks, a **commercial-license matrix**, the architecture spec, data schemas, and a **ready-to-use engineering prompt** live on that page. Headlines: commercial-safe backbone = **PANNs CNN14 (MIT) + LAION-CLAP zero-shot + inaSpeechSegmenter (MIT) + better-profanity (MIT) + EasyOCR/PySceneDetect**; **Essentia mood is AGPL/non-commercial → dropped** (use a CLAP "suspenseful" prompt); **Demucs weights are research-only** (offline cross-check only, never shipped); **MS-CLAP license unconfirmed** → prefer LAION-CLAP. Build phase 1 = `audio_sense.py` (CLAP+PANNs) + a minimal `clip_forensics.py` timeline.
 
 > [!note] Why this is the keystone
 > The owner's whole objective is "replicate the patterns of clips that get reach." Today the pipeline **cannot perceive** those patterns: no semantic audio recognition, vision sees stills not motion ([[concepts/model-senses]] §blind spots). Build the sensing layer and three open threads unlock at once: this forensics tool, the [[concepts/case-incongruity-comedy]] anomaly proposer, and better placement for the [[concepts/sfx-cue-taxonomy-2026-06]] cues.
