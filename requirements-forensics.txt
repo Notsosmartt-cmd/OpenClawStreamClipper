@@ -24,8 +24,13 @@ torchlibrosa>=0.1.0           # (panns dep)
 better-profanity>=0.7.0       # MIT  — profanity lexicon for predicted curse positions.
 inaSpeechSegmenter>=0.7.6     # MIT  — music/speech/noise segmentation. NOTE: pulls in TensorFlow (heavy); install deliberately.
 
-# --- Phase 3: caption OCR (visual) ---
-easyocr>=1.7.0                # Apache-2.0 — burned-in caption OCR (preferred over PaddleOCR; see chrome-masking wedge history).
+# --- Phase 3: motion (cv2, already present) + caption OCR (EasyOCR) ---
+# Motion uses opencv (cv2) which scenedetect already pulls — no extra dep.
+# EasyOCR pulls the torch ecosystem; on a rig with a pinned CUDA torch install it
+# `--no-deps` so pip can't downgrade torch (verified: torch 2.9.1+cu130 untouched):
+#   pip install --no-deps easyocr
+#   pip install scikit-image shapely pyclipper python-bidi   # (tifffile via skimage)
+easyocr>=1.7.0                # Apache-2.0 — burned-in caption OCR (preferred over PaddleOCR; see chrome-masking wedge history). OPT-IN via --ocr; ~75MB weights download to ~/.EasyOCR on first use.
 
 # --- Phase 4: exact known-SFX matching ---
 # audfprint (Dan Ellis) — permissive; install from source/git when seeding an SFX reference library.
