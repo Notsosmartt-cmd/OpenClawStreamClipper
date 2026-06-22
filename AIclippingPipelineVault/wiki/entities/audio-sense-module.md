@@ -53,8 +53,11 @@ python -c "from faster_whisper import WhisperModel; WhisperModel('base', device=
 > [!warning] OpenMP guard + librosa onset replaced
 > Run with `KMP_DUPLICATE_LIB_OK=TRUE` to avoid duplicate-OpenMP issues. `librosa`'s onset detector **hung** here (numba/peak_pick), so `onset_times()` was rewritten as a **pure-numpy energy-flux peak picker** (no librosa/numba). HF symlink warnings on Windows are benign.
 
-> [!note] CLAP thresholds are LOW + uncalibrated
-> Raw CLAP audio↔text cosines top out ~0.26–0.32 on real clips; `clap_threshold` default lowered 0.45 → **0.30** in `config/audio_sense_labels.json`. Calibrate per-corpus against `reference_clips/*.notes.json`. Essentia (mood) and Demucs weights are deliberately NOT used (license — see [[concepts/clip-forensics-research-2026-06]]).
+> [!note] CLAP thresholds are LOW + uncalibrated → now PER-LABEL
+> Raw CLAP audio↔text cosines top out ~0.26–0.32 for foreground SFX; `clap_threshold` default is **0.30**. But a **background music bed under speech scores even lower** — verified on a real clip, the suspense bed peaked at **0.267 (under 0.30) yet was clearly present**, because speech dominates the window. So `config/audio_sense_labels.json` now supports an **optional per-label `threshold`** (falls back to `clap_threshold`): **music 0.18, suspense_music 0.20**. Speech-only windows score *negative* on the music prompt, so the lower floor is safe; a **sustained-run gate** in `clip_forensics._music_bed` (≥1.5 s / ≥2 windows) suppresses lone-blip false positives. Calibrate per-corpus against `reference_clips/*.notes.json`. Essentia (mood) and Demucs weights are deliberately NOT used (license — see [[concepts/clip-forensics-research-2026-06]]).
+
+> [!warning] TikTok download outro pollutes analysis — trim it
+> Clips downloaded from TikTok carry a ~3 s auto-appended **outro** (TikTok logo + creator @handle). Its whoosh/logo animation and persistent @handle caption get mis-logged as real editing cues. Use `clip_forensics.py --trim-end 4` (or `CLIP_FORENSICS_TRIM_END` for a batch) to drop it; the tool window-filters every signal to `[start, dur−end]` before deriving music/censor.
 
 ## Verified (2026-06-21)
 Real run on `reference_clips/ReemKnocksClip.MP4` (17.7 s): CLAP → **14 events** (`bruh` cluster 1–7.5 s, `boing`/`whoosh` 14–16.5 s); faster-whisper → **18 words**; scenedetect → **6 cuts**; full timeline written. Phase-2 censor + music-bed detector logic unit-verified (word+SFX, bleeped-gap, music added/not-added).
