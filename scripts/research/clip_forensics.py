@@ -185,27 +185,44 @@ def _detect_censor(words: list[dict], events: list[dict], tol: float = 0.6) -> l
     return sorted(out, key=lambda c: c["t"])
 
 
-def _music_bed(events: list[dict], words: list[dict], onsets: list[float]) -> list[dict]:
+def _music_bed(events: list[dict], words: list[dict], onsets: list[float],
+               *, merge_gap_s: float = 3.0, min_span_s: float = 1.5) -> list[dict]:
     """Phase 2 — music-bed spans + an `added` heuristic (no TF/Demucs): merge
-    music-ish events (CLAP suspense_music + PANNs *music*) into spans, then flag
-    `added` when a span starts on an abrupt onset AND overlaps speech — i.e. a
-    bed an editor dropped under the talking, vs stream-native ambient music."""
+    music-ish events (CLAP music/suspense_music + PANNs *music*) into spans, then
+    flag `added` when a span starts on an abrupt onset AND overlaps speech — i.e.
+    a bed an editor dropped under the talking, vs stream-native ambient music.
+
+    Because a quiet bed under speech scores below the SFX floor, music carries a
+    LOWER per-label CLAP threshold (config) — so this requires a SUSTAINED span
+    (>= min_span_s, or >= 2 windows) before calling it a bed, suppressing the lone
+    low-confidence blips that lower floor would otherwise admit. merge_gap_s is
+    generous because a bed dips below threshold mid-window under loud speech."""
     music_ev = sorted((e for e in events if "music" in str(e.get("label", "")).lower()),
                       key=lambda e: e["t"])
     spans: list[dict] = []
     for e in music_ev:
         suspense = e.get("label") == "suspense_music"
-        if spans and e["t"] <= spans[-1]["end"] + 2.0:
+        if spans and e["t"] <= spans[-1]["end"] + merge_gap_s:
             spans[-1]["end"] = max(spans[-1]["end"], e["end"])
             spans[-1]["_suspense"] = spans[-1].get("_suspense") or suspense
+            spans[-1]["_n"] += 1
         else:
-            spans.append({"start": e["t"], "end": e["end"], "kind": "music", "_suspense": suspense})
+            spans.append({"start": e["t"], "end": e["end"], "kind": "music",
+                          "_suspense": suspense, "_n": 1})
     out: list[dict] = []
     for sp in spans:
-        abrupt = any(abs(o - sp["start"]) <= 0.4 for o in onsets)
-        speech = any(float(w["start"]) < sp["end"] and float(w["end"]) > sp["start"] for w in words)
+        if (sp["end"] - sp["start"]) < min_span_s and sp["_n"] < 2:
+            continue  # lone low-confidence window — not a real bed
+        abrupt = any(abs(o - sp["start"]) <= 0.5 for o in onsets)
+        under_speech = any(float(w["start"]) < sp["end"] and float(w["end"]) > sp["start"] for w in words)
+        starts_mid = sp["start"] > 2.0   # dropped in after the open, not ambient from t=0
+        # An editor-added bed plays UNDER speech and either drops in abruptly OR
+        # starts mid-clip (the music-onset signal is the span start itself — more
+        # reliable than energy flux, which a bed faded-in under speech won't trip).
+        added = bool(under_speech and (abrupt or starts_mid))
         rec = {"start": round(sp["start"], 3), "end": round(sp["end"], 3), "kind": "music",
-               "abrupt_onset": abrupt, "added": bool(abrupt and speech)}
+               "abrupt_onset": abrupt, "under_speech": under_speech,
+               "starts_mid_clip": starts_mid, "added": added}
         if sp.get("_suspense"):
             rec["mood"], rec["mood_conf"] = "suspenseful?", "low"
         out.append(rec)
@@ -316,10 +333,40 @@ def _synthesize_style_profile(timeline: dict, *, timeout: float = 90.0) -> dict 
         return None
 
 
+def _trim_signals(dur, trim_start, trim_end, events, words, onsets, cuts, motion, captions):
+    """Restrict every signal to the analysis window [start, end], dropping
+    intro/outro artifacts that aren't the creator's edit — most importantly the
+    TikTok DOWNLOAD OUTRO (logo + @handle auto-appended to the last ~3 s of any
+    downloaded TikTok). Without this, that outro's whoosh/logo animation and the
+    persistent @handle caption get mis-logged as real editing cues, and (with a
+    batch) silently poison every style profile. Returns
+    (start, end, analyzed_dur, filtered events/words/onsets/cuts/motion/captions)."""
+    start = max(0.0, float(trim_start or 0.0))
+    end = (dur - max(0.0, float(trim_end or 0.0))) if dur else None
+    if end is not None and end <= start:  # bad window -> ignore, analyze whole clip
+        return 0.0, dur, dur, events, words, onsets, cuts, motion, captions
+    hi = end if end is not None else float("inf")
+    ev = [e for e in events if start <= float(e.get("t", 0)) <= hi]
+    on = [o for o in onsets if start <= float(o) <= hi]
+    cu = [c for c in cuts if start <= float(c.get("t", 0)) <= hi]
+    mo = [m for m in motion if start <= float(m.get("t", 0)) <= hi]
+    wo = [w for w in words if float(w.get("end", 0)) >= start and float(w.get("start", 0)) <= hi]
+    cap = captions
+    if isinstance(captions, dict) and captions.get("samples"):
+        cap = dict(captions)
+        cap["samples"] = [s for s in captions["samples"] if start <= float(s.get("t", 0)) <= hi]
+        cap["n_text_frames"] = len(cap["samples"])
+        cap["total_words"] = sum(int(s.get("n_words", 0)) for s in cap["samples"])
+        wdur = (end if end is not None else dur) - start
+        cap["words_per_s"] = round(cap["total_words"] / wdur, 2) if wdur > 0 else None
+    analyzed = round((end if end is not None else dur) - start, 3)
+    return start, (end if end is not None else dur), analyzed, ev, wo, on, cu, mo, cap
+
+
 def decompose(clip: Path, *, device: str | None = None,
               window_s: float = 1.0, hop_s: float = 0.5,
               deadline_scale: float = 1.0, ocr: bool = False,
-              llm: bool = True) -> dict:
+              llm: bool = True, trim_start: float = 0.0, trim_end: float = 0.0) -> dict:
     import audio_sense  # lazy; from LIB_DIR
     import visual_sense  # lazy; from LIB_DIR
 
@@ -356,9 +403,20 @@ def decompose(clip: Path, *, device: str | None = None,
     else:
         captions, st_caption = None, "skipped"
 
+    # Drop intro/outro (e.g. the TikTok download outro) BEFORE building music/
+    # censor, so the derived signals + the LLM profile never see the artifact.
+    trimmed = (float(trim_start or 0) > 0) or (float(trim_end or 0) > 0)
+    win_start, win_end, analyzed, events, words, onsets, cuts, motion, captions = _trim_signals(
+        dur, trim_start, trim_end, events, words, onsets, cuts, motion, captions)
+    if trimmed:
+        _log(f"trim: analyzing [{win_start:.2f}, {win_end:.2f}]s of {dur:.2f}s "
+             f"(dropped {dur - analyzed:.2f}s of intro/outro)")
+
     timeline = {
         "clip": clip.name,
-        "duration_s": dur,
+        "duration_s": analyzed,                              # true (analyzed) footage
+        "source_duration_s": dur,                            # full file incl. any trimmed outro
+        "analysis_window": {"start": round(win_start, 3), "end": round(win_end, 3)} if trimmed else None,
         "fps": fps,
         "n_words": len(words),
         "audio_events": events,
@@ -422,6 +480,14 @@ def _cli() -> int:
                     default=os.environ.get("CLIP_FORENSICS_NO_LLM") == "1",
                     help="skip the LLM style-profile synthesis (Phase 4b). On by "
                          "default but failure-soft — a down LM Studio just yields null.")
+    ap.add_argument("--trim-end", type=float,
+                    default=float(os.environ.get("CLIP_FORENSICS_TRIM_END", "0")),
+                    help="ignore the last N seconds — e.g. the ~3s TikTok DOWNLOAD "
+                         "OUTRO (logo + @handle) auto-appended to downloaded clips. "
+                         "Set once (or via CLIP_FORENSICS_TRIM_END) for a whole batch.")
+    ap.add_argument("--trim-start", type=float,
+                    default=float(os.environ.get("CLIP_FORENSICS_TRIM_START", "0")),
+                    help="ignore the first N seconds (intro card).")
     args = ap.parse_args()
 
     clip = _resolve_clip(args.clip)
@@ -432,7 +498,7 @@ def _cli() -> int:
     device = None if args.cuda else "cpu"  # default CPU (offline; avoids Windows CUDA hangs)
     timeline = decompose(clip, device=device, window_s=args.window, hop_s=args.hop,
                          deadline_scale=args.deadline_scale, ocr=args.ocr,
-                         llm=not args.no_llm)
+                         llm=not args.no_llm, trim_start=args.trim_start, trim_end=args.trim_end)
     text = json.dumps(timeline, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")

@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-06-21] **Clip-forensics robustness (from ground truth)**: `--trim-end`/`CLIP_FORENSICS_TRIM_END` drops the ~3s TikTok download outro (logo+@handle) that was mis-logged as edits; music-bed false-negative fixed via per-label CLAP thresholds (music 0.18, suspense 0.20 — a bed under speech peaks ~0.27, under the 0.30 floor) + sustained-run gate + `added`=under-speech&(abrupt|mid-clip). Verified: ReemKnocks bed 6–14s added:true — [[entities/audio-sense-module]] — [[log]]
 - [2026-06-21] **Clip-forensics Phase 3+4b + watchdog**: `visual_sense.py` (cv2 motion + EasyOCR captions, `--ocr`) + LLM `style_profile` synthesis (`--no-llm`); every stage under a hard wall-clock watchdog (cap→abandon→partial; the durable fix for runaway tasks). Verified: motion 9, OCR 13.08 wps, LLM essence coherent. [[entities/visual-sense-module]] — [[log]]
 - [2026-06-21] **Clip-forensics Phase 2 shipped + models verified**: CLAP (1.2GB) + faster-whisper base (142MB) + PANNs (327MB, opt-in) installed & producing real output; censor + music-bed unit-verified; PANNs gated opt-in (torch≥2.9 stall), CPU default, librosa-onset→numpy. Install doc [[entities/audio-sense-module]] — [[log]]
 - [2026-06-13] **Implemented** the SFX cue-taxonomy + hook-engineering research: `config/sfx_cues.json` + `sfx_cues.py` acoustic-anchor cues (punchline boom hot, per-kind `gain_db`, `CLIP_SFX_ANCHOR` default on), new SFX kinds + boom asset alias; `config/hook_templates.json` hook-card fallback; `cold_open.py` teaser (`CLIP_COLD_OPEN`, off). Understand+review workflows; smoke-tested — [[log]]
@@ -60,6 +61,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 
 ## Landmines (top gotchas for the next agent)
 - `panns_inference` **deadlocks (uncatchable stall) on torch≥2.9** in `SoundEventDetection.__init__`, CUDA *and* CPU — it's opt-in (`CLIP_AUDIO_SENSE_PANNS=1`); CLAP is the default audio backend. Also: panns shells out to `wget` (absent on Windows) → pre-place its ckpt+CSV in `~/panns_data/` — [[entities/audio-sense-module]]
+- Downloaded TikToks carry a ~3s **outro** (logo + @handle) that clip-forensics mis-logs as real edits — pass `--trim-end 4` / `CLIP_FORENSICS_TRIM_END=4` when batch-analyzing TikTok downloads — [[entities/audio-sense-module]]
 - FFmpeg `fade=...:color=white` holds the colour OUTSIDE its ramp window — use transient `drawbox enable='between(t,a,b)'` instead (BUG 64) — [[concepts/transition-animations]]
 - Stitch-short needs ≥3 same-category eligibles ≤28s within budget; the invariant is `target+4 ≥ min×cap` (BUG 63) — [[concepts/bugs-and-fixes]]
 - `config/originality.json` is untracked dashboard runtime state — edit `DEFAULT_ORIGINALITY` / `config/originality.example.json` for committed defaults — [[entities/dashboard]]

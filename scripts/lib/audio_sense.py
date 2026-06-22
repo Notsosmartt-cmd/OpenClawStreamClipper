@@ -271,6 +271,10 @@ def _clap_events(media: str, labels_cfg: dict, device: str,
         if audio.size / sr > max_duration_s:
             audio = audio[: int(max_duration_s * sr)]
         thr = float(labels_cfg.get("clap_threshold", 0.45))
+        # Per-label threshold override (a quiet background music bed under speech
+        # scores ~0.20-0.27, below the 0.30 SFX floor — see config _note).
+        thr_by_name = {str(d.get("label")): float(d.get("threshold", thr))
+                       for d in (labels_cfg.get("clap_labels") or [])}
         names = _CLAP["labels"]
         win = max(1, int(window_s * sr))
         hop = max(1, int(hop_s * sr))
@@ -285,9 +289,10 @@ def _clap_events(media: str, labels_cfg: dict, device: str,
                 continue
             t0 = round(s0 / sr, 3)
             for li, sc in enumerate(sims):
-                if sc >= thr:
+                nm = names[li]
+                if sc >= thr_by_name.get(nm, thr):
                     out.append({"t": t0, "end": round(t0 + window_s, 3),
-                                "label": names[li], "score": round(float(sc), 3),
+                                "label": nm, "score": round(float(sc), 3),
                                 "source": "clap"})
         return out
     except Exception as e:
