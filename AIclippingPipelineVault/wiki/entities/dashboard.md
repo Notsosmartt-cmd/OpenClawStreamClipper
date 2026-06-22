@@ -1,9 +1,9 @@
 ---
 title: "Web Dashboard"
 type: entity
-tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub]
+tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub, forensics, tabs]
 sources: 3
-updated: 2026-06-12
+updated: 2026-06-21
 ---
 
 # Web Dashboard
@@ -15,14 +15,28 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 - `dashboard/_state.py` — shared mutable state (paths, defaults, pipeline_process)
 - `dashboard/config_io.py` — load/save helpers for config/{models,hardware,paths,originality}.json
 - `dashboard/pipeline_runner.py` — DetachedDockerPipeline class, spawn/kill/poll, LM Studio reachability
-- `dashboard/routes/{pipeline,vods,models,hardware,paths,originality,music,assets}_routes.py` — one Flask blueprint per URL domain
-- `dashboard/templates/index.html` — single-page UI; uses `<script type="module">`
-- `dashboard/static/app.js` — 67-line entry module wiring window.* handlers + DOMContentLoaded
-- `dashboard/static/modules/*.js` — 8 ES modules (util, state, pipeline-ui, vods-panel, models-panel, hardware-panel, folders-panel, assets-panel)
+- `dashboard/routes/{pipeline,vods,models,hardware,paths,originality,music,assets,library,forensics}_routes.py` — one Flask blueprint per URL domain
+- `dashboard/templates/index.html` — **tabbed** single-page UI (Clipper | Clip Forensics); uses `<script type="module">`
+- `dashboard/static/app.js` — entry module wiring window.* handlers + DOMContentLoaded + tab switching
+- `dashboard/static/modules/*.js` — ES modules (util, state, pipeline-ui, vods-panel, models-panel, hardware-panel, folders-panel, assets-panel, **forensics-panel**)
 - `dashboard/static/style.css` — Studio theme (~420 lines), teal/zinc, written to match the existing JS class names
 
 > [!note] Studio theme redesign (2026-06-06)
 > `templates/index.html` + `static/style.css` were replaced from an imported design package (Anthropic design artifact → `_design_handoff/`, git-ignored). The HTML was **merged, not overwritten** — every functional `id`/handler was preserved (all `btn-*` `addEventListener` targets, `vod-select-all` + the multi-VOD checkbox column, `chk-arc-stitch`, the originality controls, models/hardware/folders/assets panels, stage dots, SSE log). Verified all 11 `app.js` wired IDs exist and no statically-referenced JS id is missing. Retained on top of the design: the detailed **Pass B gate** option labels + tooltip, and hover **tooltips** on the originality controls. Emoji `iconMap` in `models-panel.js` blanked (the theme hides `.model-card-icon`). Fonts load via Google `@import` (graceful fallback to `system-ui`/monospace offline). A green-terminal alternative theme also shipped in the package but the Studio (teal) variant is the one implemented.
+
+### Clip Forensics tab (added 2026-06-21)
+
+The dashboard is now **tabbed** — a top nav (`.tabs` / `.tab-btn` in `index.html`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (everything above, wrapped in `#view-clipper`) and a new **Clip Forensics** view (`#view-forensics`). Tab state is client-side only (CSS `.view`/`.view.active` show/hide); the forensics clip list lazy-loads on first open.
+
+The Forensics tab drives the offline decomposer `scripts/research/clip_forensics.py` ([[concepts/plan-clip-forensics]], [[entities/audio-sense-module]], [[entities/visual-sense-module]]) so the owner can iterate without the CLI. Backend `routes/forensics_routes.py`:
+
+| Route | Does |
+|---|---|
+| `GET /api/forensics/clips` | List `reference_clips/` media + whether each has a cached `.cache/<stem>.timeline.json` (✓) |
+| `POST /api/forensics/run` | Run the decomposer on one clip (`clip`, `trim_end`, `ocr`, `llm`, `cuda`), write the timeline, return it. Native subprocess (bare metal) or docker-exec; sets `KMP_DUPLICATE_LIB_OK=TRUE`; 1500s outer cap on top of the tool's own per-stage watchdog. |
+| `GET /api/forensics/result?clip=` | Return a previously-cached timeline (re-read without re-running) |
+
+The panel (`forensics-panel.js`) renders the timeline as stat chips + music beds + censor + audio-event histogram, then the LLM **style profile** (summary, pacing, sfx_cues, hook, replication_notes) in a highlighted card, with the raw JSON in a `<details>`. Controls: clip dropdown, **Trim end (s)** (drop the TikTok download outro — see [[entities/audio-sense-module]]), and **LLM style profile** / **Caption OCR** / **Use GPU** toggles. Default device is CPU; LLM needs LM Studio running. Failure-soft: a missing model / down LM Studio yields a partial result, not an error.
 
 ### Originality & Render panel (added April 2026)
 

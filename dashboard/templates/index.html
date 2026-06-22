@@ -31,6 +31,12 @@
     </div>
 </header>
 
+<nav class="tabs" id="main-tabs">
+    <button class="tab-btn active" data-view="clipper">Clipper</button>
+    <button class="tab-btn" data-view="forensics">Clip Forensics</button>
+</nav>
+
+<div id="view-clipper" class="view active">
 <div class="dashboard">
 
     <!-- VOD Library -->
@@ -341,6 +347,69 @@
     </div>
 
 </div>
+</div><!-- /view-clipper -->
+
+<div id="view-forensics" class="view">
+<div class="dashboard">
+
+    <!-- Forensics Controls -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Decompose a reference clip</span>
+            <button id="btn-fx-refresh" class="btn-ghost btn-sm">Refresh clips</button>
+        </div>
+        <div class="panel-body">
+            <div class="control-group" style="width: 100%;">
+                <label class="field-label">Reference clip <span style="color: var(--text-muted); font-weight: normal;">(from reference_clips/ — ✓ = already analyzed)</span></label>
+                <select id="fx-clip" style="width: 100%;">
+                    <option value="">Loading…</option>
+                </select>
+            </div>
+
+            <div class="controls" style="margin-top: 10px;">
+                <div class="control-group">
+                    <label class="field-label" title="Ignore the last N seconds — e.g. the ~3s TikTok download outro (logo + @handle) that would otherwise be logged as real edits.">Trim end (s)</label>
+                    <input type="number" id="fx-trim-end" value="0" min="0" step="0.5" style="width: 90px;">
+                </div>
+            </div>
+
+            <hr class="section-divider">
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="fx-llm" checked>
+                <label for="fx-llm" title="Synthesize a replicable style profile via the local LLM (LM Studio must be running).">LLM style profile</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="fx-ocr">
+                <label for="fx-ocr" title="Read burned-in captions with EasyOCR (downloads ~75MB on first use; slower).">Caption OCR</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="fx-cuda">
+                <label for="fx-cuda" title="Use the GPU. Default CPU is safer on this rig (Windows CUDA can hang the model loads).">Use GPU</label>
+            </div>
+
+            <div class="btn-row">
+                <button id="btn-fx-run" class="btn-primary">Analyze</button>
+                <button id="btn-fx-load" class="btn-secondary">Load cached</button>
+            </div>
+            <span id="fx-status" style="display: block; margin-top: 10px; font-size: 11px; color: var(--text-dim);"></span>
+        </div>
+    </div>
+
+    <!-- Forensics Result -->
+    <div class="panel" style="grid-column: 1 / -1">
+        <div class="panel-header">
+            <span class="panel-title">Decomposition &amp; style profile</span>
+        </div>
+        <div class="panel-body">
+            <div id="fx-result">
+                <div class="empty-state">Pick a clip and click Analyze. The decomposer extracts audio events, cuts, censor, music beds, motion and burned-in captions, then the LLM synthesizes a replicable style profile.</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+</div><!-- /view-forensics -->
 
 <script type="module" src="/static/app.js"></script>
 </body>

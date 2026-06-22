@@ -417,3 +417,38 @@ button:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* VOD table checkboxes — match the teal accent (parity with .checkbox-group) */
 .vod-table input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; vertical-align: middle; }
+
+/* ── TABS (Clipper | Clip Forensics) ─────────────────────────────────────── */
+.tabs { display: flex; gap: 4px; padding: 12px 20px 0; }
+.tab-btn {
+  background: transparent; color: var(--text-muted); border: 1px solid transparent;
+  border-bottom: none; padding: 8px 16px; font-family: var(--font); font-size: 13px;
+  font-weight: 600; cursor: pointer; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.tab-btn:hover { color: var(--text); background: var(--surface); }
+.tab-btn.active { color: var(--accent-hi); background: var(--surface); border-color: var(--border); }
+.view { display: none; }
+.view.active { display: block; }
+
+/* ── FORENSICS RESULT ────────────────────────────────────────────────────── */
+.fx-head { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.fx-muted { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+.fx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.fx-chip { background: var(--surface-hi); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; color: var(--text-muted); }
+.fx-chip b { color: var(--text); }
+.fx-k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted);
+  margin: 10px 0 4px; font-weight: 600; }
+.fx-mono { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.fx-list { margin: 0 0 4px 18px; font-size: 13px; }
+.fx-list code { font-family: var(--mono); background: var(--surface-hi); padding: 1px 5px; border-radius: 4px; color: var(--accent-hi); }
+.fx-warn { color: var(--warn); background: var(--warn-dim); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; margin: 6px 0; }
+.fx-profile { background: var(--surface); border: 1px solid var(--accent-bdr); border-radius: var(--radius); padding: 12px 14px; }
+.fx-prof-summary { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.fx-prof-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; font-size: 13px; }
+.fx-prof-grid .fx-k { display: inline; margin: 0 6px 0 0; }
+.fx-raw { margin-top: 12px; }
+.fx-raw summary { cursor: pointer; color: var(--text-muted); font-size: 12px; }
+.fx-raw pre { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px; margin-top: 6px; max-height: 360px; overflow: auto; font-family: var(--mono); font-size: 11px; }
+@media (max-width: 900px) { .fx-prof-grid { grid-template-columns: 1fr; } }

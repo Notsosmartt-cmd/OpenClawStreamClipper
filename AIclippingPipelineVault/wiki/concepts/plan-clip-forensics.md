@@ -11,6 +11,9 @@ updated: 2026-06-21
 
 Filed 2026-06-13. **Goal:** give the pipeline the *senses* it lacks ([[concepts/model-senses]]) so it can (a) **decompose a curated competitor clip into its editing "essence"** — what SFX/music/censor/cut happened where — and emit a **replicable style profile**, and (b) reuse that same semantic-sensing layer in the live pipeline (anomaly proposer + acoustic SFX placement). One shared sensing layer, two consumers.
 
+> [!success] Now usable from the dashboard (2026-06-21) — Clip Forensics tab
+> The decomposer is wired into the web dashboard as a **Clip Forensics tab** (next to Clipper) so the owner can pick a `reference_clips/` clip, set trim/OCR/LLM/GPU toggles, click **Analyze**, and read the timeline + style profile in the browser — no CLI. Backend `dashboard/routes/forensics_routes.py` (`/api/forensics/clips|run|result`); frontend `forensics-panel.js` + a tab switcher in `index.html`/`app.js`. See [[entities/dashboard]] §Clip Forensics tab. Verified end-to-end through the route (POST /run → trim + music-bed → timeline JSON).
+
 > [!success] Robustness fixes from real-clip ground truth (2026-06-21) — TikTok-outro trim + music-bed detection
 > Two false signals surfaced when the owner checked the ReemKnocks output against ground truth, both now fixed:
 > - **TikTok download outro polluted the analysis.** Downloaded TikToks get a ~3 s outro (TikTok logo + creator @handle) auto-appended; its whoosh/logo animation + persistent @handle caption were mis-logged as real edits (the `boing`/`whoosh` at 14–16.5 s were the *outro*, not the creator). Fix: `--trim-end SECONDS` / `--trim-start` (+ `CLIP_FORENSICS_TRIM_END` env for a whole batch) restrict every signal to `[start, dur−end]` **before** music/censor are built; output carries `duration_s` (analyzed) + `source_duration_s` + `analysis_window`. Verified: `--trim-end 4` drops the outro events; the essence becomes the real edit.
