@@ -54,6 +54,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 
 ### Pipeline
 - [[concepts/evaluation-status-2026-06]] — **Consolidated tracker**: the whole 2026-06 originality+calibration evaluation in one file with a verified done/not-done audit
+- [[concepts/master-proposal-2026-07]] — **Master roadmap**: all workstreams (fusion, reference-humor, calibration, originality, coverage, forensics) sequenced w/ claim evaluations + deep-research prompts
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
