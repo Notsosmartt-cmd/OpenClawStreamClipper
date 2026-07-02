@@ -55,7 +55,8 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 ### Pipeline
 - [[concepts/evaluation-status-2026-06]] — **Consolidated tracker**: the whole 2026-06 originality+calibration evaluation in one file with a verified done/not-done audit
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
-- [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision actually converge for inference today + 5 ranked ways to fuse them (timeline fusion recommended)
+- [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
+- [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
 - [[concepts/plan-clip-forensics]] — Plan + research handoff: semantic audio/visual sensing (CLAP/PANNs…) + decompose curated reference clips → style profiles (**shipped 2026-06-21**: Phase 1-3 + 4b LLM essence + watchdog; only Phase 4a exact-SFX deferred)
 - [[concepts/clip-forensics-research-2026-06]] — Research output: verified tool matrix + license flags + architecture + engineering prompt; **Phase 1-3+4b built + verified 2026-06-21** (`audio_sense.py` + `visual_sense.py` + `clip_forensics.py`)
 - [[concepts/clipping-intelligence]] — **Hub + evaluation** of the whole prompt-engineering & heuristics stack (Pass A→D + vision + grounding): how each layer decides "clip-worthy", strengths/weaknesses/opportunities

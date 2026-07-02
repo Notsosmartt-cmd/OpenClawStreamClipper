@@ -35,20 +35,44 @@ Owner's question (2026-07-02): *"Is there any way to converge the two senses of 
 
 ---
 
-## Can the senses be converged? Yes — five options, ranked by feasibility on this rig
+## Can the senses be converged? Yes — five options (expanded 2026-07-02)
 
-1. **Symbol-level timeline fusion (RECOMMENDED — near-term, local, cheap).** Build one **time-aligned event stream** interleaving transcript words, CLAP audio events, motion spikes, and cuts — exactly what [[concepts/plan-clip-forensics]]'s offline timeline already produces — and hand *that* to the text LLM: `[t=6.2] AUDIO screaming(0.46) | MOTION 6.3× | TEXT "chill buddy, chill"`. The LLM then reasons over the **conjunction** ("screaming + violent motion + banal words = physical-comedy incongruity") instead of each sense separately. This is the [[concepts/case-incongruity-comedy]] anomaly-proposer: propose where audio/motion signal *contradicts or exceeds* the words, then let Stage 5.5/6 verify. Fixes the sequencing gap at the proposal end. All sensors are already built and verified ([[entities/audio-sense-module]], [[entities/visual-sense-module]]); the missing piece is the timeline-builder + prompt + `src=ANOMALY` lane (flag-gated).
-2. **Interaction features in scoring (cheap complement).** The multiplier chain (and the future [[concepts/plan-calibration-loop]] logistic ranker) is late fusion with **no interaction terms**. Add fitted conjunction features — e.g. `motion_high × words_banal`, `audio_event_strength × low_keyword_score` — so even the arithmetic layer can reward cross-modal incongruity. Trivial once the ranker exists.
-3. **Richer joint prompts at 5.5/6 (improve the existing fusion point).** Feed the judge/enricher the same event timeline alongside the frames (and/or a timestamped frame strip) so the one place that already does joint inference sees *named audio* + *pseudo-motion*, not just words + stills. Low cost; helps ranking but not proposal.
-4. **Cross-modal embedding incongruity signal (experimental).** CLAP puts audio and text in one embedding space; a large audio↔text (or audio↔frame-caption) *distance* during a high-energy window is a numeric "the senses disagree" detector — a possible new selection axis. Caveat: CLAP cosines run low/uncalibrated on this corpus (verified 2026-06-21) → real calibration burden.
-5. **True omni models (audio+video in, one model) — the "real" answer, not practical here yet.** Models like Qwen-Omni-class ingest raw audio+video jointly — genuine sensor-level fusion. Blockers today: 16 GB VRAM budget, LM Studio's input support (images yes; audio/video-in effectively no), token-count explosion for video. Revisit when the local stack supports it; until then symbol-level fusion (1) is the honest local approximation.
+> [!note] The dual-GPU distinction (read first — it decides what fits where)
+> The rig has **two serving lanes with different GPU reach**:
+> - **LM Studio (llama.cpp, Vulkan)** pools BOTH GPUs — RTX 5060 Ti **16 GB** (NVIDIA) + RX 6700 XT **12 GB** (AMD) ≈ **28 GB** — which is how the 35B-A3B MoE runs today ([[concepts/vram-budget]]).
+> - **PyTorch/CUDA lane** (faster-whisper, CLAP, EasyOCR, or any model served via transformers/vLLM) sees **only the 16 GB NVIDIA card** — no usable ROCm on Windows, so the AMD card is invisible to torch.
+>
+> Consequence: anything that must be served *outside* LM Studio is 16 GB-bound; anything served *through* LM Studio gets 28 GB but only LM Studio's input types (text + images — **no audio-in**). This tension bites hardest on option 5.
 
-> [!note] What "convergence" realistically means locally
-> Option 1 is *symbol-level* fusion — the LLM reasons over **named** events, not raw signals. That is weaker than true joint perception (5), but for incongruity comedy it is likely sufficient: "screaming + 6× motion spike + calm words" is enough for a text LLM to recognize the *shape* of the joke. The forensics lane proved the naming works on the exact motivating clips (ReemKnocks: `bruh` cluster 1–7.5 s + 9 motion spikes + "chill buddy" words + suspense bed 6–14 s).
+### 1. Symbol-level timeline fusion — RECOMMENDED (near-term, local, cheap)
+Build one **time-aligned event stream** interleaving transcript words, CLAP audio events, motion spikes, and cuts — exactly what [[concepts/plan-clip-forensics]]'s offline timeline already produces — and hand *that* to the text LLM: `[t=6.2] AUDIO screaming(0.46) | MOTION 6.3× | TEXT "chill buddy, chill"`. The LLM reasons over the **conjunction** instead of each sense separately. This is the [[concepts/case-incongruity-comedy]] anomaly-proposer: propose where audio/motion *contradicts or exceeds* the words, then let Stage 5.5/6 verify. Fixes the sequencing gap at the proposal end. All sensors already built + verified ([[entities/audio-sense-module]], [[entities/visual-sense-module]]); missing = timeline-builder + prompt + `src=ANOMALY` lane (flag-gated, boost-only).
+**Rig fit:** no new VRAM — the LLM call goes through the existing LM Studio 28 GB pool; sensors run CPU-default. **Limit:** the model reasons over *named* events, not raw signals — symbol-level, not perception-level. For incongruity comedy that's likely sufficient (the forensics run on ReemKnocks named everything needed: `bruh` cluster 1–7.5 s, 9 motion spikes, "chill buddy" words, suspense bed 6–14 s).
+
+### 2. Interaction features in scoring (cheap complement)
+The multiplier chain (and the future [[concepts/plan-calibration-loop]] logistic ranker) is late fusion with **no interaction terms**. Add fitted conjunction features — `motion_high × words_banal`, `audio_event_strength × low_keyword_score` — so even the arithmetic layer rewards cross-modal incongruity. **Rig fit:** CPU sklearn, trivial. **Limit:** captures only the conjunctions you hand-name as features.
+
+### 3. Richer joint prompts at Stage 5.5/6 (upgrade the existing fusion point)
+Feed the judge/enricher the same event timeline alongside the frames (and/or a timestamped frame strip for pseudo-motion) so the one place that already does joint inference sees *named audio* + *motion*, not just words + stills. **Rig fit:** same models as today (LM Studio pool); only prompt cost. **Limit:** improves ranking/verification, not proposal — still downstream of the transcript-only gate unless (1) exists.
+
+### 4. Cross-modal embedding incongruity signal (experimental)
+CLAP embeds audio and text in one space; a large audio↔text (or audio↔frame-caption) *distance* during a high-energy window is a numeric "the senses disagree" detector — a candidate selection axis. **Rig fit:** CLAP is small and runs on the CPU/CUDA-16 GB lane already. **Limit:** CLAP cosines run low/uncalibrated on this corpus (verified 2026-06-21) → real per-corpus calibration burden before this is trustworthy.
+
+### 5. True omni models — the "real" answer, blocked by tooling not VRAM
+One network ingests **raw audio waveforms + video frames + text in the same context window**; fusion happens inside the model. Qwen-Omni-class models use **TMRoPE** (time-aligned multimodal rotary position embeddings) — audio and video tokens interleaved on a shared timeline — i.e. option 1's timeline done natively at the token level. The model would *perceive* the bus-clip conjunction (panic prosody + shove motion + banal words), not infer it from labels.
+
+| Candidate | Size | Senses in | Fits which lane? |
+|---|---|---|---|
+| Qwen2.5-Omni | 7B | audio+video+image+text | ~6–7 GB 4-bit → fits the **16 GB CUDA lane** (transformers/vLLM, audio-in works) |
+| Qwen3-Omni | 30B-A3B MoE (~3B active) | audio+video+image+text | ~18 GB 4-bit → **needs the 28 GB LM Studio pool** — but LM Studio has no audio-in |
+| MiniCPM-o 2.6 / Phi-4-multimodal | ~6–8B | audio(+video)+image+text | 16 GB CUDA lane |
+| GPT-4o / Gemini | cloud | everything | violates local-only design |
+
+**The dual-GPU catch-22 (today):** the server that can reach the 28 GB pool (LM Studio) **can't hear** (no audio/video content parts in its OpenAI-compat API), and the servers that can hear (transformers/vLLM) **can't reach the pool** (CUDA-only → 16 GB → only 7B-class omni fits → markedly weaker reasoner than the 35B text MoE). Additional blockers: token explosion (audio ≈ 25 tok/s, frames = hundreds of tokens each → a 45 s window ≈ 10–20k tokens — fine per-candidate, ruinous per-VOD) and unproven comedy judgment at 7B scale. llama.cpp's multimodal layer gained audio support in 2025, so the tooling gap is closing — **re-check LM Studio audio-in status when revisiting**.
+**Realistic endgame:** hybrid — option 1 proposes cheaply across the whole VOD; an omni model *verifies* the top-N 30–60 s windows with true perception, as/alongside the Stage 5.5 judge.
 
 ## Recommended sequence (when the owner green-lights implementation)
 
 1. Timeline-builder (merge transcript + `audio_sense` + `visual_sense.motion_events` into one ordered stream) → 2. anomaly-proposer producing `src=ANOMALY` candidates (flag-gated, failure-soft, boost-only entry into Pass C) → 3. pass the timeline into the Stage 5.5 judge prompt → 4. interaction features once the calibration ranker lands. Steps 1–3 reuse only already-verified components.
 
 ## Related
-- [[concepts/model-senses]] · [[concepts/case-incongruity-comedy]] · [[concepts/plan-clip-forensics]] · [[entities/audio-sense-module]] · [[entities/visual-sense-module]] · [[entities/vision-judge]] · [[concepts/plan-calibration-loop]]
+- [[concepts/model-senses]] · [[concepts/case-incongruity-comedy]] · [[concepts/reference-humor-2026-07]] · [[concepts/plan-clip-forensics]] · [[entities/audio-sense-module]] · [[entities/visual-sense-module]] · [[entities/vision-judge]] · [[concepts/plan-calibration-loop]] · [[concepts/vram-budget]]
