@@ -64,9 +64,11 @@ The excerpt is this month's [[concepts/multimodal-fusion-2026-07]] + [[concepts/
 - **B6.** Outcome labels — `posted.log` (clip → treatments → flagged?/views); joins Twitch-clip labels. (Feeds goal 1 measurement too.)
 - **B7.** DPO/QLoRA on Pass B — last resort, only after B1–B4 prove value.
 
-### C. Originality levers (goal 1 — cheapest big win, independent of everything above)
+### C. Originality levers (goal 1 — DEPRIORITIZED by owner decision 2026-07-03)
+> [!note] Owner decision (2026-07-03): voiceover stays available but unused
+> Most TikTok/IG clips get engagement without VO; the owner wants to **maximize clipping quality (detection/selection) instead**. `tts_vo` (Piper) remains a dashboard option, default OFF, likely unused. Workstream **A (perception/fusion) is now the headline**; C items stay documented as options.
 - **C1.** Wire `eq_tilt_db` into the filter graph (~30 min — value already computed at `style_profiles.py:331`).
-- **C2.** Seed + enable `music_bed`; **C3.** enable `tts_vo` with real commentary (the research's #1 lever); **C4.** CC0 assets for the new SFX kinds; **C5.** account hygiene (operator workflow).
+- **C2.** Seed + enable `music_bed` (optional); **C3.** `tts_vo` — **available, off, deprioritized per above**; **C4.** CC0 assets for the new SFX kinds; **C5.** account hygiene (operator workflow).
 
 ### D. Coverage ([[concepts/plan-youtube-informative]], untouched)
 - **D1.** Storytime length fixes (45 s truncation, 90 s cap); **D2.** `informative` category; **D3.** yt-dlp ingest; **D4.** micro-clip render path (8–15 s solo beats — pairs with A1's proposals).
@@ -77,14 +79,17 @@ The excerpt is this month's [[concepts/multimodal-fusion-2026-07]] + [[concepts/
 ## 4. Dependencies & sequence
 
 ```
-Phase 0  AUDITS (hours)         chat-sidecar audit · LM Studio audio-in check (RQ1)
-                                · real-VOD validation run (SFX/cold-open/arc — clears the 🟡s)
-Phase 0.5 C1–C3 originality     independent — do EARLIEST (goal 1, cheapest)
-Phase 1  A1 anomaly lane        the keystone; unblocks A3/A5, feeds D4
-Phase 2  A2 chat mining + A5    quick follow-ons
+Phase 0  AUDITS (hours)         LM Studio audio-in check (RQ1) · real-VOD validation
+                                run (SFX/cold-open/arc — clears the 🟡s)
+Phase 1  A1 anomaly lane        THE HEADLINE (owner 2026-07-03: maximize clipping
+                                quality); unblocks A3/A5, feeds D4
+Phase 1.5 A2 chat mining        overlay-OCR design on [[concepts/reference-humor-2026-07]]
+                                §A2 mechanics (velocity ROI + burst OCR + lag model)
+(optional) C1–C2 originality    music/eq remain available; VO deprioritized per owner
+Phase 2  A5 judge upgrade       feed the fused timeline into the Stage 5.5 prompt
 Phase 3  B1→B4 calibration      + B5 decorrelation alongside; A-features → B4 interactions
 Phase 4  A3 probe + A4 library  understanding layer on top of the detection layer
-Deferred A6 · A7 (tooling) · B7 · D3 · E2 (asset-gated)
+Deferred A6 · A7 (tooling) · B7 · D3 · E2 (library seeded 2026-07-02; build when wanted)
 ```
 
 ## 5. Deep-research handoff prompts (ready to run)
