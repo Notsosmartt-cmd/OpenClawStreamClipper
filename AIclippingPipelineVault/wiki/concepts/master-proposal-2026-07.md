@@ -51,7 +51,7 @@ The excerpt is this month's [[concepts/multimodal-fusion-2026-07]] + [[concepts/
 
 ### A. Perception & fusion (goal 2 — the new work; detail: [[concepts/multimodal-fusion-2026-07]], [[concepts/reference-humor-2026-07]])
 - **A1. Timeline-builder + anomaly-proposer lane** — merge transcript + CLAP events + motion into one time-ordered stream; propose `src=ANOMALY` where reaction/motion exceeds the words; verify via a joint prompt. *Sensors ready; the keystone build.* (~1–2 days)
-- **A2. Chat reference mining** — burst n-grams/emote spikes around candidates → score boost + title material. (~½–1 day, **after the chat-data audit**)
+- **A2. Chat reference mining** — burst n-grams/emote spikes around candidates → score boost + title material. **Pivoted per owner (see §6.1): primary path = OCR the burned-in chat overlay region** (reuses `visual_sense.caption_ocr`); structured chat files are the secondary path when they exist. (~1–1.5 days)
 - **A3. Reference-recognition probe** — `known_format:{name,confidence}` + spoken-word↔seen-object wordplay check in Stage 5.5/6 prompts. (hours; depends on A1/A5 so both pun halves are present)
 - **A4. Meme-format library** — `config/meme_formats.json`, embedding-matched (sentence-transformers already in repo); grown from `.notes.json` + forensics decompositions; later yt-dlp/deep-research refresh. (~1 day + ongoing curation)
 - **A5. Judge timeline upgrade** — feed the A1 event stream into the existing Stage 5.5 joint prompt. (hours)
@@ -72,7 +72,7 @@ The excerpt is this month's [[concepts/multimodal-fusion-2026-07]] + [[concepts/
 - **D1.** Storytime length fixes (45 s truncation, 90 s cap); **D2.** `informative` category; **D3.** yt-dlp ingest; **D4.** micro-clip render path (8–15 s solo beats — pairs with A1's proposals).
 
 ### E. Forensics extensions ([[concepts/plan-clip-forensics]] shipped; refinements)
-- **E1.** CLAP threshold calibration vs `.notes.json`; **E2.** Phase 4a exact-SFX (blocked on the owner's soundboard library — WAV/MP3/FLAC, one sound per file); **E3.** style-profile → `sfx_cues.json`/`style_profiles.py` auto-feed (the render half of "wire it live").
+- **E1.** CLAP threshold calibration vs `.notes.json`; **E2.** Phase 4a exact-SFX — **seed library DONE 2026-07-02** (`reference_clips/sfx_reference/`, 14 sounds, analysis-only); remaining = audfprint/cross-correlation wiring; **E3.** style-profile → `sfx_cues.json`/`style_profiles.py` auto-feed (the render half of "wire it live").
 
 ## 4. Dependencies & sequence
 
@@ -94,10 +94,11 @@ Deferred A6 · A7 (tooling) · B7 · D3 · E2 (asset-gated)
 - **RQ3 — Chat mining:** *"Burst/novelty detection in Twitch/TikTok chat for joke-naming (n-gram spikes, emote lexicons); available chat-capture formats for local VODs; mapping bursts → titles/hooks. Include: what to do when no chat sidecar exists."*
 - **RQ4 — Meme-format library:** *"Schema + seed sources for a machine-matchable meme/skit-format library (KYM-style taxonomies); embedding-matching thresholds with sentence-transformers; growth loops from clip decompositions."*
 
-## 6. Open questions for the owner
-1. Do your VOD sources include chat data (Twitch chat JSON / TikTok comments)? → decides A2's real value.
-2. `tts_vo` needs a commentary source — script from the LLM (per current design) acceptable, or your own voice lines?
-3. Soundboard library for E2 — worth curating now or defer?
+## 6. Open questions — ANSWERED by the owner (2026-07-02)
+
+1. **Chat data**: some VODs have chat **overlaid on the stream video** (burned into pixels — streamer-dependent), *not* as a sidecar file; owner will also drop **downloaded YouTube MP4s** into `vods/` (no chat sidecar either). **Consequence — A2 pivots from data mining to VISION mining**: the chat overlay is burned-in text → mine it with the **caption-OCR machinery already built** (`visual_sense.caption_ocr` restricted to the chat-overlay region). Three-tier A2: (a) burned-in overlay → **OCR-region mining** (reuses EasyOCR, no new deps); (b) when a platform export exists (TwitchDownloader chat JSON, yt-dlp live-chat replay) → structured mining as originally designed; (c) neither → skip, rely on the A1 audio/motion proxies (failure-soft). The pipeline's existing chat ingestion (grounding, Stage 6 chat block) expects structured chat — for the owner's actual sources it will usually be absent, so tier (a) is the primary path. Also raises workstream **D**'s priority (YouTube MP4s are coming regardless of the `informative` work).
+2. **`tts_vo` source**: clarified for the owner — Stage 6 already returns a `voiceover` line and Piper (local TTS) speaks it, so **LLM-written + Piper-voiced is the zero-effort default**; owner-recorded lines remain the stronger-originality upgrade later. Start with LLM+Piper (C3).
+3. **Soundboard library: DONE 2026-07-02** — 14 canonical meme SFX downloaded + ffprobe-validated into `reference_clips/sfx_reference/` (vine boom, bruh, quack, airhorn, record scratch, sad trombone, crickets, applause, boing, whoosh, censor beep, metal pipe, anime wow, oof). **Analysis-only license lane** (myinstants provenance — matching reference, never render assets; see the folder README). **E2 is no longer asset-blocked** — remaining work is the audfprint/cross-correlation wiring itself.
 
 ## Related
 - [[concepts/evaluation-status-2026-06]] (June done/not-done tracker) · [[concepts/multimodal-fusion-2026-07]] · [[concepts/reference-humor-2026-07]] · [[concepts/plan-calibration-loop]] · [[concepts/plan-decorrelate-judges]] · [[concepts/plan-unoriginality-audio-layer]] · [[concepts/plan-youtube-informative]] · [[concepts/plan-clip-forensics]] · [[concepts/case-incongruity-comedy]] · [[concepts/clipping-quality-overhaul]]
