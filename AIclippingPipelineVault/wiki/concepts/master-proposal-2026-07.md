@@ -92,7 +92,10 @@ Phase 4  A3 probe + A4 library  understanding layer on top of the detection laye
 Deferred A6 · A7 (tooling) · B7 · D3 · E2 (library seeded 2026-07-02; build when wanted)
 ```
 
-## 5. Deep-research handoff prompts (ready to run)
+## 5. Deep-research handoff prompts — EXECUTED 2026-07-03
+
+> [!success] All four RQs researched in one combined run → findings in [[concepts/master-research-2026-07]]
+> 23 sources (21 primary) → 114 claims. Headlines: **RQ1 = conditional GO** (llama-server serves omni GGUFs with audio-in on the same Vulkan pool — the dual-GPU catch-22 dissolves; LM Studio itself confirmed still text+images); **RQ2 = the symbolic-timeline bet has direct academic support** (SMILE/SMILE-Next: text-LLM over textualized cues beats video/AV-LLMs); **RQ3 = seed chat lag at 7 s forward** (EMNLP-2017 sweep) + port videocr OCR parameters; **RQ4 = precision-first classical matching, CM50 schema, scrape KYM yourself**. Caveat: the adversarial verification layer died on session limits (3rd recurrence) — all claims are single-fetch unverified; resume `wf_edb4d979-c18` after reset to run the panel. Roadmap consequences applied (A7 → "pending hands-on smoke test").
 
 - **RQ1 — Local omni serving, live status:** *"As of mid-2026: does LM Studio expose audio/video content parts via its OpenAI-compatible API? What is llama.cpp `mtmd`'s audio/video input support matrix (models, formats)? For Qwen2.5-Omni-7B and Qwen3-Omni-30B-A3B: exact 4-bit VRAM incl. encoders, audio/video token rates, and Windows-viable serving recipes (vLLM/WSL/transformers) on a 16 GB RTX 5060 Ti + 12 GB RX 6700 XT rig. Deliverable: go/no-go + recipe."*
 - **RQ2 — Anomaly-proposer design + benchmark:** *"Best-known methods for laughter/reaction-anchored comedy-moment proposal from fused symbolic timelines (FunnyNet-W lineage, audio-visual humor detection since 2024): windowing, precision controls, verifier prompt design. Design an eval on ~25 annotated reference clips (notes.json ground truth): symbolic-timeline-35B vs omni-7B on incongruity/reference clips."*
