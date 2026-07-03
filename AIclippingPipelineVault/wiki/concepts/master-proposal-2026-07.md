@@ -105,5 +105,17 @@ Deferred A6 · A7 (tooling) · B7 · D3 · E2 (library seeded 2026-07-02; build 
 2. **`tts_vo` source**: clarified for the owner — Stage 6 already returns a `voiceover` line and Piper (local TTS) speaks it, so **LLM-written + Piper-voiced is the zero-effort default**; owner-recorded lines remain the stronger-originality upgrade later. Start with LLM+Piper (C3).
 3. **Soundboard library: DONE 2026-07-02** — 14 canonical meme SFX downloaded + ffprobe-validated into `reference_clips/sfx_reference/` (vine boom, bruh, quack, airhorn, record scratch, sad trombone, crickets, applause, boing, whoosh, censor beep, metal pipe, anime wow, oof). **Analysis-only license lane** (myinstants provenance — matching reference, never render assets; see the folder README). **E2 is no longer asset-blocked** — remaining work is the audfprint/cross-correlation wiring itself.
 
+## 7. Decision log (owner) — every correction compiled
+
+| Date | Decision | Where the detail lives |
+|---|---|---|
+| 2026-07-02 | Chat arrives **burned into the video** (overlay, streamer-dependent); YouTube MP4s incoming → A2 pivots to overlay-OCR mining; workstream D priority up | §6.1 here; mechanics on [[concepts/reference-humor-2026-07]] §A2 |
+| 2026-07-02 | `tts_vo` = LLM-written + Piper-voiced is the acceptable default form | §6.2 here |
+| 2026-07-02 | Soundboard seed library approved + **downloaded** (14 sounds, analysis-only) → E2 unblocked | §6.3 here; `reference_clips/sfx_reference/README.md` |
+| 2026-07-03 | **VO deprioritized**: keep the toggle, expect it unused — **maximize clipping quality instead** → A1 anomaly lane is the roadmap headline; C-workstream demoted to optional | §C callout + §4 sequence here |
+| 2026-07-03 | **Chat-ROI auto-detect is the DEFAULT** (owner doesn't know where chat will be); per-channel config demoted to rare-case override. Auto-detect doubles as the "does this VOD have chat?" test | [[concepts/reference-humor-2026-07]] §A2 mechanics |
+
+This page is the **hub**: decisions, statuses, sequence, and research prompts live here; per-topic depth lives on the linked pages (wiki convention — the hub stays bounded, the spokes carry detail).
+
 ## Related
 - [[concepts/evaluation-status-2026-06]] (June done/not-done tracker) · [[concepts/multimodal-fusion-2026-07]] · [[concepts/reference-humor-2026-07]] · [[concepts/plan-calibration-loop]] · [[concepts/plan-decorrelate-judges]] · [[concepts/plan-unoriginality-audio-layer]] · [[concepts/plan-youtube-informative]] · [[concepts/plan-clip-forensics]] · [[concepts/case-incongruity-comedy]] · [[concepts/clipping-quality-overhaul]]
