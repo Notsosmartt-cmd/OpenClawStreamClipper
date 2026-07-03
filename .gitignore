@@ -142,6 +142,10 @@ reference_clips/*.mkv
 reference_clips/*.m4v
 # clip_forensics analysis cache (regenerable)
 reference_clips/.cache/
+reference_clips/sfx_reference/*.mp3
+reference_clips/sfx_reference/*.wav
+reference_clips/sfx_reference/*.flac
+reference_clips/sfx_reference/*.ogg
 
 # ============================================================
 # Reference / scratch (not part of this project)
