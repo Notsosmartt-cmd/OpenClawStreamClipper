@@ -510,6 +510,14 @@ def process_clip_transitions(clip_path: str, *, cuts: list[dict], flashes: list[
     if apply_transitions(clip_path, out_tmp, keep_rel, flash_rel, fps=fps, log=log):
         try:
             os.replace(out_tmp, clip_path)
+            try:  # effects manifest (logging only, never affects the render)
+                import effects_log as _efl
+                _efl.log_effect(Path(clip_path).stem, "transitions",
+                                {"flashes": [{"t": t} for t in flash_rel],
+                                 "jump_cuts": max(0, len(keep_rel) - 1),
+                                 "category": category})
+            except Exception:
+                pass
             return True
         except Exception:
             return False

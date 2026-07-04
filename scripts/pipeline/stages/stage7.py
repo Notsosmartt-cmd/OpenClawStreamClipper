@@ -349,6 +349,17 @@ def _maybe_cold_open(ctx, row, clip_output: Path, clip_start, clip_length) -> No
             if dur is not None and dur >= float(clip_length) * 0.9:
                 os.replace(str(tmp), str(clip_output))
                 ctx.log.log(f"  [cold-open] prepended teaser to T={T} ({dur:.1f}s)")
+                try:  # effects manifest (logging only)
+                    import sys as _s
+                    from pathlib import Path as _P
+                    _s.path.insert(0, str(_P(__file__).resolve().parents[2] / "lib"))
+                    import effects_log as _efl
+                    _efl.log_effect(clip_output.stem, "cold_open",
+                                    {"payoff": float(T), "tease_start": max(0.0, float(T) - 1.5),
+                                     "tease_dur": 1.2, "final_dur": dur},
+                                    vod=str(getattr(ctx, "vod_path", "")))
+                except Exception:
+                    pass
             else:
                 ctx.log.warn(f"cold-open output failed integrity check "
                              f"(dur={dur}, expected >= {clip_length}); keeping original T={T}")

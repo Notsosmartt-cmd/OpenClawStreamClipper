@@ -302,6 +302,21 @@ def render(*,
          f"slowmo={'y' if plan['slow_mo'] else 'n'} meme={'y' if plan['meme_cutaway'] else 'n'} "
          f"broll={len(plan['broll_inserts'])} sfx={len(plan['sfx_cues'])}")
 
+    # Per-clip effects manifest (owner request 2026-07-04) — logging only, never
+    # affects the render. Records WHAT/WHEN so placement can be reviewed.
+    try:
+        import effects_log as _efl
+        _efl.log_effect(
+            moment.get("title") or os.path.basename(out), "render_plan",
+            {"category": cat_canon, "preset": plan["caption_preset"],
+             "clip_start": clip_start, "clip_duration": clip_duration,
+             "sfx_cues": plan["sfx_cues"], "zoom_punches": plan["zoom_punches"],
+             "freeze_at": plan["freeze_at"], "slow_mo": plan["slow_mo"],
+             "meme_cutaway": plan["meme_cutaway"], "broll_inserts": plan["broll_inserts"]},
+            vod=os.path.basename(src))
+    except Exception:
+        pass
+
     # Build SFX layer ahead of time so we know how many extra inputs to add.
     # base inputs: 0=src VOD; we'll allocate sfx after that.
     sfx_layer = sx.build_sfx_layer(

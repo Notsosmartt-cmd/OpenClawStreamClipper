@@ -15,6 +15,21 @@ Design (concepts/reference-humor-2026-07 §A2 + concepts/master-research-2026-07
   * Viewer-reaction LAG seeded at 7 s forward (EMNLP-2017), auto-calibrated by
     cross-correlating a reaction (laughter) series with chat velocity.
 
+OWNER CONSTRAINTS (2026-07-04 — bind the real-frame implementation):
+  * ALL the owner's VODs carry burned-in chat; position varies per streamer
+    (top-right, top-left, ...) and can MOVE mid-stream (plaqueboymax: very
+    top-left -> middle-left on scene switch) -> detect the ROI in TIME WINDOWS
+    (re-detect per segment, e.g. every 5-10 min or when ROI velocity flatlines),
+    not one global box for the whole VOD.
+  * Chat speed varies and chat sometimes vanishes off-screen — do NOT use
+    scroll speed as a detection prior; just detect + mine whatever text is there.
+  * Text SIZE varies per streamer — no fixed font-height assumption.
+  * FALSE-ROI TRAP: follower/gift/sub counters and other stream metrics are
+    also small changing text (e.g. "8589/9000", "11658"). Reject them:
+    chat ROI must be a MULTI-LINE stack (>=3 stacked text rows), mostly
+    NON-NUMERIC tokens, with high line-turnover; counters are 1 short mostly
+    numeric token in a fixed spot with occasional increments.
+
 cv2 + EasyOCR are lazy/failure-soft; the pure-logic helpers (velocity from
 frames, new-line dedup, lag cross-correlation) are dependency-injected and
 unit-test with no heavy deps.

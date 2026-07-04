@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-04] **Effects manifest shipped** (owner request): `effects_log.py` → `clips/.diagnostics/effects_log.jsonl` + CLI reader; hooks in profile_render (SFX kind+t+gain), clip_cuts (flashes), stage7 (cold-open). Next run populates it. Chat-ROI owner constraints bound (moving ROI, counter rejection, ≥3-row stack). "Hold It Down" battle = good clip but NOT Delaware (0 candidate mentions — check by time next) — [[log]]
 - [2026-07-03] **HANDOFF filed** [[concepts/handoff-2026-07-03]] — done/left execution state for the next agent (next = Phase 1 live Stage-4 wiring; harness drives all gated runs; resume via phase_state.json)
 - [2026-07-03] **Phase 0.1 PASSED — autonomous loop proven**: harness launched a real 44-min rakai run detached, watcher caught it, `evaluate` graded **6/6 PASS** (10 clips, loudness −20.73 LUFS = SFX don't drown speech, forensics-on-output dogfood). 3 grader bugs found+fixed by the real run — [[log]]
 - [2026-07-03] **Phase 2 core built**: `chat_mine.py` burned-in-overlay OCR path (auto-ROI = has-chat test, velocity burst detector, fuzzy scroll dedup, 7s-seed lag cross-correlation) → emits chat_features-compatible JSONL. Logic verified; real-frame ROI gated on a chat VOD — [[log]]
