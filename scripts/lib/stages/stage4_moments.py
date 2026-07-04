@@ -2495,6 +2495,74 @@ for m in llm_moments:
     m["normalized_score"] = m["score"]  # already 0.0-1.0
     all_moments.append(m)
 
+# ── Anomaly lane (upgrade plan Phase 1; concepts/case-incongruity-comedy) ──────
+# Propose moments the transcript-only passes miss: strong audience REACTION with
+# weak keyword signal (the bus / George-Bush class). Gated CLIP_ANOMALY_LANE
+# (default OFF), boost-only (adds src=ANOMALY candidates to the same Pass-C pool;
+# never gates/evicts), failure-soft. Cheap by design: the reaction signal is the
+# librosa crowd_response ALREADY computed in Stage 2 (no CLAP-over-VOD cost); the
+# few-shot LLM verifier runs only on the top-K (<=6) survivors.
+if os.environ.get("CLIP_ANOMALY_LANE", "").strip().lower() in ("1", "true", "yes", "on"):
+    try:
+        import event_timeline as _et
+        import anomaly_propose as _ap
+        _aud = [{"t": (s + e) / 2.0, "label": "crowd",
+                 "score": float(v.get("crowd_response", 0.0))}
+                for (s, e), v in (AUDIO_EVENTS or {}).items()
+                if float(v.get("crowd_response", 0.0)) >= 0.40]
+        _words = []
+        try:
+            _tj = json.load(open(f"{TEMP_DIR}/transcript.json"))
+            _segs = _tj.get("segments") if isinstance(_tj, dict) else _tj
+            for _sg in (_segs or []):
+                for _w in (_sg.get("words") or []):
+                    if _w.get("start") is not None:
+                        _words.append({"word": _w.get("word", ""),
+                                       "start": _w.get("start"), "end": _w.get("end", _w.get("start"))})
+        except Exception:
+            pass
+        _tl = _et.build_timeline(words=_words, audio_events=_aud)
+
+        def _kw_explained(t0, t1):
+            best = 0.0
+            for _km in keyword_moments:
+                if t0 <= _km.get("timestamp", -1) <= t1:
+                    best = max(best, float(_km.get("score", 0.0)))
+            return best
+
+        _anoms = _ap.propose(
+            _tl, _kw_explained, top_k=6,
+            verify_fn=_ap.verify_via_lmstudio,
+            render_fn=lambda a, b: _et.render_for_prompt(_tl, a, b))
+        for _a in _anoms:
+            _cat = _a.get("category") or "funny"
+            if _cat == "anomaly":
+                _cat = "funny"
+            all_moments.append({
+                "timestamp": round(_a["timestamp"]),
+                # modest, verifier-confirmed score — a real contender, capped so
+                # it can't crowd out strong LLM moments (boost-only spirit).
+                "score": round(max(0.5, min(0.85, float(_a.get("score", 0.5)))), 3),
+                "normalized_score": round(max(0.5, min(0.85, float(_a.get("score", 0.5)))), 3),
+                "preview": str(_a.get("why", ""))[:120],
+                "categories": [_cat],
+                "primary_category": _cat,
+                "category": _cat,
+                "source": "anomaly",
+                "src": "ANOMALY",
+                "segment_type": get_segment_type(_a["timestamp"]),
+                "clip_start": float(_a.get("clip_start") or _a["timestamp"]),
+                "clip_end": float(_a.get("clip_end") or _a["timestamp"]),
+                "clip_duration": round(float(_a.get("clip_end", 0) or 0)
+                                       - float(_a.get("clip_start", 0) or 0), 2) or 8.0,
+                "why": str(_a.get("why", "")),
+                "cues": _a.get("cues", []),
+            })
+        print(f"[ANOMALY] lane proposed {len(_anoms)} src=ANOMALY moment(s) "
+              f"from {len(_aud)} crowd-reaction windows", file=sys.stderr)
+    except Exception as _anx:
+        print(f"[ANOMALY] lane failed ({type(_anx).__name__}: {_anx}); skipping", file=sys.stderr)
+
 all_moments.sort(key=lambda x: x["timestamp"])
 
 # Deduplicate: merge moments within 25 seconds
