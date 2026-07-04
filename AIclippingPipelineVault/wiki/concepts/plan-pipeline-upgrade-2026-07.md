@@ -54,6 +54,9 @@ All later gated phases (0.1, 1, 2, 4, 6) execute their runs **through this harne
 
 ## Phase 2 — A2: Chat-overlay mining (~1–1.5 days)
 
+> [!success] Phase 2 CORE built + logic-verified (2026-07-03); real-frame ROI/OCR gated on a chat-overlay VOD
+> **Discovery:** the STRUCTURED-chat path already exists — `chat_fetch.py` (Twitch GraphQL / TwitchDownloader import → JSONL) + `chat_features.py` (msgs/sec z-score, emote density, phrase-hit bursts, sub/bit/raid ground truth). What was missing is the owner's PRIMARY path: burned-in overlay OCR. New `scripts/lib/chat_mine.py` fills it and emits the SAME JSONL shape so `chat_features` consumes it unchanged. Functions: `detect_chat_roi` (EasyOCR small-persistent-text heatmap → bbox; **None = no burned-in chat**, doubling as the has-chat test), `frame_diff_velocity` (ROI change-rate burst detector), `dedup_new_lines` (fuzzy scroll dedup), `estimate_lag` (cross-correlate reaction × velocity; **7 s seed** per RQ3). cv2/EasyOCR lazy + failure-soft; pure logic dependency-injected. **Verified:** velocity spike, scroll dedup (+fuzzy jitter suppression), lag aligns to the velocity peak & falls back to 7 s. **Remaining:** real-frame ROI auto-detect + burst OCR on a chat-overlay VOD (owner has some) + a no-chat MP4 clean-skip.
+
 **`scripts/lib/chat_mine.py`**, flag `CLIP_CHAT_MINE` (default OFF), output `{work}/chat_events.json`:
 - **Auto-ROI (default, owner decision):** EasyOCR detection-only over ~15 sampled frames → persistent small-text cluster heatmap → chat box; **no cluster = no chat = clean skip** (the has-chat test). Optional per-channel override config.
 - **Velocity track:** ROI frame-diff at 2–4 fps → `{t, velocity}` (feeds Phase 1's reaction score).
