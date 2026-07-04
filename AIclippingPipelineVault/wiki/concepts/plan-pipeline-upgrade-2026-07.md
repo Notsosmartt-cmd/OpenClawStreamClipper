@@ -77,6 +77,9 @@ All later gated phases (0.1, 1, 2, 4, 6) execute their runs **through this harne
 
 ## Phase 3 — A5 + A3: Judge timeline + known-format probe (hours)
 
+> [!success] Phase 3 A3 (known_format tagging) shipped (2026-07-04); A5 + LLM-confirmation = v2
+> `stage4_moments.py` after dedup, gated `CLIP_KNOWN_FORMAT` (default OFF), **metadata-only (no score change)**, failure-soft: `meme_match.match(preview+why, audio_labels=anomaly cues)` per moment → attaches `known_format:[{name,confidence}]`; `known_format`+`src` added to the hype_moments output whitelist (else dropped) → available to Stage 6 titling/hook + diagnostics. **Verified:** George-Bush preview→`george_bush_push`(1.0) via verbal trigger; "that was insane"+boom→`vine_boom`(0.65); plain history untagged (precision). **v2 (deferred):** A5 (feed `event_timeline.render_for_prompt` into the Stage 5.5 judge prompt, `CLIP_JUDGE_TIMELINE`) + let the vision LLM CONFIRM/name the format with visual corroboration ("George" spoken ↔ bush seen).
+
 - **A5:** append the clip's timeline excerpt (named audio + motion + chat bursts) to the Stage 5.5 judge's existing frames+transcript prompt (`vlm_judge._clip_text_block`), flag `CLIP_JUDGE_TIMELINE` (default OFF).
 - **A3:** add to judge/Stage-6 prompts: `known_format:{name,confidence}` + wordplay check (spoken word ↔ seen object — "George" + bush), few-shot. Nulls tolerated; output threads into title/hook when confident.
 - **Verification:** judge tournament unchanged flag-off; spot-check on the two reference cases via the forensics tab.

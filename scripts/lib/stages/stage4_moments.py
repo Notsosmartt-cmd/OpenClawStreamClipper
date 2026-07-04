@@ -2657,6 +2657,28 @@ for m in all_moments:
 
 print(f"  After dedup: {len(deduped)} unique moments ({sum(1 for d in deduped if d.get('cross_validated'))} cross-validated)", file=sys.stderr)
 
+# ── Known-format tagging (upgrade plan Phase 3; concepts/reference-humor) ──────
+# Attach `known_format` metadata when a moment's transcript matches a
+# meme/skit-format trigger (George-Bush "ever heard of george", etc.) so Stage 6
+# titling/hook + diagnostics can use it. Gated CLIP_KNOWN_FORMAT (default OFF),
+# metadata-only (does NOT change score), failure-soft. Transcript-only here
+# (verbal triggers); visual/audio corroboration is a Stage-6 v2 enhancement.
+if os.environ.get("CLIP_KNOWN_FORMAT", "").strip().lower() in ("1", "true", "yes", "on"):
+    try:
+        import meme_match as _mm
+        _kf_n = 0
+        for _d in deduped:
+            _txt = " ".join(str(_d.get(k, "")) for k in ("preview", "why"))
+            _cues = [str(c).split("(")[0] for c in (_d.get("cues") or [])]
+            _hits = _mm.match(_txt, audio_labels=_cues)
+            if _hits:
+                _d["known_format"] = [{"name": h["name"], "confidence": h["confidence"]}
+                                      for h in _hits[:2]]
+                _kf_n += 1
+        print(f"[KNOWN_FORMAT] tagged {_kf_n}/{len(deduped)} moments", file=sys.stderr)
+    except Exception as _kfe:
+        print(f"[KNOWN_FORMAT] tagging failed ({type(_kfe).__name__}: {_kfe}); skipping", file=sys.stderr)
+
 # --- LENGTH PENALTY FUNCTION (legacy; used when CLIP_LENGTH_NEUTRAL=0) ---
 # Prevents over-clipping: longer clips need higher base scores to survive selection.
 # Short punchy clips are favored unless the content genuinely justifies length.
@@ -3413,6 +3435,10 @@ for m in final:
         "setup_text": m.get("setup_text"),
         "arc_kind": m.get("arc_kind") or m.get("callback_kind"),
         "callback_cosine": m.get("callback_cosine"),
+        # Upgrade plan (2026-07): anomaly-lane provenance + known meme/skit format.
+        # None for normal moments; present when the lanes are on + matched.
+        "src": m.get("src"),
+        "known_format": m.get("known_format"),
     }
     output.append(entry)
 
