@@ -84,7 +84,15 @@ All later gated phases (0.1, 1, 2, 4, 6) execute their runs **through this harne
 - **A3:** add to judge/Stage-6 prompts: `known_format:{name,confidence}` + wordplay check (spoken word ↔ seen object — "George" + bush), few-shot. Nulls tolerated; output threads into title/hook when confident.
 - **Verification:** judge tournament unchanged flag-off; spot-check on the two reference cases via the forensics tab.
 
-## Phase 4 — B: Calibration loop + decorrelation (~2 days, CPU only)
+## Phase 4 — B: Calibration loop + decorrelation (MACHINERY SHIPPED 2026-07-04 — see [[concepts/calibration-ranker-2026-07]])
+
+> [!done] Built + validated 2026-07-04, DEFAULT-OFF. B1 factors stamped + traced; B2+B4
+> log-space ranker (`scripts/lib/ranker.py` — identity reproduces final_score exactly,
+> sigmoid-bounded rescore, no-op with no fitted file) wired into Pass C; B3 fitter
+> (`scripts/research/fit_ranker.py` — pure-Python logistic, self-test recovers planted
+> signal); B5 `text_model_passd` decorrelation → rubric runs gemma-4 (verified parseable),
+> null-default fallback. **Remaining = the data step**: labelled runs → `fit_ranker` →
+> `config/selection_ranker.json`. Full detail: [[concepts/calibration-ranker-2026-07]].
 
 Per [[concepts/plan-calibration-loop]], now with research additions:
 - **B1** cache Pass B raw pre-Pass-C (~30 min) → **B2** offline re-scorer CLI (~2 h) → **B3** grid-search fitter → `selection_axes_fitted.json` (~3 h) → **B4** logistic/log-space ranker (<1 s train) **+ interaction features** (`motion_high×words_banal`, `reaction×low_keyword`, anomaly-lane features once Phase 1 lands).

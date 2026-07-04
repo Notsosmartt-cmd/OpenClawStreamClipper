@@ -201,6 +201,17 @@ except Exception as _rxe:
     _REACTION_CFG = {}
     print(f"[REACTION] reaction_signals unavailable ({_rxe}); Pass C runs without reaction factor", file=sys.stderr)
 
+# Phase 4 (B4) — fittable log-space ranker. Failure-soft + default-OFF: with no
+# config/selection_ranker.json present, `maybe_rescore` returns None and Pass C keeps
+# the hand-tuned final_score (byte-identical to legacy). See scripts/lib/ranker.py.
+try:
+    import ranker as _ranker
+    if _ranker.load_weights() is not None:
+        print("[RANKER] fitted selection_ranker.json loaded — Pass C re-scores via learned weights", file=sys.stderr)
+except Exception as _rke:
+    _ranker = None
+    print(f"[RANKER] ranker unavailable ({_rke}); Pass C uses hand-tuned scores", file=sys.stderr)
+
 # Selection Sub-Plan C — baseline-contrast. The streamer's per-VOD 'normal' is
 # computed once (speaking-rate mean/std, modal segment-type, topic boundaries);
 # moments that break it (rate/topic/genre deviation) get a small, boost-only
@@ -2842,8 +2853,10 @@ for m in deduped:
     weights = weight_map.get(CLIP_STYLE, {})
     multiplier = weights.get(cat, 1.0)
     styled_score = base * multiplier
+    m["style_multiplier"] = round(multiplier, 3)   # Phase 4 B1: stamp factors for the fittable ranker
 
     # Cross-validated moments get multiplicative boost
+    m["cross_val_factor"] = 1.20 if m.get("cross_validated") else 1.0
     if m.get("cross_validated"):
         styled_score *= 1.20
 
@@ -2852,7 +2865,9 @@ for m in deduped:
     # streamer" / "friend interruption" pattern. Multiplicative ×1.15, smaller
     # than cross-val so a real keyword+LLM agreement still outranks a
     # speaker-only signal.
-    if m.get("speaker_count", 0) >= 2 and (m.get("dominant_speaker_share") or 1.0) < 0.7:
+    _spk_boost = m.get("speaker_count", 0) >= 2 and (m.get("dominant_speaker_share") or 1.0) < 0.7
+    m["speaker_factor"] = 1.15 if _spk_boost else 1.0   # Phase 4 B1
+    if _spk_boost:
         styled_score *= 1.15
 
     # Rare-pattern bonus (case-rap-battle-missed Phase 2): style-independent
@@ -2860,9 +2875,9 @@ for m in deduped:
     # rare high-value pattern survives bucket competition. See _PATTERN_BONUS
     # at module top. Stamped for observability; 1.0 when no pattern matched.
     _pb = _PATTERN_BONUS.get(m.get("primary_pattern") or "", 1.0)
+    m["pattern_bonus"] = _pb   # Phase 4 B1: always stamp (default 1.0) for the fittable ranker
     if _pb != 1.0:
         styled_score *= _pb
-        m["pattern_bonus"] = _pb
 
     # --- Selection axes (Plans A/B/C/E) ------------------------------------
     # Each axis returns a bounded, failure-soft multiplier. They ACCUMULATE into
@@ -2979,8 +2994,19 @@ for m in deduped:
     # which compounds the bucket-overflow bias (BUG 36). Soft-cap instead:
     # raw scores can land in [0, ~1.4]; we display by clipping to 1.0 only
     # at the user-facing rendering side, and Pass C ranks on the raw value.
-    m["final_score"] = round(styled_score * lp, 4)
     m["length_penalty"] = lp
+    m["final_score"] = round(styled_score * lp, 4)
+    # Phase 4 (B4): if a fitted ranker is loaded, replace final_score with its
+    # learned score (linear space). Default-off -> maybe_rescore returns None and
+    # this is a no-op; even an all-default fitted file reproduces styled_score*lp
+    # exactly (exp∘log identity). Position-weight + bucket-norm still apply below.
+    if _ranker is not None:
+        try:
+            _rescored = _ranker.maybe_rescore(m)
+            if _rescored is not None:
+                m["final_score"] = round(_rescored, 4)
+        except Exception:
+            pass  # failure-soft: keep the hand-tuned score
 
 # ---- TIME-BUCKET DISTRIBUTION ----
 # Divide VOD into equal time buckets and guarantee each bucket gets representation.
@@ -3323,6 +3349,15 @@ try:
             "clip_duration": _m.get("clip_duration"),
             "length_penalty": _m.get("length_penalty"),
             "position_weight": _m.get("position_weight"),
+            # Phase 4 B1 — the remaining fittable factors + raw interaction signals,
+            # so pass_c_candidates.json is a complete feature row for fit_ranker.py.
+            "style_multiplier": _m.get("style_multiplier"),
+            "cross_val_factor": _m.get("cross_val_factor"),
+            "speaker_factor": _m.get("speaker_factor"),
+            "pattern_bonus": _m.get("pattern_bonus"),
+            "reaction_score": _m.get("reaction_score"),
+            "keyword_score": _m.get("keyword_score"),
+            "motion_score": _m.get("motion_score"),
             "arc_multiplier": _m.get("arc_multiplier"),
             "reaction_multiplier": _m.get("reaction_multiplier"),
             "baseline_multiplier": _m.get("baseline_multiplier"),

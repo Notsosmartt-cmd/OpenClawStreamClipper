@@ -41,6 +41,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 LLM_URL = os.environ.get("LLM_URL", "http://host.docker.internal:1234")
 TEXT_MODEL_PASSB = os.environ.get("TEXT_MODEL_PASSB") or os.environ.get("TEXT_MODEL", "")
+# Phase 4 B5 — the rubric is "Pass D": an independent second-opinion scorer. Prefer
+# TEXT_MODEL_PASSD (a decorrelation model, e.g. gemma-4 when Pass B runs qwen) so the
+# rubric's errors don't just echo Pass B's. Falls back to PASSB -> TEXT_MODEL, so the
+# default (passd unset) is byte-identical to the prior behavior.
+TEXT_MODEL_PASSD = os.environ.get("TEXT_MODEL_PASSD") or TEXT_MODEL_PASSB
 TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 
 DEFAULT_WEIGHTS = {
@@ -208,10 +213,10 @@ RETURN ONLY JSON:
 
 
 def _call_llm(prompt: str, *, timeout: int) -> Optional[str]:
-    if not TEXT_MODEL_PASSB:
+    if not TEXT_MODEL_PASSD:
         return None
     payload = {
-        "model": TEXT_MODEL_PASSB,
+        "model": TEXT_MODEL_PASSD,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 1000,
