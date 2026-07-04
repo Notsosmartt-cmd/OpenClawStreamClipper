@@ -90,5 +90,30 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 
 **Definition of done, every phase:** flag default OFF · flag-off run identical to baseline · failure-soft verified (kill a dep, confirm graceful) · bounded runtime (no unbounded background tasks) · real-media verification recorded · wiki pages + log/hot updated · committed.
 
+## Real-VOD gating (which phases need a run) + the batching trick
+
+| Phase | Real-VOD run needed? | For what |
+|---|---|---|
+| 0 | **YES — it IS the run** | clears the 🟡s |
+| 1 | YES (2 runs: flag-off baseline + flag-on) | byte-identical check + lane recall via laughter-anchored auto-eval |
+| 2 | YES (1 chat-overlay VOD + 1 no-chat MP4) | ROI auto-detect + clean-skip proof |
+| 3 | light | can replay Stage 5.5 on **cached** work-dir artifacts; no full run required |
+| 4 | ONE instrumented run to produce the Pass-B raw cache | everything after is offline (re-scorer iterates in seconds) |
+| 5 | no | forensics-lane verification on reference clips only |
+| 6 | YES (integration run) after the smoke test | bounded reweight sanity |
+
+**Batching trick:** one instrumented run serves three phases at once — Phase 0.1's checks + Phase 4's Pass-B raw cache + Phase 1's flag-off baseline. Plan runs deliberately; each 2-h VOD costs ~45–90 min wall-clock.
+
+## Autonomous execution protocol (phase-runner — designed 2026-07-03)
+
+Owner asked whether the agent can iterate the phases end-to-end — launch its own VOD runs, wait, evaluate, continue — with no human interruption. **Yes, with this architecture** (each element counters a failure mode already observed this month):
+
+1. **Detached pipeline launch — never run the pipeline inside the agent sandbox.** The sandbox killed >30-min in-sandbox processes repeatedly (the zombie-task saga). The repo already has the machinery: the dashboard's `pipeline_runner` spawns detached processes that survive independently (or `POST /api/clip`). The agent launches detached, keeps nothing heavy in-sandbox.
+2. **Bounded waiting via marker files.** The orchestrator already writes `pipeline_stage.txt`, `pipeline.log`, `pipeline.done`, pid markers. The agent waits with a background `until`-loop watching **done-marker OR error signatures OR a hard timeout** (silence ≠ success — the filter must catch `[ERROR]`/stall, not just completion), and gets woken by the harness notification. Long waits use scheduled wake-ups rather than hot polling.
+3. **Auto-evaluation harness (the key enabler).** A script grades each run machine-readably against the phase's acceptance criteria: diagnostics JSON + `axis_report` (counts, buckets, axis coverage) · **`clip_forensics.py` decomposing the pipeline's own OUTPUT clips** (dogfooding: did the boom fire at the payoff? music span where expected? cold-open flash present as a cut+whoosh at t≈0?) · ffmpeg loudness stats (SFX-vs-speech ratio — "boom drowns dialogue" is measurable) · flag-off byte-comparison for the baseline check. Verdict: PASS / FAIL-with-evidence.
+4. **Phase-state on disk** (`{work}/phase_state.json`: current phase, awaiting-run id, criteria, verdicts). Advance on PASS; on FAIL, halt that phase, file the failure in the wiki, continue any independent phase (e.g., Phase 5 needs no runs). State-on-disk makes the loop **resumable across sessions** — a session limit interrupts, the next session reads state and continues; the wiki log is the audit trail.
+5. **Known hard limits (honest):** Anthropic **session limits** are the real interrupter (killed the verify layer twice) — pacing via long wake intervals + overnight windows mitigates but can't eliminate; **LM Studio must be up** (agent can check `/v1/models` and `lms load`, but not launch the GUI); **permission prompts** break autonomy unless the run uses pre-approved allowlists; a few checks stay **perceptual** (seam *aesthetics*, humor quality) — the loop logs artifacts for async human spot-check instead of blocking.
+6. **Pilot = Phase 0.** The validation run executes exactly this protocol once (detached launch → bounded wait → auto-eval → wiki+commit) before Phase 1 depends on it.
+
 ## Related
 - [[concepts/master-proposal-2026-07]] (workstreams + decisions) · [[concepts/master-research-2026-07]] (parameter sources) · [[concepts/plan-calibration-loop]] · [[concepts/case-incongruity-comedy]] · [[concepts/reference-humor-2026-07]] · [[concepts/multimodal-fusion-2026-07]]
