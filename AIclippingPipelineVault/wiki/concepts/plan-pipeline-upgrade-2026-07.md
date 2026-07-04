@@ -78,6 +78,9 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 
 ## Phase 5 — A4: Meme-format library (~1 day + ongoing curation)
 
+> [!success] Phase 5 BUILT + unit-verified (2026-07-03)
+> `config/meme_formats.json` (12 seed formats incl. `george_bush_push`; CM50 schema: name/aliases/verbal_trigger/visual_signature/audio_cue/threshold/about/examples) + `scripts/lib/meme_match.py`. **Precision-first per RQ4** — a verbal trigger (substring or ≥0.82 fuzzy) is required for trigger-defining formats; formats with no trigger match on their DEFINED modalities (audio-signature like `vine_boom` fires on a boom; visual+audio formats need both). sentence-transformers is NOT installed → v1 is pure-lexical (no heavy dep; `embed_fn` reserved). **Verified:** George-Bush matches verbal+visual+audio (1.0); fuzzy mistranscription still fires; plain speech + visual-only correctly rejected; audio-only boom matches. The LLM only NAMES via the known_format probe (Phase 3) — matching stays classical. No VOD run needed.
+
 - `config/meme_formats.json` — CM50-derived schema: `{name, aliases, verbal_trigger, visual_signature, audio_cue, about, examples[]}`; seed ~20 owner-curated formats (George Bush first), grown from `.notes.json` + forensics decompositions.
 - **Matching:** sentence-transformers embeddings (already in repo) with **per-format thresholds = median distance of the format's own examples** (global fallback), **precision-first**; classical/embedding match decides, the LLM probe only *names/explains*. Do NOT use joint CLIP-style embeddings or naked-VLM matching (both underperformed in the literature).
 - KYM data: scrape-yourself if ever needed (no redistribution — commercial caution); not required for v1.

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "_note": "Machine-matchable meme/skit-format library (upgrade plan Phase 5; concepts/reference-humor-2026-07). Schema adapted from CM50 (concepts/master-research-2026-07 RQ4). Matched by scripts/lib/meme_match.py — PRECISION-FIRST: a verbal_trigger (or a strong visual+audio co-occurrence) is required, not embedding proximity alone (RQ4: naked embeddings/LLM underperform classical trigger matching). This is the AUDIO/SKIT-format dimension no off-the-shelf library covers. Grow it from reference_clips/*.notes.json + forensics decompositions. Each entry: name, aliases, verbal_trigger (phrases matched case/space-insensitively; regex allowed as {\"re\": \"...\"}), visual_signature (object keywords), audio_cue (audio_sense labels), threshold (per-format confidence floor, default 0.5), about, examples.",
+  "formats": [
+    {
+      "name": "george_bush_push",
+      "aliases": ["ever heard of george", "george bush bush"],
+      "verbal_trigger": ["ever heard of george", "you know george", "heard of george", "you ever heard of george"],
+      "visual_signature": ["bush", "plant", "hedge", "shrub"],
+      "audio_cue": ["laughter", "boom"],
+      "threshold": 0.5,
+      "about": "Setup pun: ask 'ever heard of George?' then shove someone into a BUSH → 'George Bush'. Comedy is the verbal setup + physical act (+ often a fail), never stated outright.",
+      "examples": ["ReemKnocks pushing Silky toward a plant while saying 'ever heard of George?'"]
+    },
+    {
+      "name": "vine_boom",
+      "aliases": ["vine boom", "boom sound"],
+      "verbal_trigger": [],
+      "visual_signature": [],
+      "audio_cue": ["boom"],
+      "threshold": 0.6,
+      "about": "Deep bass 'Vine boom' dropped on a shock/reveal/punchline for ironic emphasis. Audio-carried.",
+      "examples": []
+    },
+    {
+      "name": "bruh_moment",
+      "aliases": ["bruh"],
+      "verbal_trigger": ["bruh", "bruh moment"],
+      "visual_signature": [],
+      "audio_cue": ["bruh"],
+      "threshold": 0.5,
+      "about": "Deadpan disbelief at something dumb/awkward; the word or sound 'bruh' marks it.",
+      "examples": []
+    },
+    {
+      "name": "caught_in_4k",
+      "aliases": ["4k", "caught in 4k"],
+      "verbal_trigger": ["caught in 4k", "caught in four k", "caught you in 4k"],
+      "visual_signature": [],
+      "audio_cue": [],
+      "threshold": 0.5,
+      "about": "Someone is caught/exposed on undeniable recorded evidence.",
+      "examples": []
+    },
+    {
+      "name": "took_an_L",
+      "aliases": ["big l", "took an l"],
+      "verbal_trigger": ["take the l", "took an l", "big l", "that's an l", "what an l"],
+      "visual_signature": [],
+      "audio_cue": ["sad_trombone"],
+      "threshold": 0.5,
+      "about": "Acknowledging a loss/failure (an 'L'), often with mock sympathy audio.",
+      "examples": []
+    },
+    {
+      "name": "sheesh",
+      "aliases": ["sheesh"],
+      "verbal_trigger": ["sheesh", "sheeesh"],
+      "visual_signature": [],
+      "audio_cue": ["sheesh"],
+      "threshold": 0.55,
+      "about": "Elongated 'sheeesh' hyping something impressive.",
+      "examples": []
+    },
+    {
+      "name": "ratio",
+      "aliases": ["ratio"],
+      "verbal_trigger": ["ratio", "ratioed", "get ratioed", "ratio + l"],
+      "visual_signature": [],
+      "audio_cue": [],
+      "threshold": 0.6,
+      "about": "Declaring a social-media 'ratio' as a dunk.",
+      "examples": []
+    },
+    {
+      "name": "it_is_what_it_is",
+      "aliases": ["iiwii"],
+      "verbal_trigger": ["it is what it is"],
+      "visual_signature": [],
+      "audio_cue": [],
+      "threshold": 0.6,
+      "about": "Resigned acceptance of an unfortunate outcome.",
+      "examples": []
+    },
+    {
+      "name": "record_scratch_freeze",
+      "aliases": ["yep that's me", "you're probably wondering"],
+      "verbal_trigger": ["you're probably wondering how i got here", "yep that's me", "freeze"],
+      "visual_signature": [],
+      "audio_cue": ["scratch"],
+      "threshold": 0.5,
+      "about": "Record-scratch + freeze-frame + 'you're probably wondering how I ended up here' narrative flashback bit.",
+      "examples": []
+    },
+    {
+      "name": "mission_failed_respect",
+      "aliases": ["mission failed"],
+      "verbal_trigger": ["mission failed", "we'll get em next time"],
+      "visual_signature": [],
+      "audio_cue": ["sad_trombone"],
+      "threshold": 0.5,
+      "about": "'Mission failed, we'll get 'em next time' over a fail.",
+      "examples": []
+    },
+    {
+      "name": "crickets_awkward",
+      "aliases": ["crickets", "awkward silence"],
+      "verbal_trigger": [],
+      "visual_signature": [],
+      "audio_cue": ["crickets"],
+      "threshold": 0.6,
+      "about": "Dead-air / no reaction to something that expected one; crickets punctuate it.",
+      "examples": []
+    },
+    {
+      "name": "aint_no_way",
+      "aliases": ["ain't no way", "no way"],
+      "verbal_trigger": ["ain't no way", "aint no way", "there's no way", "no shot"],
+      "visual_signature": [],
+      "audio_cue": [],
+      "threshold": 0.6,
+      "about": "Disbelief at something outrageous.",
+      "examples": []
+    }
+  ]
+}
