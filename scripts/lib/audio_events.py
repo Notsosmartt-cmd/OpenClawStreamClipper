@@ -473,13 +473,16 @@ def _scan_parallel(
             # ok=False so the caller runs the serial path (IDENTICAL output).
             import multiprocessing as _mp
             _res_timeout = float(os.environ.get("AUDIO_EVENTS_RESULT_TIMEOUT", "90") or 90)
-            _it = pool.imap(_worker_run, tasks, chunksize=PARALLEL_CHUNKSIZE)
-            i = 0
-            while True:
+            # apply_async + AsyncResult.get(timeout) is the rock-solid per-result
+            # timeout API. (IMapIterator.next(timeout) works in isolation but
+            # errored "'generator' object has no attribute 'next'" at runtime in
+            # the real scan — a heisenbug we route around.) Args are tiny task
+            # tuples; the 977 MB audio is shared via the pool initializer, not
+            # repickled per task, so submitting all upfront is cheap.
+            _asyncs = [pool.apply_async(_worker_run, (task,)) for task in tasks]
+            for i, _ar in enumerate(_asyncs, 1):
                 try:
-                    result = _it.next(_res_timeout)
-                except StopIteration:
-                    break
+                    result = _ar.get(_res_timeout)
                 except _mp.TimeoutError:
                     print(
                         f"[AUDIO_EVENTS] parallel scan STALLED at window {i}/"
@@ -494,7 +497,6 @@ def _scan_parallel(
                     except Exception:
                         pass
                     return [], (0, 0, 0), False
-                i += 1
                 windows.append(result)
                 if result["rhythmic_speech"] >= 0.7:
                     n_fired_rhythmic += 1
