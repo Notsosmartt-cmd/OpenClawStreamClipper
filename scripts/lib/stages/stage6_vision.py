@@ -202,6 +202,55 @@ def _derive_baseline_title(why, category, T):
 # was previously absent. These category-keyed templates fill that gap so the
 # clip still opens with a curiosity hook. Vision always overrides the template.
 _HOOK_TEMPLATES_CACHE: dict | None = None
+_CAPTION_STYLE_CACHE: dict | None = None
+
+
+def _load_caption_style():
+    """Phase 7.2 — load config/caption_style.json (learned competitor caption VOICE)
+    with the standard env -> Linux -> repo fallback. Cached. Returns {} on any
+    failure so the hook prompt simply gets no voice examples (prior behavior)."""
+    global _CAPTION_STYLE_CACHE
+    if _CAPTION_STYLE_CACHE is not None:
+        return _CAPTION_STYLE_CACHE
+    candidates = [
+        os.environ.get("CLIP_CAPTION_STYLE_CONFIG"),
+        "/root/.openclaw/caption_style.json",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "caption_style.json"),
+    ]
+    cfg: dict = {}
+    for c in candidates:
+        if c and os.path.exists(c):
+            try:
+                cfg = json.loads(open(c, encoding="utf-8").read()) or {}
+                break
+            except (OSError, ValueError):
+                cfg = {}
+    _CAPTION_STYLE_CACHE = cfg
+    return cfg
+
+
+def _caption_style_fewshot():
+    """A short 'match this VOICE' block for the Stage 6 hook prompt, built from the
+    learned caption-style profile. Returns "" unless config/caption_style.json has
+    enabled=true AND CLIP_CAPTION_STYLE isn't force-disabled — so it's opt-in (owner
+    reviews the profile first) and failure-soft (no file / disabled => no change to
+    the prompt, identical to prior behavior). Style-only: we feed the voice summary +
+    a few real hook phrasings so the model mimics the STYLE, never the exact words."""
+    if os.environ.get("CLIP_CAPTION_STYLE", "1").strip().lower() in ("0", "false", "no", "off"):
+        return ""
+    cfg = _load_caption_style()
+    if not cfg.get("enabled"):
+        return ""
+    ex = [e for e in (cfg.get("hook_phrasings") or cfg.get("examples") or []) if e][:5]
+    if not ex:
+        return ""
+    voice = (cfg.get("voice_summary") or "").strip()
+    casing = (cfg.get("casing_rule") or "").strip()
+    ex_lines = "\n".join(f"- {e}" for e in ex)
+    return (f"\nCaption VOICE to match (learned from top clips in this niche — mimic the "
+            f"STYLE/tone/casing, NOT the words):\n{voice}"
+            f"{(' Casing: ' + casing) if casing else ''}\n"
+            f"Example hook phrasings in this voice:\n{ex_lines}\n")
 
 
 def _load_hook_templates():
@@ -583,7 +632,7 @@ Tier-4 Phase 4.5 — also identify the INTERACTION SHAPE the frames depict:
 - pattern_match: which catalog pattern the frames best support — "setup_external_contradiction", "challenge_and_fold", "reading_chat_reaction", "storytelling_arc", "hot_take_pushback", "informational_ramble", "interview_revelation", "rap_battle_freestyle", "social_callout", "unexpected_topic_shift", or null.
 - pattern_match_strength: 0.0-1.0 — confidence the frames support pattern_match.
 - gaze_direction: "at-camera" / "at-chat" / "at-screen" / "at-guest" / "off-screen" / "down".
-{edit_directive}
+{edit_directive}{_caption_style_fewshot()}
 Respond ONLY with JSON: {{
   "score": 1-10,
   "category": "comedy/skill/reaction/controversy/emotional/irl",

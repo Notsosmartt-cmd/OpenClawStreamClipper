@@ -102,7 +102,15 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 - KYM data: scrape-yourself if ever needed (no redistribution — commercial caution); not required for v1.
 - **Verification:** George Bush + 2 negatives match correctly at threshold; false-positive rate on 10 random clips ≈ 0.
 
-## Phase 7 — Corpus learning loop (added 2026-07-04, owner questions; corpus now 35 clips)
+## Phase 7 — Corpus learning loop (SHIPPED 2026-07-04 — see [[concepts/corpus-learning-loop-2026-07]])
+
+> [!done] Built + validated 2026-07-04. All three sub-items shipped: 7.1 draft-annotation +
+> per-family precision/recall (`corpus_eval.py`), 7.2 caption-style distiller wired failure-soft
+> into Stage 6 (`config/caption_style.json`, enabled=false), 7.3 transcript-value classifier
+> (finding: 0/4 sample clips transcript-carried → validates the anomaly-lane thesis). Plus
+> `lmstudio.loads_lenient` hardening. **Owner-gated to activate**: correct the seeded annotation
+> drafts (7.1) and flip `caption_style.json` enabled=true after review (7.2). Full how-to +
+> findings in [[concepts/corpus-learning-loop-2026-07]].
 
 Closes the gap between "analyze competitor clips" and "the pipeline LEARNS from them." Today the reference corpus is an **analysis corpus only**: `clip_forensics` decomposes a clip → timeline + LLM style profile → a human reads it and hand-edits config (`sfx_cues.json`, `style_profiles.py`). Nothing auto-learns yet (that's E3 + this phase). Three sub-items, in build order:
 

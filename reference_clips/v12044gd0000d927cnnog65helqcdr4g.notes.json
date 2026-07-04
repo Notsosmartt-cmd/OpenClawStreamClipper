@@ -1,0 +1,105 @@
+{
+  "clip": "v12044gd0000d927cnnog65helqcdr4g.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 0.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.424)"
+    },
+    {
+      "t": 5.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.512)"
+    },
+    {
+      "t": 9.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.386)"
+    },
+    {
+      "t": 16.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.384)"
+    },
+    {
+      "t": 22.5,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 26.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 31.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.438)"
+    },
+    {
+      "t": 34.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.419)"
+    },
+    {
+      "t": 36.0,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 37.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 42.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.501)"
+    },
+    {
+      "t": 44.5,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 44.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.449)"
+    },
+    {
+      "t": 46.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.428)"
+    },
+    {
+      "t": 48.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 49.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.419)"
+    }
+  ]
+}

@@ -229,26 +229,125 @@ def _music_bed(events: list[dict], words: list[dict], onsets: list[float],
     return out
 
 
+def _family(kind: str) -> str:
+    """Map an annotation `kind` OR a detected-signal type onto one detector family,
+    so precision/recall is measured per-detector instead of lumping every signal.
+    The families mirror what each detector actually produces (see _detected_by_family)."""
+    k = (kind or "").lower()
+    if "music" in k:
+        return "music"
+    if "censor" in k or "beep" in k or "quack" in k:
+        return "censor"
+    if "cut" in k or "transition" in k:
+        return "cut"
+    if "cold" in k or "teaser" in k or "cold_open" in k:
+        return "cold_open"          # no detector today -> always a miss (informative)
+    return "sfx"                     # sfx/boom/whoosh/riser/... and unrecognised sounds
+
+
+def _detected_by_family(timeline: dict) -> dict:
+    """Detected signal timestamps grouped into the same families as _family()."""
+    return {
+        "sfx": [float(e["t"]) for e in (timeline.get("audio_events") or []) if "t" in e],
+        # a music SPAN offers two annotate-able instants: the in and the out
+        "music": [float(m["start"]) for m in (timeline.get("music") or []) if "start" in m]
+                 + [float(m["end"]) for m in (timeline.get("music") or []) if "end" in m],
+        "censor": [float(c["t"]) for c in (timeline.get("censor") or []) if "t" in c],
+        "cut": [float(c["t"]) for c in (timeline.get("cuts") or []) if "t" in c],
+        "cold_open": [],            # no detector
+    }
+
+
 def _score_against_notes(timeline: dict, notes: dict, tol: float = 1.0) -> dict:
-    """Rough recall: for each human-annotated event, is there a detected signal
-    (audio_event / cut / music-start) within tol seconds? Sanity metric only."""
-    detected_t: list[float] = []
-    detected_t += [e["t"] for e in timeline.get("audio_events", [])]
-    detected_t += [c["t"] for c in timeline.get("cuts", [])]
-    detected_t += [m["start"] for m in timeline.get("music", [])]
-    detected_t += [c["t"] for c in timeline.get("censor", [])]
+    """Per-detector precision + recall against a human-corrected .notes.json.
+
+    RECALL (per family): of the events the owner annotated for this family, how many
+    have a detected signal of the SAME family within tol? Low recall = the detector
+    MISSES real cues (the owner had to add them).
+    PRECISION (per family): of the signals this family's detector fired, how many sit
+    near an annotated event? Low precision = the detector cries wolf (owner deleted
+    them). This is the number that answers "can it reliably detect" — but only once
+    the draft has been CORRECTED (a raw --draft-notes file scores ~1.0 trivially
+    because it was generated FROM these same detections)."""
+    det = _detected_by_family(timeline)
     ann = [a for a in (notes.get("events") or []) if isinstance(a.get("t"), (int, float))]
-    rows = []
-    hit = 0
+
+    # --- overall (any-family) recall: back-compat with the old sanity metric ---
+    all_det = [t for ts in det.values() for t in ts]
+    rows, hit = [], 0
     for a in ann:
         t = float(a["t"])
-        nearest = min((abs(t - d) for d in detected_t), default=None)
+        nearest = min((abs(t - d) for d in all_det), default=None)
         matched = nearest is not None and nearest <= tol
         hit += 1 if matched else 0
-        rows.append({"t": t, "kind": a.get("kind"), "matched": matched,
+        rows.append({"t": t, "kind": a.get("kind"), "family": _family(a.get("kind")),
+                     "matched": matched,
                      "nearest_detected_delta_s": round(nearest, 3) if nearest is not None else None})
+
+    # --- per-family precision + recall ---
+    fams = set(det) | {_family(a.get("kind")) for a in ann}
+    by_family: dict[str, dict] = {}
+    for f in sorted(fams):
+        af = [float(a["t"]) for a in ann if _family(a.get("kind")) == f]
+        df = det.get(f, [])
+        recalled = sum(1 for t in af if any(abs(t - d) <= tol for d in df))
+        matched_d = sum(1 for d in df if any(abs(d - t) <= tol for t in af))
+        by_family[f] = {
+            "annotated": len(af), "recalled": recalled,
+            "recall": round(recalled / len(af), 3) if af else None,
+            "detected": len(df), "matched_detected": matched_d,
+            # precision needs ground truth: with zero annotations of this family we
+            # can't say a detection is "wrong" (e.g. cuts, which the owner doesn't
+            # annotate) -> None, not 0.0.
+            "precision": round(matched_d / len(df), 3) if (df and af) else None,
+        }
     return {"annotated": len(ann), "matched": hit,
-            "recall": round(hit / len(ann), 3) if ann else None, "rows": rows}
+            "recall": round(hit / len(ann), 3) if ann else None,
+            "by_family": by_family, "rows": rows,
+            "is_draft": bool(notes.get("_draft"))}
+
+
+def _draft_notes(timeline: dict) -> dict:
+    """Phase 7.1 — pre-fill a .notes.json from the tool's OWN detections so the owner
+    CORRECTS a draft (delete false positives, add missed cues) instead of annotating
+    from a blank page. Correcting a draft is what turns _score_against_notes into a
+    real precision/recall measurement (see its docstring). `_auto:true` marks each
+    line as machine-proposed; the owner deletes wrong ones and clears `_draft` when
+    done. Music spans -> music_in/out; censor -> censor; the most salient distinct
+    audio events -> sfx (deduped to ~1.5s, score-ranked, capped)."""
+    events: list[dict] = []
+    for m in timeline.get("music") or []:
+        tag = " (editor-added)" if m.get("added") else ""
+        events.append({"t": round(float(m["start"]), 2), "kind": "music_in", "_auto": True,
+                       "note": f"detected music bed{tag}, mood={m.get('mood')}"})
+        events.append({"t": round(float(m["end"]), 2), "kind": "music_out", "_auto": True,
+                       "note": "music bed ends"})
+    for c in timeline.get("censor") or []:
+        events.append({"t": round(float(c["t"]), 2), "kind": "censor", "_auto": True,
+                       "note": f"via={c.get('via')} sfx={c.get('sfx')}"})
+    cand = sorted((e for e in (timeline.get("audio_events") or [])
+                   if float(e.get("score", 0)) >= 0.35), key=lambda e: -float(e.get("score", 0)))
+    picked: list[dict] = []
+    for e in cand:
+        if all(abs(float(e["t"]) - float(p["t"])) > 1.5 for p in picked):
+            picked.append(e)
+        if len(picked) >= 10:
+            break
+    for e in sorted(picked, key=lambda e: float(e["t"])):
+        events.append({"t": round(float(e["t"]), 2), "kind": "sfx", "_auto": True,
+                       "note": f"detected '{e.get('label')}' ({e.get('source')} {e.get('score')})"})
+    events.sort(key=lambda x: x["t"])
+    return {
+        "clip": timeline.get("clip"),
+        "_draft": True,
+        "_instructions": ("DRAFT auto-generated from detections. CORRECT it: delete lines "
+                          "the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on "
+                          "the punchline, music the tool didn't hear), fix why_it_works, then "
+                          "DELETE the \"_draft\" key. Corrected files feed corpus precision/recall."),
+        "source": "competitor account / platform",
+        "why_it_works": "",
+        "events": events,
+    }
 
 
 def _llm_config() -> tuple[str, str]:
@@ -325,12 +424,10 @@ def _synthesize_style_profile(timeline: dict, *, timeout: float = 90.0) -> dict 
     if not reply:
         _log(f"LLM unreachable/empty (url={url} model={model}); style_profile=None")
         return None
-    try:
-        s, e = reply.find("{"), reply.rfind("}")
-        return json.loads(reply[s:e + 1]) if 0 <= s < e else None
-    except Exception as ex:
-        _log(f"style_profile parse failed ({type(ex).__name__}); None")
-        return None
+    obj = lmstudio.loads_lenient(reply)  # tolerant of qwen unterminated-string / trailing-comma glitches
+    if obj is None:
+        _log("style_profile reply not parseable even leniently; None")
+    return obj
 
 
 def _trim_signals(dur, trim_start, trim_end, events, words, onsets, cuts, motion, captions):
@@ -488,6 +585,10 @@ def _cli() -> int:
     ap.add_argument("--trim-start", type=float,
                     default=float(os.environ.get("CLIP_FORENSICS_TRIM_START", "0")),
                     help="ignore the first N seconds (intro card).")
+    ap.add_argument("--draft-notes", action="store_true",
+                    help="Phase 7.1: write a pre-filled <clip>.notes.json draft from "
+                         "the detections for the owner to CORRECT. Refuses to overwrite "
+                         "a file that has already been corrected (no _draft key).")
     args = ap.parse_args()
 
     clip = _resolve_clip(args.clip)
@@ -518,7 +619,24 @@ def _cli() -> int:
         _log(f"WARNING: {len(bad)} stage(s) not ok (ran failure-soft, partial result): {bad}")
     if "notes_eval" in timeline and timeline["notes_eval"].get("recall") is not None:
         ne = timeline["notes_eval"]
-        _log(f"notes recall={ne['recall']} ({ne['matched']}/{ne['annotated']} annotated events recovered)")
+        _log(f"notes recall={ne['recall']} ({ne['matched']}/{ne['annotated']} annotated events recovered)"
+             + (" [DRAFT — correct it for a real score]" if ne.get("is_draft") else ""))
+
+    if args.draft_notes:
+        draft = _draft_notes(timeline)
+        dst = clip.with_suffix(".notes.json")
+        if dst.exists():
+            try:
+                existing = json.loads(dst.read_text(encoding="utf-8"))
+            except Exception:
+                existing = {}
+            if not existing.get("_draft"):
+                _log(f"REFUSING to overwrite corrected annotations at {dst.name} "
+                     f"(no _draft key). Delete it first if you meant to regenerate.")
+                return 0
+        dst.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+        _log(f"wrote draft annotations -> {dst.name} ({len(draft['events'])} proposed events; "
+             f"CORRECT them + delete the _draft key)")
     return 0
 
 

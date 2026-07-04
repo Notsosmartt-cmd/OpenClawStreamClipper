@@ -58,6 +58,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/master-research-2026-07]] — RQ1-4 research findings: llama-server dissolves the omni catch-22; symbolic timeline academically supported; 7s chat lag; meme-library method (claims unverified — panel died)
 - [[concepts/handoff-2026-07-03]] — **HANDOFF**: exact execution state (done/left) + how to drive the harness — start here to continue
 - [[concepts/plan-pipeline-upgrade-2026-07]] — **The actionable engineering plan**: 6 build phases (validation → anomaly lane → chat mining → judge/probe → calibration → meme lib → omni) w/ files, flags, params, DoD
+- [[concepts/corpus-learning-loop-2026-07]] — **Phase 7 (shipped)**: reference clips → learning. Draft-annotation+precision/recall (`corpus_eval`), caption-voice distiller→Stage 6 few-shot, transcript-value classifier
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library

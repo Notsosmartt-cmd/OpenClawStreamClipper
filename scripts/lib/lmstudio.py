@@ -22,6 +22,48 @@ from typing import Optional
 DEFAULT_URL = os.environ.get("CLIP_LLM_URL", "http://host.docker.internal:1234")
 
 
+def loads_lenient(text: str):
+    """Best-effort parse of a JSON object out of an LLM reply. Returns the dict, or
+    None. Handles the failure modes the raw ``text.find('{') / rfind('}') +
+    json.loads`` idiom trips on (seen live from the local qwen model): markdown
+    fences, trailing commas, and — most commonly — an UNTERMINATED STRING VALUE where
+    the model forgot the closing quote before the newline + next `"key":` line, e.g.
+
+        { "voice_summary": "casual voice.
+          "casing_rule": "lowercase", ... }
+
+    Non-destructive: only runs the repairs if strict parsing fails first, so valid
+    JSON is never mangled. Used by clip_forensics / caption_style / anomaly_propose
+    so one flaky reply doesn't silently drop a whole synthesis to null."""
+    if not text:
+        return None
+    s, e = text.find("{"), text.rfind("}")
+    if not (0 <= s < e):
+        return None
+    blob = text[s:e + 1]
+    try:
+        return json.loads(blob)
+    except Exception:
+        pass
+    # 1) strip trailing commas before } or ]
+    repaired = re.sub(r",(\s*[}\]])", r"\1", blob)
+    # 2) close an unterminated single-line string value: a line that opens a value
+    #    quote with no closing quote, when the next non-blank line starts a new key
+    #    or closes the object. Append '",' (or '"' before a closer).
+    lines = repaired.split("\n")
+    for i, ln in enumerate(lines):
+        if re.match(r'\s*"[^"]+"\s*:\s*"[^"]*$', ln) and not ln.rstrip().endswith('"'):
+            nxt = next((l.strip() for l in lines[i + 1:] if l.strip()), "")
+            if nxt.startswith('"') or nxt.startswith("}") or nxt.startswith("]"):
+                lines[i] = ln.rstrip() + ('"' if nxt[:1] in "}]" else '",')
+    repaired = "\n".join(lines)
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+    try:
+        return json.loads(repaired)
+    except Exception:
+        return None
+
+
 def chat(
     prompt: str,
     model: str,
