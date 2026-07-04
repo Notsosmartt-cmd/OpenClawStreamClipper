@@ -49,6 +49,12 @@ _VALIDATION_ENV = {
     "CLIP_ARC_GUARANTEE_MIN_RATIO": "0.45",
     "CLIP_SEGMENT_VOTES": "3",
     "CLIP_FLASH_CUTS": "true",
+    # Serial audio-events scan (1 worker) — the 8-worker parallel scan hung 58 min
+    # on Windows shared-memory (2026-07-04 incident). Serial is ~5-6x slower for
+    # that ONE step (~13min vs ~2.5min) but hang-proof and produces IDENTICAL
+    # output (same per-window HPSS math — it's a reliability knob, not a quality
+    # one). Override with --audio-workers if you want to risk the parallel path.
+    "AUDIO_EVENTS_WORKERS": "1",
 }
 
 
@@ -139,6 +145,8 @@ def cmd_launch(a) -> int:
     env = os.environ.copy()
     if a.profile == "validation":
         env.update(_VALIDATION_ENV)
+    if a.audio_workers is not None:      # explicit override of the serial default
+        env["AUDIO_EVENTS_WORKERS"] = str(a.audio_workers)
     for kv in (a.env or []):
         if "=" in kv:
             k, v = kv.split("=", 1)
@@ -452,6 +460,9 @@ def main() -> int:
     pl.add_argument("--label")
     pl.add_argument("--phase")
     pl.add_argument("--env", action="append", help="KEY=VALUE (repeatable)")
+    pl.add_argument("--audio-workers", type=int,
+                    help="AUDIO_EVENTS_WORKERS override (validation profile defaults "
+                         "to 1 = serial/hang-proof; set 4-8 for speed at hang risk)")
     pl.add_argument("--dry-run", action="store_true")
     pl.set_defaults(func=cmd_launch)
 
