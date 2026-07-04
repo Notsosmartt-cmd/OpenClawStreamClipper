@@ -15,9 +15,16 @@ The **actionable engineering plan** converting [[concepts/master-research-2026-0
 
 ---
 
-## Phase 0 — Close the in-progress states + de-risk (half day; no new features)
+## Phase 0 — Build the automation, then close the in-progress states (~1 day)
 
-**0.1 Real-VOD validation run** — the single run that clears most 🟡s. On a real VOD (ideally rakai's, for the Delaware-battle check) with `style_profiles:true`, cold_open ON, arc_stitch ON, `CLIP_SEGMENT_VOTES=3`:
+**0.0 Build the phase-runner harness — FIRST deliverable (owner directive 2026-07-03: the executing agent IMPLEMENTS the automation for all gated real-VOD sections, not just follows a manual checklist).** New `scripts/research/phase_runner.py` (offline/dev lane; never imported by the live pipeline), CLI verbs:
+- `launch --vod X [--env K=V ...]` — start a pipeline run **DETACHED** (reuse `dashboard/pipeline_runner.py`'s detached-spawn machinery or `POST /api/clip`; never a child of the agent sandbox), record run-id + pid + launch env into `{work}/phase_state.json`.
+- `wait [--timeout 7200]` — bounded watch on `pipeline.done` / `pipeline_stage.txt` / `pipeline.log`, exiting on **done OR error signatures (`[ERROR]`, stage-stall > stage-timeout, dead pid) OR the hard cap** — silence is never success. Designed to be driven from a background shell so the harness notification wakes the agent.
+- `evaluate --phase N` — the auto-eval: parse diagnostics JSON + `axis_report.json` (counts/buckets/axis coverage) · run `clip_forensics.py` over the run's **output clips** (boom at payoff? cold-open flash+whoosh at t≈0? music span?) · ffmpeg loudness stats (SFX-vs-speech ratio) · **baseline comparison on deterministic selection artifacts** (`hype_moments.json`, manifests, moment lists — NOT rendered video bytes; NVENC encoding is non-deterministic) · write `{work}/run_eval_<id>.json` with per-criterion PASS/FAIL + evidence.
+- `state` — read/advance `phase_state.json` (current phase, pending run, verdicts; advance on PASS, halt+file on FAIL). This file is the cross-session resume point.
+All later gated phases (0.1, 1, 2, 4, 6) execute their runs **through this harness** — building it first is what makes the rest unattended.
+
+**0.1 Real-VOD validation run (executed via 0.0)** — the single run that clears most 🟡s. On a real VOD (ideally rakai's, for the Delaware-battle check) with `style_profiles:true`, cold_open ON, arc_stitch ON, `CLIP_SEGMENT_VOTES=3`:
 - SFX: boom fires at payoff, rides at speech level, other SFX duck under speech (no drowned dialogue) — [[concepts/sfx-cue-taxonomy-2026-06]]
 - Cold-open: teaser seam clean (flash+whoosh, no white-hold regression à la BUG 64) — [[concepts/hook-engineering-2026-06]]
 - Arc: `CLIP_ARC_GUARANTEE_MIN_RATIO=0.45` actually seats an arc; `[GROUPS]` logs confirm — [[concepts/arc-aware-extraction]]
@@ -37,7 +44,7 @@ The **actionable engineering plan** converting [[concepts/master-research-2026-0
 - **Precision controls:** top-K cap per VOD (start K=6), min-reaction floor, and a **mandatory LLM verifier** — `lmstudio.chat` with a **few-shot prompt (3–5 exemplars incl. a bus-clip-style positive and 2 negatives)**; research shows few-shot is load-bearing (71.1 vs 14.5 F1). Verifier returns keep/kill + category + why.
 - Survivors enter Pass C as `src=ANOMALY` candidates with a bounded score (boost-only; can win a bucket, can't evict guaranteed picks).
 - **Flag:** `CLIP_ANOMALY_LANE` (default OFF). Stage 4 integration point: after Pass B+, before Pass C.
-- **Verification:** (i) unit tests on synthetic windows; (ii) laughter-anchored auto-eval — FunnyNet's trick: windows preceding detected laughter = free positives; measure lane recall on them across one VOD; (iii) flag-off run byte-identical to baseline.
+- **Verification (via phase_runner):** (i) unit tests on synthetic windows; (ii) laughter-anchored auto-eval — FunnyNet's trick: windows preceding detected laughter = free positives; measure lane recall on them across one VOD; (iii) flag-off run identical to baseline on **deterministic selection artifacts** (`hype_moments.json`, manifests — not rendered bytes).
 
 ## Phase 2 — A2: Chat-overlay mining (~1–1.5 days)
 
@@ -80,7 +87,7 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 
 | Phase | What | Effort | Unlocks |
 |---|---|---|---|
-| 0 | Validation run + smoke test + verify-resume | ~½ day | clears all 🟡s; A7 verdict |
+| 0 | **phase_runner harness build** + validation run (piloted through it) + smoke test + verify-resume | ~1 day | unattended execution for all later phases; clears all 🟡s; A7 verdict |
 | 1 | Timeline + anomaly lane | 1.5–2 d | the missed-clip classes; feeds 2/3/4 |
 | 2 | Chat mining | 1–1.5 d | reference naming + reaction signal |
 | 3 | Judge timeline + format probe | hours | better ranking/titles |
@@ -88,7 +95,9 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 | 5 | Meme library | ~1 d | post-cutoff/niche formats |
 | 6 | Omni verifier (conditional) | ~1 d | perception-level second opinion |
 
-**Definition of done, every phase:** flag default OFF · flag-off run identical to baseline · failure-soft verified (kill a dep, confirm graceful) · bounded runtime (no unbounded background tasks) · real-media verification recorded · wiki pages + log/hot updated · committed.
+**Definition of done, every phase:** flag default OFF · flag-off run identical to baseline on deterministic artifacts · failure-soft verified (kill a dep, confirm graceful) · bounded runtime (no unbounded background tasks) · **gated runs executed via `phase_runner` with a `run_eval_<id>.json` verdict recorded** · wiki pages + log/hot updated · committed.
+
+**Effort note:** Phase 0 grows to ~1 day (harness build + pilot run), but every later gated phase gets cheaper and unattended — the harness is amortized across ≥6 runs.
 
 ## Real-VOD gating (which phases need a run) + the batching trick
 
@@ -104,15 +113,15 @@ Per [[concepts/plan-calibration-loop]], now with research additions:
 
 **Batching trick:** one instrumented run serves three phases at once — Phase 0.1's checks + Phase 4's Pass-B raw cache + Phase 1's flag-off baseline. Plan runs deliberately; each 2-h VOD costs ~45–90 min wall-clock.
 
-## Autonomous execution protocol (phase-runner — designed 2026-07-03)
+## Autonomous execution protocol (phase-runner — now a DELIVERABLE, built in Phase 0.0)
 
-Owner asked whether the agent can iterate the phases end-to-end — launch its own VOD runs, wait, evaluate, continue — with no human interruption. **Yes, with this architecture** (each element counters a failure mode already observed this month):
+Owner directive 2026-07-03: the executing agent **implements** this automation (Phase 0.0 above) and drives every gated real-VOD section through it — no manual runs, no human interruption. Architecture (each element counters a failure mode already observed this month):
 
 1. **Detached pipeline launch — never run the pipeline inside the agent sandbox.** The sandbox killed >30-min in-sandbox processes repeatedly (the zombie-task saga). The repo already has the machinery: the dashboard's `pipeline_runner` spawns detached processes that survive independently (or `POST /api/clip`). The agent launches detached, keeps nothing heavy in-sandbox.
 2. **Bounded waiting via marker files.** The orchestrator already writes `pipeline_stage.txt`, `pipeline.log`, `pipeline.done`, pid markers. The agent waits with a background `until`-loop watching **done-marker OR error signatures OR a hard timeout** (silence ≠ success — the filter must catch `[ERROR]`/stall, not just completion), and gets woken by the harness notification. Long waits use scheduled wake-ups rather than hot polling.
 3. **Auto-evaluation harness (the key enabler).** A script grades each run machine-readably against the phase's acceptance criteria: diagnostics JSON + `axis_report` (counts, buckets, axis coverage) · **`clip_forensics.py` decomposing the pipeline's own OUTPUT clips** (dogfooding: did the boom fire at the payoff? music span where expected? cold-open flash present as a cut+whoosh at t≈0?) · ffmpeg loudness stats (SFX-vs-speech ratio — "boom drowns dialogue" is measurable) · flag-off byte-comparison for the baseline check. Verdict: PASS / FAIL-with-evidence.
 4. **Phase-state on disk** (`{work}/phase_state.json`: current phase, awaiting-run id, criteria, verdicts). Advance on PASS; on FAIL, halt that phase, file the failure in the wiki, continue any independent phase (e.g., Phase 5 needs no runs). State-on-disk makes the loop **resumable across sessions** — a session limit interrupts, the next session reads state and continues; the wiki log is the audit trail.
-5. **Known hard limits (honest):** Anthropic **session limits** are the real interrupter (killed the verify layer twice) — pacing via long wake intervals + overnight windows mitigates but can't eliminate; **LM Studio must be up** (agent can check `/v1/models` and `lms load`, but not launch the GUI); **permission prompts** break autonomy unless the run uses pre-approved allowlists; a few checks stay **perceptual** (seam *aesthetics*, humor quality) — the loop logs artifacts for async human spot-check instead of blocking.
+5. **Known hard limits (honest):** Anthropic **session limits** are the real interrupter (killed the verify layer twice) — pacing via long wake intervals + overnight windows mitigates but can't eliminate; **LM Studio uptime: RESOLVED — owner commits to keeping the server running (2026-07-03)**; the harness still pre-checks `/v1/models` before each launch and halts gracefully (not hangs) if it's unreachable; **permission prompts** break autonomy unless the run uses pre-approved allowlists; a few checks stay **perceptual** (seam *aesthetics*, humor quality) — the loop logs artifacts for async human spot-check instead of blocking.
 6. **Pilot = Phase 0.** The validation run executes exactly this protocol once (detached launch → bounded wait → auto-eval → wiki+commit) before Phase 1 depends on it.
 
 ## Related
