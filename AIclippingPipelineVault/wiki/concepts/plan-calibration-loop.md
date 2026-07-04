@@ -3,8 +3,8 @@ title: "Plan — Calibration Loop (fit the multipliers)"
 type: concept
 tags: [plan, calibration, eval, scoring, pass-c, fitter, learning]
 sources: 0
-status: planned
-updated: 2026-06-12
+status: shipped
+updated: 2026-07-04
 ---
 
 # Plan — Calibration Loop
@@ -27,6 +27,10 @@ Already exists:
 Cached per run already: `transcript.json`, `audio_events.json`, chat JSONL.
 
 ---
+
+## Missing glue — BUILT 2026-07-04 (see [[concepts/calibration-ranker-2026-07]])
+
+> [!done] Items 1-3 shipped default-off: pass_c_candidates.json enriched to a full feature row (1), `scripts/lib/ranker.py` replays the score in log-space (2), `scripts/research/fit_ranker.py` fits it (3). Only real labelled data remains.
 
 ## Missing glue (~1–2 days total)
 

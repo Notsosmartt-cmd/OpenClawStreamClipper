@@ -77,6 +77,9 @@ class Ctx:
         self.text_model = pick("CLIP_TEXT_MODEL", "text_model", "qwen/qwen3.5-9b")
         self.vision_model = pick("CLIP_VISION_MODEL", "vision_model", self.text_model)
         self.text_model_passb = os.environ.get("CLIP_TEXT_MODEL_PASSB") or models.get("text_model_passb") or self.text_model
+        # Phase 4 B5 — decorrelation model for the Stage 4 rubric. Falls back to
+        # passb -> text_model (null default => no decorrelation, no behavior change).
+        self.text_model_passd = os.environ.get("CLIP_TEXT_MODEL_PASSD") or models.get("text_model_passd") or self.text_model_passb
         self.vision_model_stage6 = os.environ.get("CLIP_VISION_MODEL_STAGE6") or models.get("vision_model_stage6") or self.vision_model
         self.whisper_model = pick("CLIP_WHISPER_MODEL", "whisper_model", "large-v3-turbo")
         self.context_length = int(pick("CLIP_CONTEXT_LENGTH", "context_length", 8192))
@@ -131,6 +134,7 @@ class Ctx:
         env["CLIP_TEXT_MODEL"] = env["TEXT_MODEL"] = self.text_model
         env["CLIP_VISION_MODEL"] = env["VISION_MODEL"] = self.vision_model
         env["CLIP_TEXT_MODEL_PASSB"] = env["TEXT_MODEL_PASSB"] = self.text_model_passb
+        env["CLIP_TEXT_MODEL_PASSD"] = env["TEXT_MODEL_PASSD"] = self.text_model_passd
         env["CLIP_VISION_MODEL_STAGE6"] = env["VISION_MODEL_STAGE6"] = self.vision_model_stage6
         env["CLIP_WHISPER_MODEL"] = self.whisper_model
         env["CLIP_CONTEXT_LENGTH"] = str(self.context_length)
@@ -146,7 +150,7 @@ class Ctx:
 
     def configured_models(self) -> list[str]:
         return [self.text_model, self.vision_model,
-                self.text_model_passb, self.vision_model_stage6]
+                self.text_model_passb, self.text_model_passd, self.vision_model_stage6]
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
