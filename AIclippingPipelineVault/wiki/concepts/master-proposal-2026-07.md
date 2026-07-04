@@ -108,6 +108,10 @@ Deferred A6 · A7 (tooling) · B7 · D3 · E2 (library seeded 2026-07-02; build 
 2. **`tts_vo` source**: clarified for the owner — Stage 6 already returns a `voiceover` line and Piper (local TTS) speaks it, so **LLM-written + Piper-voiced is the zero-effort default**; owner-recorded lines remain the stronger-originality upgrade later. Start with LLM+Piper (C3).
 3. **Soundboard library: DONE 2026-07-02** — 14 canonical meme SFX downloaded + ffprobe-validated into `reference_clips/sfx_reference/` (vine boom, bruh, quack, airhorn, record scratch, sad trombone, crickets, applause, boing, whoosh, censor beep, metal pipe, anime wow, oof). **Analysis-only license lane** (myinstants provenance — matching reference, never render assets; see the folder README). **E2 is no longer asset-blocked** — remaining work is the audfprint/cross-correlation wiring itself.
 
+## 6.5 Execution plan (2026-07-03)
+
+The research + this roadmap are now converted into the concrete build plan: **[[concepts/plan-pipeline-upgrade-2026-07]]** — 6 phases with file targets, flags, research-derived parameters, and a per-phase definition of done. That page is what implementation sessions execute; this page remains the strategy/decision hub.
+
 ## 7. Decision log (owner) — every correction compiled
 
 | Date | Decision | Where the detail lives |
