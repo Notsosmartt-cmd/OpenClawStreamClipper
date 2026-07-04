@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-03] **HANDOFF filed** [[concepts/handoff-2026-07-03]] — done/left execution state for the next agent (next = Phase 1 live Stage-4 wiring; harness drives all gated runs; resume via phase_state.json)
 - [2026-07-03] **Phase 0.1 PASSED — autonomous loop proven**: harness launched a real 44-min rakai run detached, watcher caught it, `evaluate` graded **6/6 PASS** (10 clips, loudness −20.73 LUFS = SFX don't drown speech, forensics-on-output dogfood). 3 grader bugs found+fixed by the real run — [[log]]
 - [2026-07-03] **Phase 2 core built**: `chat_mine.py` burned-in-overlay OCR path (auto-ROI = has-chat test, velocity burst detector, fuzzy scroll dedup, 7s-seed lag cross-correlation) → emits chat_features-compatible JSONL. Logic verified; real-frame ROI gated on a chat VOD — [[log]]
 - [2026-07-03] **Phase 5 built**: `config/meme_formats.json` (12 formats, george_bush first) + `meme_match.py` precision-first matcher (verbal trigger req'd for trigger formats; audio-signature formats fire on their cue) — verified George-Bush 1.0, plain speech rejected — [[log]]
