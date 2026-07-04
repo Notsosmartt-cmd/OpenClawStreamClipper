@@ -40,6 +40,9 @@ All later gated phases (0.1, 1, 2, 4, 6) execute their runs **through this harne
 
 ## Phase 1 — A1: Event timeline + anomaly-proposer lane (keystone; ~1.5–2 days)
 
+> [!success] Phase 1 MODULES built + unit-verified (2026-07-03); live Stage-4 wiring pending
+> `scripts/lib/event_timeline.py` (`build_timeline` merges TEXT/AUDIO/MOTION/CUT/CHAT → time-sorted; `render_for_prompt` emits the `[t=..] KIND …` fused window) + `scripts/lib/anomaly_propose.py` (8 s/2 s windows, reaction×unexplained scoring, NMS dedup at 45 s, top-K, few-shot `verify_via_lmstudio`). Pure-logic, dependency-injected (unit-tests with no model). **Verified:** the George-Bush window proposes `src=ANOMALY` with cues; a keyword-explained window is suppressed; below-`min_reaction` filtered; verifier-reject drops the candidate. **Remaining (the wiring):** compute CLAP/motion over the live VOD + inject the Pass-A keyword_fn + insert `src=ANOMALY` into Pass C behind `CLIP_ANOMALY_LANE` (default OFF) — done after the Phase-0.1 validation run reveals current Stage-4 artifacts.
+
 **1a. `scripts/lib/event_timeline.py`** — `build_timeline(vod_or_clip, t0, t1)` merges into one time-ordered symbolic stream: transcript words (existing), `audio_sense.sense_events` (CLAP — laughter/cheering emphasized), `visual_sense.motion_events`, cuts, (Phase 2 adds CHAT). Serialize to `{work}/timeline.json`; render-to-prompt helper emits the `[t=6.2] AUDIO … | MOTION … | TEXT …` format. *Prosody stats (SMILE's pitch/jitter/shimmer) are a stretch goal — librosa is env-fragile here (onset hang precedent); only via a bounded pure-numpy pitch proxy, else skip.*
 
 **1b. `scripts/lib/anomaly_propose.py`** — research-parameterized:
