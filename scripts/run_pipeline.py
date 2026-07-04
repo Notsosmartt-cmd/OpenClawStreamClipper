@@ -35,7 +35,13 @@ from pipeline.common import PipelineExit  # noqa: E402
 
 
 def _bool_env(name: str, default: bool) -> bool:
-    return os.environ.get(name, str(default).lower()).lower() == "true"
+    # Accept the standard truthy set — NOT just "true". Before 2026-07-04 this
+    # was `== "true"`, so any flag set to "1"/"yes"/"on" silently read as False.
+    # That disabled CLIP_SFX_ANCHOR=1 and CLIP_COLD_OPEN=1 in every run that set
+    # them numerically (the harness did), turning the acoustic SFX anchor + the
+    # cold-open teaser OFF while looking ON.
+    return os.environ.get(name, str(default).lower()).strip().lower() in (
+        "true", "1", "yes", "on")
 
 
 class Ctx:
