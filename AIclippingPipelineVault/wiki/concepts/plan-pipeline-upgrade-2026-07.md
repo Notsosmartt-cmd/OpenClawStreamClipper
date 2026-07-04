@@ -17,6 +17,9 @@ The **actionable engineering plan** converting [[concepts/master-research-2026-0
 
 ## Phase 0 — Build the automation, then close the in-progress states (~1 day)
 
+> [!success] Phase 0.0 BUILT + unit-verified (2026-07-03)
+> `scripts/research/phase_runner.py` shipped: `launch` (fully-detached spawn — Windows `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP|CREATE_BREAKAWAY_FROM_JOB` so the sandbox job can't reap the run; clears stale markers; LM-Studio pre-flight halts-not-hangs), `wait` (marker poll exiting on done/fatal-log/dead-pid/timeout), `status`, `evaluate` (run-health + clips + axis_report + baseline moment-set diff on `hype_moments.json` [deterministic, not rendered bytes] + optional forensics/loudness on output clips → `run_eval_<id>.json`), `state` (`phase_state.json` advance/resume). Reads every path from `paths.py`. Verified: dry-run builds the correct `run_pipeline.py --vod … --force` cmd + records the validation env; state persists; evaluate FAILs gracefully naming missing checks.
+
 **0.0 Build the phase-runner harness — FIRST deliverable (owner directive 2026-07-03: the executing agent IMPLEMENTS the automation for all gated real-VOD sections, not just follows a manual checklist).** New `scripts/research/phase_runner.py` (offline/dev lane; never imported by the live pipeline), CLI verbs:
 - `launch --vod X [--env K=V ...]` — start a pipeline run **DETACHED** (reuse `dashboard/pipeline_runner.py`'s detached-spawn machinery or `POST /api/clip`; never a child of the agent sandbox), record run-id + pid + launch env into `{work}/phase_state.json`.
 - `wait [--timeout 7200]` — bounded watch on `pipeline.done` / `pipeline_stage.txt` / `pipeline.log`, exiting on **done OR error signatures (`[ERROR]`, stage-stall > stage-timeout, dead pid) OR the hard cap** — silence is never success. Designed to be driven from a background shell so the harness notification wakes the agent.
