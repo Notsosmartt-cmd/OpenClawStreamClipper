@@ -49,12 +49,19 @@ _VALIDATION_ENV = {
     "CLIP_ARC_GUARANTEE_MIN_RATIO": "0.45",
     "CLIP_SEGMENT_VOTES": "3",
     "CLIP_FLASH_CUTS": "true",
-    # Serial audio-events scan (1 worker) — the 8-worker parallel scan hung 58 min
-    # on Windows shared-memory (2026-07-04 incident). Serial is ~5-6x slower for
-    # that ONE step (~13min vs ~2.5min) but hang-proof and produces IDENTICAL
-    # output (same per-window HPSS math — it's a reliability knob, not a quality
-    # one). Override with --audio-workers if you want to risk the parallel path.
-    "AUDIO_EVENTS_WORKERS": "1",
+    # Audio-events scan workers. The 8-worker parallel scan hung 58 min once
+    # (Windows shared-memory, 2026-07-04). Now that audio_events.py has a STALL
+    # GUARD (imap per-result timeout → auto-fallback to serial), parallel is
+    # safe at any count; 4 is a balanced default (good speed, less contention
+    # than 8, and the watchdog covers the rest). Override with --audio-workers
+    # (1 = fully serial, guaranteed no parallel path; 8 = fastest). Quality is
+    # identical at any count — it's a speed/reliability knob, not a quality one.
+    "AUDIO_EVENTS_WORKERS": "4",
+    "AUDIO_EVENTS_RESULT_TIMEOUT": "90",  # stall-guard: abort→serial if a chunk hangs >90s
+    # Reuse the cached transcript even under --force (Option 1): the harness
+    # iterates on detection/render, not transcription (deterministic), so skip
+    # the ~10-min re-transcribe. --no-reuse-transcript forces a fresh transcript.
+    "CLIP_REUSE_TRANSCRIPT": "1",
 }
 
 
@@ -145,8 +152,10 @@ def cmd_launch(a) -> int:
     env = os.environ.copy()
     if a.profile == "validation":
         env.update(_VALIDATION_ENV)
-    if a.audio_workers is not None:      # explicit override of the serial default
+    if a.audio_workers is not None:      # explicit override of the default worker count
         env["AUDIO_EVENTS_WORKERS"] = str(a.audio_workers)
+    if getattr(a, "no_reuse_transcript", False):
+        env["CLIP_REUSE_TRANSCRIPT"] = "0"
     for kv in (a.env or []):
         if "=" in kv:
             k, v = kv.split("=", 1)
@@ -461,8 +470,10 @@ def main() -> int:
     pl.add_argument("--phase")
     pl.add_argument("--env", action="append", help="KEY=VALUE (repeatable)")
     pl.add_argument("--audio-workers", type=int,
-                    help="AUDIO_EVENTS_WORKERS override (validation profile defaults "
-                         "to 1 = serial/hang-proof; set 4-8 for speed at hang risk)")
+                    help="AUDIO_EVENTS_WORKERS override (validation profile defaults to "
+                         "4; 1 = fully serial, 8 = fastest; watchdog covers any count)")
+    pl.add_argument("--no-reuse-transcript", action="store_true",
+                    help="force a fresh transcript (default reuses the cache even under --force)")
     pl.add_argument("--dry-run", action="store_true")
     pl.set_defaults(func=cmd_launch)
 

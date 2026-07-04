@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,7 +46,20 @@ def run(ctx) -> None:
     # re-transcribe from scratch and REPLACE any stale cache — otherwise a bad
     # or outdated transcript would be reused forever. Without force we reuse the
     # cache (transcription is the slowest GPU stage).
-    if cached_json.exists() and cached_srt.exists() and not ctx.force:
+    #
+    # CLIP_REUSE_TRANSCRIPT (2026-07-04): a dev/harness speed flag that reuses a
+    # cached transcript EVEN under --force. Transcription is deterministic, so
+    # when you're forcing a reprocess only to re-run detection/render (the
+    # phase_runner iteration loop), re-transcribing the same VOD wastes ~10 min
+    # for an identical result. Default off = the strict force-re-transcribe
+    # behavior above is unchanged.
+    _reuse_transcript = os.environ.get("CLIP_REUSE_TRANSCRIPT", "").strip().lower() in (
+        "1", "true", "yes", "on")
+    _cache_ok = cached_json.exists() and cached_srt.exists()
+    if _cache_ok and (not ctx.force or _reuse_transcript):
+        if ctx.force and _reuse_transcript:
+            log.log(f"CLIP_REUSE_TRANSCRIPT: reusing cached transcription for "
+                    f"'{ctx.vod_basename}' despite --force (deterministic; skips ~10 min).")
         log.log(f"Found cached transcription for '{ctx.vod_basename}'. Skipping transcription.")
         shutil.copyfile(cached_json, p.transcript_json)
         shutil.copyfile(cached_srt, p.transcript_srt)
