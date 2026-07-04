@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "_note": "Learned caption-LANGUAGE voice (Phase 7.2). Consumed by Stage 6 as FEW-SHOT examples in the hook/title prompt when enabled=true. OCR-derived: language style is reliable; visual styling (font/colour/position) is NOT captured. Review + set enabled=true to use.",
+  "enabled": false,
+  "generated_from_clips": 2,
+  "distinct_caption_lines": 38,
+  "stats": {
+    "casing": "mixed",
+    "lowercase_ratio": 0.839,
+    "median_words": 6,
+    "p90_words": 27,
+    "emoji_seen": false,
+    "frequent_tokens": [
+      "stop",
+      "madizhotty",
+      "back",
+      "pattingmybacklike",
+      "patting",
+      "justright",
+      "jasz",
+      "pattingmy",
+      "stoppattingmybacklike",
+      "anyways",
+      "add",
+      "ouuuu",
+      "mean",
+      "uh",
+      "homeboy"
+    ]
+  },
+  "examples": [
+    "Tylil not on content suburbbaby don t let Rakai gas yoU bro clipgoatturtle",
+    "Tylil not on content suburbbaby don t let Rakai gas vou bro",
+    "Tylil not on content suburbbaby don t let Rakai gas you bro M P N 4 clipgoatturtle",
+    "stop patting my back like TikO dizhotys THIETES",
+    "pattingmy back like stop THEETES",
+    "pattingmyback like fmyahomebov 8 stopl",
+    "stoppatting myback like 9",
+    "stop pattingmy backlike gpsta"
+  ],
+  "caveats": "OCR-derived from burned-in overlays; may mix editor captions with streamer/chat overlay text. Language reliable, visual styling not.",
+  "voice_summary": "A casual, conversational Gen-Z voice that uses repetitive, meme-like hooks to transition into personal anecdotes or calls to action, characterized by loose grammar and phonetic slang.",
+  "casing_rule": "mostly lowercase with mixed casing for emphasis or handles",
+  "slang_lexicon": [
+    "homeboy",
+    "gas",
+    "period",
+    "rich",
+    "mean",
+    "anyways",
+    "add me"
+  ],
+  "hook_phrasings": [
+    "stop patting my back",
+    "don t let rakai gas you",
+    "stop patting my back like",
+    "patting my back like",
+    "stop patting my back im ya homeboy"
+  ],
+  "punctuation": "minimal punctuation, frequent use of spaces instead of apostrophes (e.g., don t), no emojis, occasional ALL CAPS for emphasis (PERIOD, Ouuuuu)",
+  "per_category_tone": {
+    "reactive": "defensive",
+    "storytime": "casual",
+    "hype": "assertive"
+  }
+}
