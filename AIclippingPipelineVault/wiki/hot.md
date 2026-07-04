@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-04] **INCIDENT (fixed): anomaly run hung 58min on the Stage-2 parallel audio scan** (intermittent Windows mp flake, NOT the Phase-1 wiring) → killed clean; added `phase_runner wait --stall` (log-freeze detection) + retry mitigation `AUDIO_EVENTS_WORKERS=1`. Phase-1 wiring still needs a real-run validation — [[log]]
 - [2026-07-04] **Phase 3 A3 known_format tagging**: `meme_match` wired into stage4 (`CLIP_KNOWN_FORMAT`, default off, metadata-only) → attaches known_format to moments; +known_format/src in the output whitelist. Verified George-Bush + vine_boom tag, history untagged. A5/LLM-probe = v2 — [[log]]
 - [2026-07-04] **Phase 1 LIVE WIRING**: anomaly lane in `stage4_moments` behind `CLIP_ANOMALY_LANE` (default off) — reaction=librosa crowd_response (free, already computed), few-shot verifier on top-6, src=ANOMALY boost-only into Pass C. Flag-off byte-identical by construction; flag-on run validating — [[log]]
 - [2026-07-04] **Handoff refreshed** (4 gaps): effects-manifest in DONE, Phase-2 = upgrade detect_chat_roi first (moving ROI + counter rejection), Delaware-by-time + sfx-anchor-firing follow-ups added — [[concepts/handoff-2026-07-03]] — [[log]]

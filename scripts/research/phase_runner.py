@@ -233,13 +233,26 @@ def cmd_status(a) -> int:
     return 0
 
 
+def _log_mtime() -> float:
+    try:
+        return P.pipeline_log.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
 def cmd_wait(a) -> int:
-    """Block on markers with a hard cap. Exit reasons: done | fatal | dead | timeout."""
+    """Block on markers with a hard cap. Exit reasons: done | fatal | dead |
+    STALL | timeout.  STALL = the pipeline log stopped advancing for > a.stall
+    seconds while the pid is still alive (the 2026-07-04 incident: the Stage-2
+    parallel audio_events scan hung 58 min, alive but frozen — silence-is-not-
+    success)."""
     deadline = time.time() + a.timeout
     st = _load_state()
     run = st["runs"].get(a.run, {})
     pid = run.get("pid")
     launched = run.get("launched_at", time.time())
+    last_mtime = _log_mtime()
+    last_change = time.time()
     result = {"run": a.run, "reason": "timeout", "exit": None, "stage": None}
     while time.time() < deadline:
         code = _read_done()
@@ -258,6 +271,14 @@ def cmd_wait(a) -> int:
                 result.update(reason="done", exit=code, stage=_current_stage())
             else:
                 result.update(reason="dead", exit=1, stage=_current_stage())
+            break
+        # STALL: log frozen while pid alive (hang detection).
+        mt = _log_mtime()
+        if mt != last_mtime:
+            last_mtime, last_change = mt, time.time()
+        elif a.stall > 0 and (time.time() - last_change) > a.stall:
+            result.update(reason="stall", exit=1, stage=_current_stage(),
+                          detail=f"log frozen {int(time.time()-last_change)}s")
             break
         time.sleep(a.poll)
     if a.run in st["runs"]:
@@ -438,6 +459,9 @@ def main() -> int:
     pw.add_argument("--run", required=True)
     pw.add_argument("--timeout", type=float, default=5400)
     pw.add_argument("--poll", type=float, default=15)
+    pw.add_argument("--stall", type=float, default=600,
+                    help="declare STALL if the pipeline log freezes this many "
+                         "seconds while the pid is alive (0 disables). Default 600.")
     pw.set_defaults(func=cmd_wait)
 
     ps = sub.add_parser("status")
