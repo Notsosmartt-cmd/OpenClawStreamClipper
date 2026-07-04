@@ -121,6 +121,8 @@ The research + this roadmap are now converted into the concrete build plan: **[[
 | 2026-07-02 | Soundboard seed library approved + **downloaded** (14 sounds, analysis-only) → E2 unblocked | §6.3 here; `reference_clips/sfx_reference/README.md` |
 | 2026-07-03 | **VO deprioritized**: keep the toggle, expect it unused — **maximize clipping quality instead** → A1 anomaly lane is the roadmap headline; C-workstream demoted to optional | §C callout + §4 sequence here |
 | 2026-07-03 | **Chat-ROI auto-detect is the DEFAULT** (owner doesn't know where chat will be); per-channel config demoted to rare-case override. Auto-detect doubles as the "does this VOD have chat?" test | [[concepts/reference-humor-2026-07]] §A2 mechanics |
+| 2026-07-03 | **The executing agent IMPLEMENTS the run automation**: `phase_runner.py` is Phase 0.0's first deliverable; every gated real-VOD section executes through it (detached launch → bounded wait → auto-eval → state advance), no manual runs | [[concepts/plan-pipeline-upgrade-2026-07]] §Phase 0.0 + §protocol |
+| 2026-07-03 | **Owner keeps LM Studio running** — uptime residual resolved; harness still pre-checks `/v1/models` and halts gracefully if unreachable | [[concepts/plan-pipeline-upgrade-2026-07]] §protocol item 5 |
 
 This page is the **hub**: decisions, statuses, sequence, and research prompts live here; per-topic depth lives on the linked pages (wiki convention — the hub stays bounded, the spokes carry detail).
 
