@@ -464,10 +464,37 @@ def _scan_parallel(
             # order. chunksize amortizes per-task IPC overhead (a single
             # task is ~700 ms of HPSS work; chunksize=4 batches ~2.8 s of
             # work per dispatch which dwarfs the ~50 µs round-trip cost).
-            for i, result in enumerate(
-                pool.imap(_worker_run, tasks, chunksize=PARALLEL_CHUNKSIZE),
-                1,
-            ):
+            #
+            # STALL GUARD (2026-07-04): plain `for r in pool.imap(...)` blocks
+            # FOREVER if a worker wedges (the 58-min Windows shared-memory hang).
+            # Iterate with a per-result timeout instead: if no window arrives in
+            # AUDIO_EVENTS_RESULT_TIMEOUT s (default 90 — a chunk is ~2.8 s of
+            # work, so only a true hang exceeds it), abort the pool and return
+            # ok=False so the caller runs the serial path (IDENTICAL output).
+            import multiprocessing as _mp
+            _res_timeout = float(os.environ.get("AUDIO_EVENTS_RESULT_TIMEOUT", "90") or 90)
+            _it = pool.imap(_worker_run, tasks, chunksize=PARALLEL_CHUNKSIZE)
+            i = 0
+            while True:
+                try:
+                    result = _it.next(_res_timeout)
+                except StopIteration:
+                    break
+                except _mp.TimeoutError:
+                    print(
+                        f"[AUDIO_EVENTS] parallel scan STALLED at window {i}/"
+                        f"~{n_total_estimate} (no result in {_res_timeout:.0f}s) — "
+                        f"aborting workers, falling back to serial",
+                        file=sys.stderr,
+                    )
+                    sys.stderr.flush()
+                    try:
+                        pool.terminate()
+                        pool.join()
+                    except Exception:
+                        pass
+                    return [], (0, 0, 0), False
+                i += 1
                 windows.append(result)
                 if result["rhythmic_speech"] >= 0.7:
                     n_fired_rhythmic += 1
