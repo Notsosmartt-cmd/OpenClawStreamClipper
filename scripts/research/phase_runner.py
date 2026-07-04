@@ -270,10 +270,13 @@ def cmd_wait(a) -> int:
 
 # --------------------------------------------------------------------------- evaluate
 def _latest_diag(vod: str | None):
+    # Stage 8 writes clips/.diagnostics/last_run_<stamp>.json (also older
+    # <vod>_diagnostics.json). Take the most recent of either.
     d = P.diagnostics_dir
     if not d.is_dir():
         return None
-    cands = sorted(d.glob("*_diagnostics.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cands = sorted([p for p in d.glob("*.json")],
+                   key=lambda p: p.stat().st_mtime, reverse=True)
     if vod:
         stem = Path(vod).stem
         for c in cands:
@@ -338,18 +341,26 @@ def cmd_evaluate(a) -> int:
             diag = json.loads(diag_path.read_text(encoding="utf-8"))
         except Exception:
             pass
-    clips_made = diag.get("clips_made") or diag.get("clip_count") or len(diag.get("clips", []) or [])
+    cm = diag.get("clips_made")
+    if isinstance(cm, list):
+        clips_made = len(cm)
+    elif isinstance(cm, int):
+        clips_made = cm
+    else:
+        clips_made = diag.get("clip_count") or len(diag.get("clips", []) or [])
     add("clips_produced", (clips_made or 0) > 0, f"clips_made={clips_made} ({diag_path.name if diag_path else 'no diag'})")
 
-    # 3) axis coverage (selection intelligence ran)
-    axis = {}
-    ax_path = P.work_dir / "axis_report.json"
-    if ax_path.exists():
-        try:
-            axis = json.loads(ax_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    add("axis_report_present", bool(axis), ax_path.name if axis else "missing")
+    # 3) axis coverage (selection intelligence ran) — axis_report is embedded in
+    # the diagnostics JSON; fall back to a standalone work_dir file.
+    axis = diag.get("axis_report") if isinstance(diag.get("axis_report"), dict) else {}
+    if not axis:
+        ax_path = P.work_dir / "axis_report.json"
+        if ax_path.exists():
+            try:
+                axis = json.loads(ax_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    add("axis_report_present", bool(axis), "embedded in diagnostics" if axis else "missing")
 
     # 4) baseline moment-set comparison (deterministic artifact)
     if a.baseline:
