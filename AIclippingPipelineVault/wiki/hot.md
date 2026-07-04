@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-04] **Phase 1 LIVE WIRING**: anomaly lane in `stage4_moments` behind `CLIP_ANOMALY_LANE` (default off) — reaction=librosa crowd_response (free, already computed), few-shot verifier on top-6, src=ANOMALY boost-only into Pass C. Flag-off byte-identical by construction; flag-on run validating — [[log]]
 - [2026-07-04] **Handoff refreshed** (4 gaps): effects-manifest in DONE, Phase-2 = upgrade detect_chat_roi first (moving ROI + counter rejection), Delaware-by-time + sfx-anchor-firing follow-ups added — [[concepts/handoff-2026-07-03]] — [[log]]
 - [2026-07-04] **Effects manifest shipped** (owner request): `effects_log.py` → `clips/.diagnostics/effects_log.jsonl` + CLI reader; hooks in profile_render (SFX kind+t+gain), clip_cuts (flashes), stage7 (cold-open). Next run populates it. Chat-ROI owner constraints bound (moving ROI, counter rejection, ≥3-row stack). "Hold It Down" battle = good clip but NOT Delaware (0 candidate mentions — check by time next) — [[log]]
 - [2026-07-03] **HANDOFF filed** [[concepts/handoff-2026-07-03]] — done/left execution state for the next agent (next = Phase 1 live Stage-4 wiring; harness drives all gated runs; resume via phase_state.json)
