@@ -302,6 +302,20 @@ def render(*,
          f"slowmo={'y' if plan['slow_mo'] else 'n'} meme={'y' if plan['meme_cutaway'] else 'n'} "
          f"broll={len(plan['broll_inserts'])} sfx={len(plan['sfx_cues'])}")
 
+    # Loudness-adaptive SFX gain (owner feedback 2026-07-04: SFX buried under loud
+    # clips, fine on quiet ones). Measure the clip segment's mean program level
+    # once and boost every cue so the per-kind mix policy holds RELATIVE to the
+    # actual program (boost-only, capped +9 dB; quiet clips unchanged). Failure-
+    # soft: probe failure -> 0.0 boost = exactly the old behavior.
+    _sfx_adapt_db = 0.0
+    if plan["sfx_cues"]:
+        try:
+            _sfx_adapt_db = sx.adaptive_gain_db(src, clip_start, clip_duration)
+            if _sfx_adapt_db > 0.05:
+                _log(f"sfx-adapt: +{_sfx_adapt_db:.1f}dB (loud program; keeping SFX audible)")
+        except Exception:
+            _sfx_adapt_db = 0.0
+
     # Per-clip effects manifest (owner request 2026-07-04) — logging only, never
     # affects the render. Records WHAT/WHEN so placement can be reviewed.
     try:
@@ -310,7 +324,8 @@ def render(*,
             moment.get("title") or os.path.basename(out), "render_plan",
             {"category": cat_canon, "preset": plan["caption_preset"],
              "clip_start": clip_start, "clip_duration": clip_duration,
-             "sfx_cues": plan["sfx_cues"], "zoom_punches": plan["zoom_punches"],
+             "sfx_cues": plan["sfx_cues"], "sfx_adapt_db": round(_sfx_adapt_db, 1),
+             "zoom_punches": plan["zoom_punches"],
              "freeze_at": plan["freeze_at"], "slow_mo": plan["slow_mo"],
              "meme_cutaway": plan["meme_cutaway"], "broll_inserts": plan["broll_inserts"]},
             vod=os.path.basename(src))
@@ -324,6 +339,7 @@ def render(*,
         seed=profile_seed,
         base_input_index=1,  # provisional — fixed up below after music decision
         sfx_volume=0.7,
+        adapt_db=_sfx_adapt_db,
     )
 
     # Music pick (graceful when folder missing or empty)
@@ -360,6 +376,7 @@ def render(*,
             seed=profile_seed,
             base_input_index=sfx_input_index,
             sfx_volume=0.7,
+            adapt_db=_sfx_adapt_db,
         )
 
     # Music input

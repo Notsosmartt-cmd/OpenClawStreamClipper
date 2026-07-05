@@ -131,6 +131,13 @@ class Ctx:
         env = self.paths.child_env()
         env["CLIP_LLM_URL"] = self.llm_url
         env["LLM_URL"] = self.llm_url  # some modules read LLM_URL directly
+        # One stable stamp per RUN so effects_log (and any per-run artifact)
+        # groups all clips under a single id — not one id per render second.
+        # Cached on the instance: child_env() returns a fresh dict per stage, so a
+        # setdefault here would re-stamp every stage.
+        if not getattr(self, "run_stamp", None):
+            self.run_stamp = os.environ.get("CLIP_RUN_STAMP") or time.strftime("%Y%m%d_%H%M%S")
+        env["CLIP_RUN_STAMP"] = self.run_stamp
         env["CLIP_TEXT_MODEL"] = env["TEXT_MODEL"] = self.text_model
         env["CLIP_VISION_MODEL"] = env["VISION_MODEL"] = self.vision_model
         env["CLIP_TEXT_MODEL_PASSB"] = env["TEXT_MODEL_PASSB"] = self.text_model_passb
