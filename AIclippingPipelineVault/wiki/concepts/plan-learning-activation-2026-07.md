@@ -70,7 +70,21 @@ reads them directly — verified 2026-07-05).
 
 ---
 
-> [!done] EXECUTION 2026-07-05 (agent, "execute the plan"). **L0 PASS** (learn0, rakai,
+> [!done] CROSS-VOD GATE 2026-07-05 (Tylil run tylil0, PASS, 9 clips, VOD-stamped trace).
+> With labels now spanning 2 VODs (7 owner rakai + 3 social incl. the activated Tylil
+> label), the gate does a REAL leave-one-VOD-out. Fixed a gate correctness bug first: the
+> fitted key now mirrors deployment exactly — `sigmoid(ranker.score) × position_weight`
+> (the pipeline applies position AFTER maybe_rescore; the old key omitted it, unfairly
+> penalizing the fit ~6 ranks). Result: on the seen rakai runs the fit is a wash (010127
+> rank 12→11.2, 074956 12.2 vs 11.5); on the **held-out Tylil VOD the fit makes the
+> positive WORSE (67→77)** — it does NOT transfer to the unseen channel. **Verdict REJECT
+> → ranker stays OFF** (no selection_ranker.json). The generalization guard working end to
+> end: a fit that doesn't generalize across VODs is refused. Path to ENABLE = more labels
+> across more VODs on the miss class (Tylil positive rank 77/244, Mockingbird 24/257) —
+> accrues hands-free via Path C + owner feedback. Also: P-TIGHT built (default off);
+> Tylil = a different streamer, pipeline generalized cleanly (voice scoped/off, ranker off).
+>
+> EXECUTION 2026-07-05 (agent, "execute the plan"). **L0 PASS** (learn0, rakai,
 > 10 clips, exit 0): adaptive SFX gain fired per-clip (0.0→+4.9 dB by loudness),
 > **cold-open teasers ATTACH** (5, zero WinError 17 — BUG 65 fix validated live), SFX
 > beat-anchored + varied (riser→boom one-twos, ding), manifest 8/10 under one
