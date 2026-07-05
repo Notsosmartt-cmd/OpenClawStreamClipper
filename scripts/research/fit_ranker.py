@@ -54,6 +54,12 @@ def load_traces(paths: list[Path]) -> list[dict]:
         cands = data.get("candidates") or []
         if not cands:
             continue
+        # Skip pre-B1 traces: without the stamped factors (style_multiplier etc.) the
+        # ranker would default them to 1.0 -> a systematically different feature-space
+        # region that contaminates the fit. Only B1-enriched runs are trainable.
+        if "style_multiplier" not in cands[0]:
+            print(f"[fit_ranker] skip {p.name}: pre-B1 trace (no stamped factors)")
+            continue
         run = p.stem  # e.g. last_run_20260705_010127 — matches labels' "run" key
         for c in cands:
             c = dict(c)
@@ -259,12 +265,68 @@ def self_test() -> int:
     return 0 if ok else 1
 
 
+def _recall_at_n(held: list[dict], key, n: int) -> float | None:
+    """Fraction of the held run's positives that land in the top-n by `key`."""
+    pos = [r for r in held if int(r.get("_label", 0)) == 1]
+    if not pos:
+        return None
+    top = set(id(r) for r in sorted(held, key=key, reverse=True)[:n])
+    return sum(1 for r in pos if id(r) in top) / len(pos)
+
+
+def run_gate(rows: list[dict], l2: float, n: int) -> dict:
+    """L3 GATE — leave-one-run-out holdout. For each run that has >=1 positive: fit on
+    the OTHER runs, then on the held run compare recall@n of the FITTED ranking vs the
+    hand-tuned baseline. Verdict ENABLE only if fitted >= baseline on average AND
+    strictly beats it somewhere (never worse). This is the generalization check the
+    identity anchor is built to survive: a niche/thin fit converges to baseline -> a
+    tie -> not enabled (correctly, nothing to gain)."""
+    by_run: dict[str, list[dict]] = {}
+    for r in rows:
+        by_run.setdefault(r.get("_run", ""), []).append(r)
+    holdable = [run for run, rs in by_run.items() if any(int(x.get("_label", 0)) == 1 for x in rs)]
+    per = []
+    if len(by_run) < 2 or not holdable:
+        return {"verdict": "UNDECIDED", "reason": "need >=2 runs and a positive outside the held run",
+                "n_runs": len(by_run), "holdable": len(holdable), "per_run": per}
+    for held in holdable:
+        train = [r for run, rs in by_run.items() if run != held for r in rs]
+        if not (any(int(r["_label"]) == 1 for r in train) and any(int(r["_label"]) == 0 for r in train)):
+            continue  # can't train without both classes
+        m = fit(train, l2=l2)
+        heldrows = by_run[held]
+        rf = _recall_at_n(heldrows, lambda r: score(r, m["weights"], m["bias"]), n)
+        rb = _recall_at_n(heldrows, lambda r: _num(r.get("final_score")), n)
+        per.append({"held": held, "recall_fitted": round(rf, 3) if rf is not None else None,
+                    "recall_baseline": round(rb, 3) if rb is not None else None})
+    scored = [p for p in per if p["recall_fitted"] is not None and p["recall_baseline"] is not None]
+    if not scored:
+        return {"verdict": "UNDECIDED", "reason": "no run had both a held positive and a trainable fit",
+                "per_run": per}
+    mf = sum(p["recall_fitted"] for p in scored) / len(scored)
+    mb = sum(p["recall_baseline"] for p in scored) / len(scored)
+    better = any(p["recall_fitted"] > p["recall_baseline"] for p in scored)
+    worse = any(p["recall_fitted"] < p["recall_baseline"] for p in scored)
+    verdict = "ENABLE" if (mf >= mb and better and not worse) else \
+              "HOLD" if mf >= mb else "REJECT"
+    return {"verdict": verdict, "recall_at_n": n, "mean_fitted": round(mf, 3),
+            "mean_baseline": round(mb, 3), "per_run": scored}
+
+
+def _num(x, d=0.0):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return d
+
+
 def main() -> int:
     args = sys.argv[1:]
     if "--self-test" in args:
         return self_test()
     if "--traces" not in args or "--labels" not in args:
-        print("usage: fit_ranker.py --traces <glob-or-dir> --labels <labels.jsonl> [--l2 1.0]\n"
+        print("usage: fit_ranker.py --traces <glob-or-dir> --labels <labels.jsonl> "
+              "[--l2 1.0] [--tol 10] [--gate [--gate-n 10]]\n"
               "       fit_ranker.py --self-test")
         return 2
     tp = args[args.index("--traces") + 1]
@@ -275,9 +337,27 @@ def main() -> int:
     labels = [json.loads(l) for l in Path(args[args.index("--labels") + 1]).read_text(
         encoding="utf-8").splitlines() if l.strip()]
     l2 = float(args[args.index("--l2") + 1]) if "--l2" in args else 1.0
-    rows = attach_labels(load_traces(trace_paths), labels)
+    tol = float(args[args.index("--tol") + 1]) if "--tol" in args else 2.0
+    rows = attach_labels(load_traces(trace_paths), labels, tol=tol)
     if not rows:
         print("[fit_ranker] no candidate rows found."); return 1
+
+    if "--gate" in args:
+        n = int(args[args.index("--gate-n") + 1]) if "--gate-n" in args else 10
+        g = run_gate(rows, l2=l2, n=n)
+        print(f"\n[GATE] verdict={g['verdict']}")
+        for k in ("reason", "mean_fitted", "mean_baseline", "recall_at_n"):
+            if k in g:
+                print(f"       {k}: {g[k]}")
+        for p in g.get("per_run", []):
+            print(f"       held {p['held']}: fitted@{g.get('recall_at_n','?')}={p['recall_fitted']} "
+                  f"baseline={p['recall_baseline']}")
+        print("[GATE] ENABLE => safe to write config/selection_ranker.json; "
+              "HOLD/REJECT/UNDECIDED => stay on hand-tuned scores.")
+        if g["verdict"] != "ENABLE":
+            return 0
+        print("[GATE] passed — fitting final model on ALL runs for deployment...")
+
     _write(fit(rows, l2=l2))
     return 0
 
