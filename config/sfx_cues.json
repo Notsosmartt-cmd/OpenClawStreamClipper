@@ -153,6 +153,10 @@
   "payoff_delay_s": 0.35,
   "snap_to_onset": true,
   "onset_snap_window_s": 1.2,
+  "_timing2_note": "Owner findings 2026-07-05: payoff_rescue \u2014 when the detected payoff sits in the first max(3s,12%) of a >12s clip, the timestamp is the SETUP not the payoff (Hot Cheeto: boom@1s, real beat@18s) -> search the whole clip for the dominant transient. boom_after_line \u2014 a 0dB boom ON the punchline masks the words (Shower Bluff) -> shift into the first speech gap (RMS dip <35% of peak, >=150ms) within boom_gap_window_s after the hit: line -> breath -> boom. Floor: no payoff cue in the first 2.5s of clips >8s.",
+  "payoff_rescue": true,
+  "boom_after_line": true,
+  "boom_gap_window_s": 2.5,
   "_global_mix_note": "RESERVED / informational. The ACTIVE per-cue mix policy is the gain_db on each beat_defaults entry (applied by sfx_inject._cue_volume): boom rides hot at gain_db 0.0 (the research's 'loud = funny' Vine-boom exception) while every other kind ducks under speech (negative dB). duck_speech_db and hot_kinds below are not read by code today \u2014 kept for a future calibration loop that may fit the mix globally. loudnorm_target_lufs is likewise deferred (not applied \u2014 pumping/perf risk on the existing audio chain).",
   "global_mix": {
     "duck_speech_db": -6.0,

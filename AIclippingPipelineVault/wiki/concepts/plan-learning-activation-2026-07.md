@@ -191,6 +191,24 @@ only consistent evidence moves weights. Composite folds back into per-feature we
 **DoD:** gate numbers recorded in [[concepts/calibration-ranker-2026-07]]; fitted file
 committed (or a documented "gate failed, staying off" verdict — also a valid outcome).
 
+## Next work item — P-TIGHT: punchline boundary tightening (owner 2026-07-05)
+
+Owner review of L0: "clipping is grabbing a little too much — for shorter punchline
+jokes I want short clips, but keep the ability to pick up long talking segments."
+Cases: *Shower Bluff* — 19.5 s of setup before the punchline (start should be ~19 s in)
++ 2 s of tail; *Mental Breakdown* — last 5 s filler. Rap-battle clips = good length
+(don't touch). Design (flag `CLIP_TIGHT_PUNCHLINE`, default OFF, failure-soft):
+- Applies ONLY to payoff-type categories (funny / reactive / hot_take / social_callout /
+  controversial). **storytime / rap / emotional lanes EXEMPT** — long segments preserved
+  by construction.
+- Head trim: locate the acoustic payoff (the `_refine_payoff` rescue/snap machinery,
+  which now finds the true beat); if setup before it exceeds ~8-10 s, pull `clip_start`
+  to payoff − lead (6-8 s) — enough context, no dead run-up. Cold-open still prepends.
+- Tail trim: end at the last speech/reaction burst within payoff + ~8 s; drop trailing
+  low-RMS/no-keyword filler (the Breakdown −5 s case).
+- Acceptance: Shower-Bluff-class clips land ≈ payoff−8s → payoff+reaction; storytime
+  durations unchanged byte-identically with the flag off AND on.
+
 ## Phase L4 — Cadence (steady state)
 
 - Every VOD run: trace banks automatically (zero effort).
