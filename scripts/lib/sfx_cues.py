@@ -159,13 +159,27 @@ def _laughter_times(temp_dir: str, clip_start: float, clip_end: float) -> list[f
 def _refine_payoff(payoff_rel: float, clip_start: float, clip_duration: float,
                    temp_dir: str, cfg: dict) -> float:
     """Refine the payoff anchor from the (early) detection timestamp to the actual
-    acoustic hit. Strategy: snap to the strongest RMS transient rise inside
-    [payoff-0.1s, payoff + onset_snap_window_s] of the run's audio.wav (the
-    punchline/impact is ground truth; the detection time is approximate and lands
-    early — owner-reported 2026-07-04). Failure-soft: any problem (no audio.wav,
-    soundfile missing, flat energy) falls back to payoff + payoff_delay_s."""
+    acoustic hit, then to just AFTER the delivered line. Three owner-driven layers:
+
+    1. RESCUE (owner 2026-07-05, 'Hot Cheeto'): when the detected payoff sits at the
+       very START of the clip, the timestamp is the setup, not the payoff — the real
+       beat lands much later (camera pan / reaction at ~18s while the boom fired at
+       ~1s). If payoff_rel < max(3s, 12% of duration), search the WHOLE clip for the
+       dominant RMS transient instead of trusting the timestamp.
+    2. SNAP (owner 2026-07-04): strongest RMS rise within onset_snap_window_s of the
+       (possibly rescued) payoff — the hit itself.
+    3. AFTER-LINE (owner 2026-07-05, 'Shower Bluff'): a 0 dB boom ON the punchline
+       masks the words. Shift the cue into the first speech GAP after the peak
+       (first sustained RMS dip < 35% of peak within boom_gap_window_s) — the meme
+       edit convention: line → breath → boom.
+
+    Plus a floor: never place the payoff cue in the first 2.5 s of a clip > 8 s
+    (nothing to punctuate yet; the cold-open teaser owns that space).
+    Failure-soft at every layer: any problem falls back to the previous layer's
+    value, ultimately payoff + payoff_delay_s clamped to the floor."""
     delay = float(cfg.get("payoff_delay_s", 0.35) or 0.0)
-    fallback = max(0.05, min(payoff_rel + delay, clip_duration - 0.2))
+    floor = 2.5 if clip_duration > 8 else 0.05
+    fallback = max(floor, min(payoff_rel + delay, clip_duration - 0.2))
     if not cfg.get("snap_to_onset", True):
         return fallback
     try:
@@ -175,25 +189,61 @@ def _refine_payoff(payoff_rel: float, clip_start: float, clip_duration: float,
         if not wav.exists():
             return fallback
         sr = sf.info(str(wav)).samplerate
+        hop = max(1, int(0.05 * sr))           # 50 ms energy envelope
+
+        def _rms_slice(a_rel: float, b_rel: float):
+            """RMS envelope of clip-relative [a_rel, b_rel); None on any problem."""
+            a_rel = max(0.0, a_rel)
+            frames = int(max(0.0, b_rel - a_rel) * sr)
+            if frames < sr // 4:
+                return None
+            data, _ = sf.read(str(wav), start=max(0, int((clip_start + a_rel) * sr)),
+                              frames=frames, dtype="float32", always_2d=False)
+            if data is None or getattr(data, "size", 0) < sr // 4:
+                return None
+            if getattr(data, "ndim", 1) > 1:
+                data = data.mean(axis=1)
+            n_h = len(data) // hop
+            if n_h < 3:
+                return None
+            return np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
+
+        # --- 1) RESCUE: early payoff -> dominant transient anywhere in the clip ---
+        rescue_floor = max(3.0, 0.12 * clip_duration)
+        if (cfg.get("payoff_rescue", True) and payoff_rel < rescue_floor
+                and clip_duration > 12):
+            r = _rms_slice(2.0, clip_duration - 1.0)
+            if r is not None:
+                flux = np.diff(r)
+                if len(flux) and float(flux.max()) > 0:
+                    cand = 2.0 + (int(np.argmax(flux)) + 1) * hop / sr
+                    if cand > rescue_floor:    # only accept a genuinely later beat
+                        payoff_rel = cand
+
+        # --- 2) SNAP: strongest rise near the payoff ---
         win = float(cfg.get("onset_snap_window_s", 1.2) or 1.2)
-        t0_abs = clip_start + payoff_rel - 0.1
-        data, sr = sf.read(str(wav), start=max(0, int(t0_abs * sr)),
-                           frames=int((win + 0.4) * sr), dtype="float32",
-                           always_2d=False)
-        if data is None or len(data) < sr // 4:
-            return fallback
-        if getattr(data, "ndim", 1) > 1:
-            data = data.mean(axis=1)
-        hop = max(1, int(0.05 * sr))          # 50 ms energy envelope
-        n_h = len(data) // hop
-        if n_h < 3:
-            return fallback
-        rms = np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
-        flux = np.diff(rms)                    # transient = biggest RMS rise
-        if len(flux) == 0 or float(flux.max()) <= 0:
-            return fallback
-        snap_rel = (payoff_rel - 0.1) + (int(np.argmax(flux)) + 1) * hop / sr
-        return max(0.05, min(snap_rel, clip_duration - 0.2))
+        peak_rel = payoff_rel + delay
+        r = _rms_slice(payoff_rel - 0.1, payoff_rel + win + 0.3)
+        if r is not None:
+            flux = np.diff(r)
+            if len(flux) and float(flux.max()) > 0:
+                peak_rel = (payoff_rel - 0.1) + (int(np.argmax(flux)) + 1) * hop / sr
+
+        # --- 3) AFTER-LINE: shift into the first speech gap after the peak ---
+        if cfg.get("boom_after_line", True):
+            gapw = float(cfg.get("boom_gap_window_s", 2.5) or 2.5)
+            r2 = _rms_slice(peak_rel, peak_rel + gapw)
+            if r2 is not None and len(r2) > 4:
+                thr = 0.35 * float(r2.max())
+                need = 3                        # 3 × 50 ms = 150 ms of quiet
+                runlen = 0
+                for i, v in enumerate(r2):
+                    runlen = runlen + 1 if float(v) < thr else 0
+                    if runlen >= need:
+                        peak_rel = peak_rel + (i - need + 1) * hop / sr + 0.05
+                        break
+
+        return max(floor, min(peak_rel, clip_duration - 0.2))
     except Exception:
         return fallback
 

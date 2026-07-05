@@ -96,9 +96,21 @@ def attach_labels(rows: list[dict], labels: list[dict], tol: float = 2.0) -> lis
         else:
             best = min(in_win, key=lambda r: abs(float(r.get("timestamp", 0)) - t))
         best["_label"] = y
+        best["_explicit"] = True
         matched += 1
+    # SELECTED-but-unrated candidates are UNKNOWN, not negatives: the owner reviews
+    # only some produced clips ("didn't watch all"), and selected clips skew good.
+    # Marking them 0 would teach the fit that its own selections are bad. Excluded
+    # from training (label None). REJECTED unlabeled candidates stay implicit 0 —
+    # highlight sparsity makes that a sound prior.
+    excluded = 0
+    for r in rows:
+        if r.get("selected") and not r.get("_explicit"):
+            r["_label"] = None
+            excluded += 1
     print(f"[fit_ranker] matched {matched}/{len(labels)} labels to candidates "
-          f"({sum(r['_label'] for r in rows)} positives / {len(rows)} rows)")
+          f"({sum(1 for r in rows if r.get('_label') == 1)} positives / {len(rows)} rows; "
+          f"{excluded} selected-but-unrated excluded)")
     return rows
 
 
@@ -164,6 +176,7 @@ def fit(rows: list[dict], l2: float = 1.0, anchor: bool = True) -> dict:
     composite folds back into the per-feature weights afterwards (composite = sum
     of identity features, so adding its weight to each is exactly equivalent),
     keeping the output schema identical for ranker.py."""
+    rows = [r for r in rows if r.get("_label") is not None]   # unknowns excluded
     order = list(ranker.FEATURE_ORDER)
     X = [ranker.feature_vector(r, order) for r in rows]
     y = [int(r.get("_label", 0)) for r in rows]
@@ -275,7 +288,7 @@ def self_test() -> int:
 
 def _recall_at_n(held: list[dict], key, n: int) -> float | None:
     """Fraction of the held run's positives that land in the top-n by `key`."""
-    pos = [r for r in held if int(r.get("_label", 0)) == 1]
+    pos = [r for r in held if r.get("_label") == 1]
     if not pos:
         return None
     top = set(id(r) for r in sorted(held, key=key, reverse=True)[:n])
@@ -284,7 +297,7 @@ def _recall_at_n(held: list[dict], key, n: int) -> float | None:
 
 def _mean_pos_rank(held: list[dict], key) -> float | None:
     """Mean rank (1 = highest) of the held run's positives under `key`."""
-    pos = [r for r in held if int(r.get("_label", 0)) == 1]
+    pos = [r for r in held if r.get("_label") == 1]
     if not pos:
         return None
     order = sorted(held, key=key, reverse=True)
@@ -302,14 +315,14 @@ def run_gate(rows: list[dict], l2: float, n: int) -> dict:
     by_run: dict[str, list[dict]] = {}
     for r in rows:
         by_run.setdefault(r.get("_run", ""), []).append(r)
-    holdable = [run for run, rs in by_run.items() if any(int(x.get("_label", 0)) == 1 for x in rs)]
+    holdable = [run for run, rs in by_run.items() if any(x.get("_label") == 1 for x in rs)]
     per = []
     if len(by_run) < 2 or not holdable:
         return {"verdict": "UNDECIDED", "reason": "need >=2 runs and a positive outside the held run",
                 "n_runs": len(by_run), "holdable": len(holdable), "per_run": per}
     for held in holdable:
         train = [r for run, rs in by_run.items() if run != held for r in rs]
-        if not (any(int(r["_label"]) == 1 for r in train) and any(int(r["_label"]) == 0 for r in train)):
+        if not (any(r.get("_label") == 1 for r in train) and any(r.get("_label") == 0 for r in train)):
             continue  # can't train without both classes
         m = fit(train, l2=l2)
         heldrows = by_run[held]
