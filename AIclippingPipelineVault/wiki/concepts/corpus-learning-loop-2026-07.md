@@ -3,7 +3,7 @@ title: "Corpus Learning Loop (Phase 7)"
 type: concept
 tags: [reference-clips, learning, calibration, captions, forensics, phase-7]
 sources: 1
-updated: 2026-07-04
+updated: 2026-07-05
 status: shipped
 ---
 
@@ -106,11 +106,15 @@ python scripts/research/transcript_value.py   # -> .cache/<stem>.value.json + tr
 - The `reaction_carried` list **is the [[concepts/case-incongruity-comedy]] ground-truth
   eval set** — the clips whose value is reaction/visual, not words.
 
-**Finding (4-clip sample, 2026-07-04): 0 transcript-carried, 2 reaction-carried, 2 mixed.**
-ReemKnocksClip (kw=0.0, rx=0.42) and the Rakai clip (kw=0.4, rx=0.86) are reaction-carried;
-even the two "mixed" clips had high reaction. This **empirically supports the anomaly-lane
-thesis** — in this niche the clip value is frequently NOT in the transcript, which is
-exactly the class keyword-only Pass A misses.
+**Finding — REVISED with the full corpus (2026-07-05, n=36): 13 transcript-carried, 2
+reaction-carried, 21 mixed.** The first 4-clip sample (0 transcript-carried) overstated the
+effect — small-sample artifact. Corpus-wide, the honest picture: the anomaly lane's HARD
+class (pure reaction-carried) is small (~6%), but **64% of competitor clips (mixed +
+reaction) have substantial non-transcript value** — the words alone don't fully explain
+them. So the thesis survives in moderated form: keyword-only Pass A under-serves ~2/3 of
+this niche's winning clips, but pure "words are irrelevant" clips are rare. Implication
+for the ranker fit: the `ix_reaction_low_keyword` interaction matters as a BOOST feature,
+not a replacement lane.
 
 ## Shared hardening — `lmstudio.loads_lenient`
 
