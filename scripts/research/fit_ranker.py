@@ -326,12 +326,20 @@ def run_gate(rows: list[dict], l2: float, n: int) -> dict:
             continue  # can't train without both classes
         m = fit(train, l2=l2)
         heldrows = by_run[held]
-        rf = _recall_at_n(heldrows, lambda r: ranker.score(r, m["weights"], m["bias"]), n)
+        # FITTED key mirrors DEPLOYMENT exactly: the pipeline uses maybe_rescore =
+        # sigmoid(ranker.score), then multiplies position_weight (then a within-bucket
+        # norm we can't replay here). Ranking by sigmoid(score)*position is what
+        # actually happens at selection — else the fit is unfairly judged on a raw
+        # score the pipeline never ranks on.
+        def _fkey(r, _m=m):
+            return ranker._sigmoid(ranker.score(r, _m["weights"], _m["bias"])) * \
+                _num(r.get("position_weight"), 1.0)
+        rf = _recall_at_n(heldrows, _fkey, n)
         rb = _recall_at_n(heldrows, lambda r: _num(r.get("final_score")), n)
         # DIRECTION diagnostic: mean rank of the held positives (1 = top), fitted vs
         # baseline. recall@n can tie at 0 when the positive is a known miss (rank > n),
         # yet the fit may still move it up — this shows that.
-        pf = _mean_pos_rank(heldrows, lambda r: ranker.score(r, m["weights"], m["bias"]))
+        pf = _mean_pos_rank(heldrows, _fkey)
         pb = _mean_pos_rank(heldrows, lambda r: _num(r.get("final_score")))
         per.append({"held": held, "recall_fitted": round(rf, 3) if rf is not None else None,
                     "recall_baseline": round(rb, 3) if rb is not None else None,
