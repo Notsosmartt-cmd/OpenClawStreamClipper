@@ -191,13 +191,13 @@ only consistent evidence moves weights. Composite folds back into per-feature we
 **DoD:** gate numbers recorded in [[concepts/calibration-ranker-2026-07]]; fitted file
 committed (or a documented "gate failed, staying off" verdict — also a valid outcome).
 
-## Next work item — P-TIGHT: punchline boundary tightening (owner 2026-07-05)
+## P-TIGHT — punchline boundary tightening (BUILT 2026-07-05, default OFF)
 
 Owner review of L0: "clipping is grabbing a little too much — for shorter punchline
 jokes I want short clips, but keep the ability to pick up long talking segments."
 Cases: *Shower Bluff* — 19.5 s of setup before the punchline (start should be ~19 s in)
 + 2 s of tail; *Mental Breakdown* — last 5 s filler. Rap-battle clips = good length
-(don't touch). Design (flag `CLIP_TIGHT_PUNCHLINE`, default OFF, failure-soft):
+(don't touch). SHIPPED as `scripts/lib/clip_tighten.py`, wired into `stage7._render_clip` before SFX/cold-open. Flag `CLIP_TIGHT_PUNCHLINE`, default OFF, failure-soft. Design:
 - Applies ONLY to payoff-type categories (funny / reactive / hot_take / social_callout /
   controversial). **storytime / rap / emotional lanes EXEMPT** — long segments preserved
   by construction.

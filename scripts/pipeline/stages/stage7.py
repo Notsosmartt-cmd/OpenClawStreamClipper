@@ -164,6 +164,25 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
     clip_start = max(0, int(float(row["clip_start"]))) if row["clip_start"] != "" else max(0, int(T) - 22)
     clip_length = int(float(row["clip_duration"])) if row["clip_duration"] != "" else 45
 
+    # P-TIGHT (owner 2026-07-05): trim setup/filler around the payoff for punchline-type
+    # clips only (storytime/rap/emotional exempt). Flag CLIP_TIGHT_PUNCHLINE, default OFF
+    # -> returns the inputs unchanged. Applied HERE so SFX-anchor + cold-open + render all
+    # use the tightened window. Failure-soft: any error keeps the original boundaries.
+    try:
+        import sys as _sys
+        from pathlib import Path as _P
+        _sys.path.insert(0, str(_P(__file__).resolve().parents[2] / "lib"))
+        import clip_tighten as _ctgh
+        _ns, _nl = _ctgh.tighten(
+            {"timestamp": T, "category": category, "primary_category": category,
+             "primary_pattern": row.get("primary_pattern", "")},
+            clip_start, clip_length, temp_dir=str(p.work_dir))
+        if (abs(_ns - clip_start) > 0.4 or abs(_nl - clip_length) > 0.4):
+            log.log(f"  [p-tight] {clip_start}+{clip_length}s -> {_ns}+{_nl}s (T={T} {category})")
+            clip_start, clip_length = _ns, _nl
+    except Exception as _te:
+        log.warn(f"p-tight skipped for T={T}: {_te}")
+
     # Per-moment meta (mirror_safe|vo_line|vo_placement|group_id|kind)
     meta_env = dict(env)
     meta_env["CLIP_T"] = str(T)
