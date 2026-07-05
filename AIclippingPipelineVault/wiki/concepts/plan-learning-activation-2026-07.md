@@ -16,16 +16,38 @@ phase has commands, files, a Definition-of-Done, and a fallback. House rules app
 throughout: flag-gated/default-off, failure-soft, wiki+commit per change, every run
 bounded + verified not-stuck ([[concepts/plan-pipeline-upgrade-2026-07]] §rules).
 
-## Path A vs Path B — tested verdict (2026-07-05)
+## Label paths — tested verdicts (2026-07-05)
 
-**Path A (Twitch community-clip labels) is BROKEN as shipped**: live test returned 0
-clips for every channel incl. kaicenat; raw probe shows `PersistedQueryNotFound` — Twitch
-rotated the persisted-query hash `bootstrap_twitch_clips.py` uses, and the tool swallows
-the error. Repair options in L2. **Even repaired, A is a proxy** (live-Twitch-viewer
-taste, hype-biased, some clips lack `vodOffset`) while **Path B (owner ratings) is ground
-truth for the actual goal** (owner's taste, TikTok target) but only covers SELECTED
-clips (10/run), never the ~247 rejected candidates. **Decision: B is required and leads;
-A is opportunistic volume — merge when available, B overrides on conflict.**
+**Path A (Twitch clip API) is DEAD — wrong universe, not just broken.** Owner
+correction: in this niche community highlights are NOT Twitch clips — **viewers
+screen-record moments and post them on social media themselves** (that's exactly how the
+reference corpus was collected). The API fallback is also mechanically broken
+(`PersistedQueryNotFound` — rotated persisted-query hash, swallowed as "0 clips"), but
+the deeper problem is it measures the wrong signal. Dropped from this plan; Helix repair
+notes kept in [[entities/bootstrap-twitch-clips]] only for completeness.
+
+**Path C (viewer-posted clip alignment) REPLACES it — method PROVEN.**
+`scripts/research/align_ref_clips.py` aligns each reference clip back to its source VOD
+by transcript shingle matching (both sides already have whisper transcripts). First real
+pass: **2/36 clips aligned, unambiguously** (48 and 108 shingle hits; threshold 6) →
+`clips/.diagnostics/labels_social.jsonl`. These are the BEST labels available:
+platform-validated (a real viewer recorded + posted the moment). The 34 misses are clips
+whose source VOD isn't on disk — **yield scales with collection habit, not code**: when
+saving viewer clips for streams whose VODs are kept, every pair = a free label.
+
+**Path B (owner ratings) remains required and leads** — ground truth for the owner's
+taste/TikTok target; covers the 10 SELECTED clips per run but never the ~247 rejected
+candidates (which C can reach). Merge order: C ≥ B > (nothing); conflicts owner-wins.
+
+### §Case — the Mockingbird miss (external validation of the whole calibration thesis)
+
+The very first Path-C label exposed a real selection error: *Teacher Explains To Kill a
+Mockingbird* (viewer-posted, social) aligns to the rakai VOD @ **T≈5252**. In the p4cal
+trace, T=5305 is that moment: Pass B **0.9375, cross-validated, final 1.3365 — near-top
+of 257 candidates — and `selected=False`** (lost bucket competition). A second
+[[concepts/case-rap-battle-missed]], but this time proven by ground truth from the
+target platform, not internal reasoning. This is precisely the class the fitted ranker
+(L3) exists to rescue, and it is now a *labelled training example*.
 
 ## The loop being activated
 
@@ -33,7 +55,7 @@ A is opportunistic volume — merge when available, B overrides on conflict.**
 render batch (L0) ──► owner listens + rates (B labels, ~2 min)
       ▲                          │
       │                          ▼
- fitted ranker ◄── GATE ◄── fit_ranker (L3) ◄── labels merge (L1) ◄── Twitch labels (L2, opportunistic)
+ fitted ranker ◄── GATE ◄── fit_ranker (L3) ◄── labels merge (L1) ◄── social labels (L2, align_ref_clips)
       │
       └── every future run banks its trace automatically (already live)
 ```
@@ -90,28 +112,26 @@ cold-open attach failing again = reopen [[concepts/bugs-and-fixes#BUG 65]].
 **DoD:** `rate_run.py template` + `collect` round-trip on the L0 run; a trace row
 matches its rating by (run, timestamp) with the L1.1 vod stamp present in the L0 trace.
 
-## Phase L2 — Path A repair (opportunistic, time-boxed)
+## Phase L2 — Path C harvesting (SHIPPED 2026-07-05; ongoing habit)
 
-Two independent tracks; FIRST to land wins, other is dropped:
-- **L2a (owner, ~5 min, official/stable):** register a free app at dev.twitch.tv →
-  set `TWITCH_CLIENT_ID` + `TWITCH_OAUTH_TOKEN` (app token) env → the existing Helix
-  path in `bootstrap_twitch_clips.py` activates unchanged.
-- **L2b (agent, time-boxed 2 h, unofficial):** replace the dead persisted-query with a
-  raw GraphQL query text (TwitchDownloader-style) under the public client-id.
-  Acceptance: ≥20 clips for kaicenat with non-null `vod_id` + `vod_offset_s`.
-  If the box expires without acceptance → mark A dead-for-now in this page, continue B-only.
-- Conversion once either lands: `fetch-clips` for the 4 broadcasters → filter records to
-  `vod_id ∈ {2742682361, 2752095628, 2752399598, 2756365448}` (from the VOD filenames)
-  → `labels_twitch.jsonl` (`run` resolved via L1.1/`trace_vods.json`, `timestamp` =
-  `vod_offset_s`, label 1; tol 8-10 s at fit time).
+The aligner is built and proven (`scripts/research/align_ref_clips.py` → 2/36 matched,
+labels in `clips/.diagnostics/labels_social.jsonl`, gitignored runtime data —
+regenerable by re-running the script). What remains is HABIT + coverage, not code:
+- **Owner habit:** when downloading viewer-posted clips, prefer streams whose VODs are
+  (or will be) on disk; drop them in `reference_clips/` as usual. `corpus_refresh.py`
+  transcribes them; `align_ref_clips.py` then labels them automatically.
+- **Agent cadence:** run `align_ref_clips.py` after every corpus refresh; new matches
+  append (deduped by clip).
+- **Tylil note:** the 108-hit match (T=1009, Tylil VOD) has NO banked trace yet — the
+  Tylil VOD predates B1 tracing. A future pipeline run on that VOD banks the trace and
+  activates the label.
 
-**DoD:** labels_twitch.jsonl with ≥10 offset-bearing positives across the 4 VODs — or a
-documented dead-for-now verdict. **Never blocks L3.**
+**DoD (already met):** ≥1 confident alignment + the labels file. **Never blocks L3.**
 
 ## Phase L3 — First fit + GATE (agent, <1 h once ≥3 rated runs exist)
 
-1. Inputs: all `last_run_*.json` traces + `labels_owner.jsonl` (+ `labels_twitch.jsonl`
-   if L2 landed).
+1. Inputs: all `last_run_*.json` traces + `labels_owner.jsonl` + `labels_social.jsonl`
+   (Path C; regenerate via `align_ref_clips.py`).
 2. **Holdout validation (the GATE):** leave-one-run-out — fit on N−1 runs, on the held
    run compare `recall@10` (fitted ranking vs hand-tuned final_score ranking) against
    its labels. **Enable only if fitted ≥ baseline on the held-out run(s).** Print both
@@ -154,7 +174,7 @@ detection eval (sense calibration) compound on top but aren't in this plan's gat
 | Too few labels → overfit | L2 regularization (already), gate on held-out run, B×3 weighting only after A exists |
 | Twitch offsets drift vs local VOD files | fit-time tol 8-10 s for A labels; B labels use exact clip T |
 | Fitted ranker degenerate on live run | sigmoid-bounded rescore + bucket layer intact + rollback = delete one file |
-| GQL re-breaks after L2b | A is opportunistic by design; loop runs B-only |
+| Path-C yield stays low (few VOD-matched clips) | collection-habit note (L2); loop runs B-only meanwhile |
 | Owner fatigue on ratings | 10 clips × 1/0 ≈ 2 min; chat feedback accepted verbatim |
 
 Related: [[concepts/calibration-ranker-2026-07]] · [[concepts/plan-calibration-loop]] ·
