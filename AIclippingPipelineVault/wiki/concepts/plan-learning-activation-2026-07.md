@@ -3,7 +3,7 @@ title: "Plan — Learning Activation (render batch + label loop + first ranker f
 type: concept
 tags: [plan, calibration, ranker, labels, twitch, render, learning, roadmap]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-07-05
 ---
 
@@ -69,6 +69,19 @@ Training data: every completed run already embeds its full B1-enriched Pass-C tr
 reads them directly — verified 2026-07-05).
 
 ---
+
+> [!done] EXECUTION 2026-07-05 (agent, "execute the plan"). **L0 PASS** (learn0, rakai,
+> 10 clips, exit 0): adaptive SFX gain fired per-clip (0.0→+4.9 dB by loudness),
+> **cold-open teasers ATTACH** (5, zero WinError 17 — BUG 65 fix validated live), SFX
+> beat-anchored + varied (riser→boom one-twos, ding), manifest 8/10 under one
+> `CLIP_RUN_STAMP`. **L1 built** (rate_run / merge_labels / fit_ranker --gate/--tol +
+> pre-B1 filter + best-in-window label snap + rank diagnostic). **L1.1** VOD stamp added
+> to the trace. **L3 GATE RAN on 2 B1 rakai runs → verdict HOLD → ranker stays OFF**
+> (config/selection_ranker.json absent). Honest read: the Mockingbird positive sits at
+> hand-tuned rank ~24/257 (just outside the top-10 cut — the confirmed miss); a fit on 1
+> positive / 1 VOD moved it to ~34 (worse), so the gate correctly refused to enable. This
+> is the generalization guard working: **insufficient/single-VOD labels never turn the
+> ranker on.** Next: labels spanning ≥2 VODs (owner feedback on L0 clips + Path-C growth).
 
 ## Phase L0 — Validation render batch (~75 min run + owner listen) — FIRST
 
