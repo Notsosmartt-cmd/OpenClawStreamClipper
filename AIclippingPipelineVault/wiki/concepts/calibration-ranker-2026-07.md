@@ -82,10 +82,14 @@ it to `google/gemma-4-12b-qat` (confirmed loaded in LM Studio) while Pass B runs
 **Default null → falls back to `text_model_passb` → `text_model` (no decorrelation, no
 change).** Threaded through `stage4_rubric._call_llm`. Verified end-to-end: gemma-4 (a
 thinking model, emits a reasoning preamble) returns rubric JSON that the rubric's
-already-Gemma-aware `_parse_response` extracts cleanly (full 7-axis scores). On the 16 GB
-rig this forces a hot-swap around the rubric call (`OLLAMA_MAX_LOADED_MODELS=1`), so it's
-opt-in. The vision judge (`stage5_5_judge`) already uses a distinct model role
-(vision vs Pass B text) — extending an explicit `passd` override to it is a follow-up.
+already-Gemma-aware `_parse_response` extracts cleanly (full 7-axis scores). VRAM: LM
+Studio pools both GPUs (5060 Ti 16 GB + 6700 XT 12 GB ≈ **28 GB** Vulkan — see
+[[concepts/vram-budget]]), so gemma-4-12b (~7 GB) + qwen-35b (~22 GB) ≈ 29 GB is just over
+the pool → co-loading is marginal (LM Studio swaps/partially spills around the rubric
+call). Pairing gemma-4 with a SMALLER Pass B model fits both comfortably — the sensible
+decorrelation config. Opt-in either way. The vision judge (`stage5_5_judge`) already uses
+a distinct model role (vision vs Pass B text) — extending an explicit `passd` override to
+it is a follow-up.
 
 ## What's left — the data step (owner/harness)
 
