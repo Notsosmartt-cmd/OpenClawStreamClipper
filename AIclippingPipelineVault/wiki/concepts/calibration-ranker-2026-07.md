@@ -3,7 +3,7 @@ title: "Calibration Ranker + Decorrelation (Phase 4)"
 type: concept
 tags: [calibration, scoring, pass-c, ranker, logistic, decorrelation, phase-4]
 sources: 1
-updated: 2026-07-04
+updated: 2026-07-05
 status: shipped
 ---
 
@@ -93,8 +93,12 @@ it is a follow-up.
 
 ## What's left — the data step (owner/harness)
 
-The machinery is done and safe; producing REAL fitted weights needs labelled runs:
-1. Do a few real VOD runs → each caches a `pass_c_candidates.json` (now B1-enriched).
+The machinery is done and safe; producing REAL fitted weights needs labelled runs.
+**Update 2026-07-05: traces bank AUTOMATICALLY** — `common.cleanup` embeds the full
+`pass_c_candidates` trace in every `clips/.diagnostics/last_run_*.json`, and `fit_ranker`
+reads those directly (verified: 763 rows loaded from the last 3 real runs). So step 1
+costs nothing — every run contributes. Labels are the ONLY missing input:
+1. (automatic) every real VOD run banks its B1-enriched trace in the diagnostics dir.
 2. Build a labels JSONL from [[entities/bootstrap-twitch-clips]] triples (+ community
    highlight↔VOD alignment) marking which candidate timestamps were real highlights.
 3. `python scripts/research/fit_ranker.py --traces <dir> --labels labels.jsonl` →
