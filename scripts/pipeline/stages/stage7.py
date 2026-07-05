@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -347,7 +348,18 @@ def _maybe_cold_open(ctx, row, clip_output: Path, clip_start, clip_length) -> No
             # good clip rather than os.replace-ing it away (the BUG 64 lesson).
             dur = _probe_duration(str(tmp))
             if dur is not None and dur >= float(clip_length) * 0.9:
-                os.replace(str(tmp), str(clip_output))
+                # Cross-drive safe swap: the work dir (tmp, e.g. C:) can be on a
+                # different drive than the clips dir (clip_output, e.g. G:), and
+                # os.replace() across drives fails on Windows (WinError 17 — this
+                # silently killed EVERY cold-open teaser in the 2026-07-04 p4cal
+                # run). Stage the copy onto the destination drive, then os.replace
+                # there (same-drive = atomic; keeps the BUG 64 "never destroy the
+                # good clip on a partial write" guarantee — clip_output is only
+                # swapped once the full copy is on its own drive).
+                _stage = clip_output.with_name(clip_output.name + ".coldopen.tmp")
+                shutil.copyfile(str(tmp), str(_stage))
+                os.replace(str(_stage), str(clip_output))
+                tmp.unlink(missing_ok=True)
                 ctx.log.log(f"  [cold-open] prepended teaser to T={T} ({dur:.1f}s)")
                 try:  # effects manifest (logging only)
                     import sys as _s
