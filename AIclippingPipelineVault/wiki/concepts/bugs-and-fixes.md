@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 64 bugs (highest number BUG 64) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 65 bugs (highest number BUG 65) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -122,6 +122,7 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 | BUG 60 (newer) | Vestigial `\`-escaped backticks in JSON fence-stripping (stage4 + stage6) — invalid escape, fence never matched |
 | BUG 61 (newer) | Pass C dedup hard-resets `cross_validated`, silently stripping A1 arcs' ×1.20 boost |
 | [[#BUG 63]] | "Stitch short clips" could never form a group — budget vs min-members arithmetic (3×12 > 32) |
+| [[#BUG 65]] | Cold-open teaser silently failed on a cross-drive move (work dir C: → clips G:, WinError 17) |
 | [[#BUG 64]] | White-flash transitions painted the ENTIRE clip white — `fade` holds colour outside its ramp |
 
 ### Grounding / Hallucination
@@ -1716,6 +1717,20 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 > [!warning] Recurred (6/6 13:57 run) → central fix
 > The per-module patch wasn't enough: the next run hit the SAME failure in a **third** process — `[MMR] sentence-transformers unavailable (Could not load libtorchcodec ...)`. MMR diversity ranking lives in `scripts/lib/stages/stage4_diversity.py`, its own subprocess, which also imports the torch stack and didn't have the bootstrap. (`transformers`/`sentence-transformers` eagerly probe torchcodec on import, so ANY torch-stack stage breaks without the FFmpeg DLLs.)
 > **Central fix:** added `scripts/lib/sitecustomize.py` (just calls `ffmpeg_dll.enable_ffmpeg_dll_dir()`). `PATHS.child_env()` already puts `scripts/lib` on `PYTHONPATH` for every stage subprocess, so Python's `site` machinery **auto-imports this sitecustomize at startup in every stage process** — before any heavy import — covering M3, MMR, pyannote, and any future torch-stack stage in one place. Verified: with only `PYTHONPATH=scripts/lib`, a fresh interpreter auto-runs the hook and `import sentence_transformers` / `torchcodec` succeed with no explicit call. The explicit calls in speech.py/stage4_moments.py stay as idempotent belt-and-suspenders.
+
+---
+
+## BUG 65 — Cold-open teaser silently failed on a cross-drive move (WinError 17)
+
+> [!success] Resolved 2026-07-04
+
+**Symptom**: with the cold-open teaser enabled (`CLIP_COLD_OPEN=1`), EVERY teaser failed to attach. The `20260704_200014` p4cal validation run computed teaser windows correctly for each clip (`[cold-open] teaser window: start=1607.5s … payoff=1609.0s`) but then logged `cold-open teaser failed for T=1609: [WinError 17] The system cannot move the file to a different disk drive`. Clips rendered fine but WITHOUT the teaser — masking that the feature was 100% broken whenever the work dir and clips dir are on different drives. (This surfaced only now because the `_bool_env` fix finally let `CLIP_COLD_OPEN=1` turn the feature ON — see [[concepts/plan-pipeline-upgrade-2026-07]].)
+
+**Cause**: `stage7._maybe_cold_open` swapped the teaser-prepended temp onto the final clip with `os.replace(str(tmp), str(clip_output))`. `tmp` lives in the work dir (`C:\…\OpenClawClipper\work`) and `clip_output` in the repo clips dir (`G:\…\clips`). On Windows `os.replace`/`os.rename` **cannot cross drives** → WinError 17, caught by the broad `except` and logged as a soft failure.
+
+**Fix** (`scripts/pipeline/stages/stage7.py`): stage the copy onto the DESTINATION drive first, then do a same-drive atomic replace — `shutil.copyfile(tmp, clip_output+".coldopen.tmp")` → `os.replace(that, clip_output)` → unlink the C: tmp. `copyfile` crosses drives (it's a read+write, not a rename); the `os.replace` is now same-drive so it stays atomic, preserving the BUG 64 "never destroy the good clip on a partial write" guarantee. Verified: the old `os.replace` reproduces WinError 17 across C:→G:; the new path copies the new content onto G: and swaps cleanly.
+
+**Lesson**: any `os.replace`/`os.rename` between the work dir and the clips dir must assume they're on different drives (they are, in the real deployment). Copy-to-dest-drive then same-drive-replace is the portable atomic-swap idiom.
 
 ---
 
