@@ -168,6 +168,16 @@ def main() -> int:
         print("[caption_style] no OCR'd captions in cache. Decompose clips with --ocr first "
               "(clip_forensics --clip X --ocr).")
         return 0
+    # Generalization guard (owner 2026-07-05): preserve the existing profile's
+    # `applies_to` channel scoping (and enabled flag) across regenerations, so a
+    # corpus refresh never silently widens a niche voice to all channels.
+    prev_applies, prev_enabled = [], False
+    try:
+        _prev = json.loads(OUT.read_text(encoding="utf-8"))
+        prev_applies = _prev.get("applies_to") or []
+        prev_enabled = bool(_prev.get("enabled"))
+    except Exception:
+        pass
     stats = local_stats(lines)
     print(f"[caption_style] {len(lines)} distinct caption lines from {n_clips} clip(s); "
           f"casing={stats['casing']} median_words={stats['median_words']}")
@@ -178,7 +188,13 @@ def main() -> int:
                   "FEW-SHOT examples in the hook/title prompt when enabled=true. "
                   "OCR-derived: language style is reliable; visual styling "
                   "(font/colour/position) is NOT captured. Review + set enabled=true to use."),
-        "enabled": False,
+        "_applies_note": ("GENERALIZATION: `applies_to` scopes this voice to the channels/"
+                          "niche it was learned FROM (substring match vs the VOD basename, "
+                          "case-insensitive). Unknown channels get the neutral prompt. "
+                          "Empty list = applies everywhere (explicit choice). Preserved "
+                          "across regenerations."),
+        "applies_to": prev_applies,
+        "enabled": prev_enabled,
         "generated_from_clips": n_clips,
         "distinct_caption_lines": len(lines),
         "stats": stats,
@@ -192,7 +208,8 @@ def main() -> int:
             "punctuation", "per_category_tone")})
         print(f"[caption_style] voice: {voice.get('voice_summary', '(none)')}")
     OUT.write_text(json.dumps(profile, indent=2), encoding="utf-8")
-    print(f"[caption_style] wrote {OUT} (enabled=false; review then flip enabled=true)")
+    print(f"[caption_style] wrote {OUT} (enabled={str(profile['enabled']).lower()}, "
+          f"applies_to={profile['applies_to'] or 'ALL'})")
     return 0
 
 
