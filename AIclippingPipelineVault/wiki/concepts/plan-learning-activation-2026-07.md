@@ -35,9 +35,13 @@ platform-validated (a real viewer recorded + posted the moment). The 34 misses a
 whose source VOD isn't on disk — **yield scales with collection habit, not code**: when
 saving viewer clips for streams whose VODs are kept, every pair = a free label.
 
-**Path B (owner ratings) remains required and leads** — ground truth for the owner's
-taste/TikTok target; covers the 10 SELECTED clips per run but never the ~247 rejected
-candidates (which C can reach). Merge order: C ≥ B > (nothing); conflicts owner-wins.
+**Path B (owner feedback) — NO manual labeling required (owner preference 2026-07-05).**
+The owner's NATURAL chat feedback on batches ("the Rap Battle was actually a good clip")
+is filed as labels BY THE AGENT — no forms, no rating files, no new behavior. The
+explicit `rate_run.py` flow stays available as an optional convenience, never a
+requirement. B remains the taste ground truth; C covers the rejected candidates B can't
+see. Merge: C + B, conflicts owner-wins. Later ladder step: posting outcomes (which
+clips get posted + how they perform) = fully hands-free labels.
 
 ### §Case — the Mockingbird miss (external validation of the whole calibration thesis)
 
@@ -177,8 +181,8 @@ committed (or a documented "gate failed, staying off" verdict — also a valid o
 ## Phase L4 — Cadence (steady state)
 
 - Every VOD run: trace banks automatically (zero effort).
-- Owner: rate the produced clips (~2 min/run) — chat feedback counts; the agent files it
-  via `rate_run.py`.
+- Owner: nothing mandatory — natural chat feedback on batches is filed as labels by the
+  agent (`rate_run.py` remains optional for thorough passes).
 - Agent: re-fit every +2-3 rated runs; gate each time; append gate metrics to
   [[concepts/calibration-ranker-2026-07]] (a small table: date, n_labels, recall@10
   fitted vs baseline). Corpus refresh (`corpus_refresh.py`) whenever reference clips are
@@ -202,7 +206,7 @@ detection eval (sense calibration) compound on top but aren't in this plan's gat
 | Twitch offsets drift vs local VOD files | fit-time tol 8-10 s for A labels; B labels use exact clip T |
 | Fitted ranker degenerate on live run | sigmoid-bounded rescore + bucket layer intact + rollback = delete one file |
 | Path-C yield stays low (few VOD-matched clips) | collection-habit note (L2); loop runs B-only meanwhile |
-| Owner fatigue on ratings | 10 clips × 1/0 ≈ 2 min; chat feedback accepted verbatim |
+| Label volume grows slowly (no manual labeling) | anchor keeps the fit safe at any volume; Path-C habit (keep VODs of clipped streams) is the zero-effort accelerator |
 
 Related: [[concepts/calibration-ranker-2026-07]] · [[concepts/plan-calibration-loop]] ·
 [[entities/bootstrap-twitch-clips]] · [[concepts/case-rap-battle-missed]] ·
