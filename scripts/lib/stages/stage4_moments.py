@@ -3383,6 +3383,9 @@ try:
             _r["bucket_rank"] = _idx
 
     _trace_payload = {
+        # L1.1 (learning loop): stamp the source VOD so labels (Path C viewer-clip
+        # alignments, keyed by VOD) join to this run's trace without a sidecar map.
+        "vod": os.environ.get("VOD_BASENAME", ""),
         "total_candidates": len(deduped),
         "selected_count": len(final),
         "num_buckets": NUM_BUCKETS,

@@ -81,14 +81,22 @@ def attach_labels(rows: list[dict], labels: list[dict], tol: float = 2.0) -> lis
     for lab in labels:
         run, t, y = lab.get("run", ""), float(lab.get("timestamp", -1)), int(lab.get("label", 0))
         cands = by_run.get(run) or [r for rs in by_run.values() for r in rs]
-        best, bd = None, tol
-        for r in cands:
-            d = abs(float(r.get("timestamp", 0)) - t)
-            if d <= bd:
-                best, bd = r, d
-        if best is not None:
-            best["_label"] = y
-            matched += 1
+        in_win = [r for r in cands if abs(float(r.get("timestamp", 0)) - t) <= tol]
+        if not in_win:
+            continue
+        # POSITIVE labels snap to the highest-scoring candidate in the window: a
+        # viewer-clipped region's clip-worthy peak is what the label means, not
+        # whichever adjacent line happens to be nearest in time (Path-C alignment
+        # localizes to the ~50 s moment, not the exact payoff frame). This also
+        # correctly targets the "scored high, dropped anyway" miss class. Negatives
+        # snap to nearest (a specific rejected moment). Ties broken by nearness.
+        if y == 1:
+            best = max(in_win, key=lambda r: (_num(r.get("final_score")),
+                                              -abs(float(r.get("timestamp", 0)) - t)))
+        else:
+            best = min(in_win, key=lambda r: abs(float(r.get("timestamp", 0)) - t))
+        best["_label"] = y
+        matched += 1
     print(f"[fit_ranker] matched {matched}/{len(labels)} labels to candidates "
           f"({sum(r['_label'] for r in rows)} positives / {len(rows)} rows)")
     return rows
@@ -274,6 +282,16 @@ def _recall_at_n(held: list[dict], key, n: int) -> float | None:
     return sum(1 for r in pos if id(r) in top) / len(pos)
 
 
+def _mean_pos_rank(held: list[dict], key) -> float | None:
+    """Mean rank (1 = highest) of the held run's positives under `key`."""
+    pos = [r for r in held if int(r.get("_label", 0)) == 1]
+    if not pos:
+        return None
+    order = sorted(held, key=key, reverse=True)
+    rank = {id(r): i + 1 for i, r in enumerate(order)}
+    return round(sum(rank[id(r)] for r in pos) / len(pos), 1)
+
+
 def run_gate(rows: list[dict], l2: float, n: int) -> dict:
     """L3 GATE — leave-one-run-out holdout. For each run that has >=1 positive: fit on
     the OTHER runs, then on the held run compare recall@n of the FITTED ranking vs the
@@ -295,10 +313,16 @@ def run_gate(rows: list[dict], l2: float, n: int) -> dict:
             continue  # can't train without both classes
         m = fit(train, l2=l2)
         heldrows = by_run[held]
-        rf = _recall_at_n(heldrows, lambda r: score(r, m["weights"], m["bias"]), n)
+        rf = _recall_at_n(heldrows, lambda r: ranker.score(r, m["weights"], m["bias"]), n)
         rb = _recall_at_n(heldrows, lambda r: _num(r.get("final_score")), n)
+        # DIRECTION diagnostic: mean rank of the held positives (1 = top), fitted vs
+        # baseline. recall@n can tie at 0 when the positive is a known miss (rank > n),
+        # yet the fit may still move it up — this shows that.
+        pf = _mean_pos_rank(heldrows, lambda r: ranker.score(r, m["weights"], m["bias"]))
+        pb = _mean_pos_rank(heldrows, lambda r: _num(r.get("final_score")))
         per.append({"held": held, "recall_fitted": round(rf, 3) if rf is not None else None,
-                    "recall_baseline": round(rb, 3) if rb is not None else None})
+                    "recall_baseline": round(rb, 3) if rb is not None else None,
+                    "pos_rank_fitted": pf, "pos_rank_baseline": pb, "n_cands": len(heldrows)})
     scored = [p for p in per if p["recall_fitted"] is not None and p["recall_baseline"] is not None]
     if not scored:
         return {"verdict": "UNDECIDED", "reason": "no run had both a held positive and a trainable fit",
@@ -350,8 +374,10 @@ def main() -> int:
             if k in g:
                 print(f"       {k}: {g[k]}")
         for p in g.get("per_run", []):
-            print(f"       held {p['held']}: fitted@{g.get('recall_at_n','?')}={p['recall_fitted']} "
-                  f"baseline={p['recall_baseline']}")
+            print(f"       held {p['held']}: recall@{g.get('recall_at_n','?')} "
+                  f"fitted={p['recall_fitted']} baseline={p['recall_baseline']} | "
+                  f"pos mean-rank fitted={p.get('pos_rank_fitted')} baseline={p.get('pos_rank_baseline')} "
+                  f"of {p.get('n_cands')}")
         print("[GATE] ENABLE => safe to write config/selection_ranker.json; "
               "HOLD/REJECT/UNDECIDED => stay on hand-tuned scores.")
         if g["verdict"] != "ENABLE":
