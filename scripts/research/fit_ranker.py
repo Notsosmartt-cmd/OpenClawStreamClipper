@@ -34,7 +34,14 @@ import ranker  # noqa: E402  (FEATURE_ORDER, feature_vector)
 
 # ----------------------------------------------------------------------------- data
 def load_traces(paths: list[Path]) -> list[dict]:
-    """Flatten pass_c_candidates.json files into candidate rows tagged with their run."""
+    """Flatten Pass-C candidate traces into feature rows tagged with their run.
+
+    Accepts BOTH shapes:
+      * a raw `pass_c_candidates.json` (work-dir file, if preserved), and
+      * a `clips/.diagnostics/last_run_*.json` run snapshot — the pipeline's
+        cleanup embeds the full trace under its "pass_c_candidates" key, so
+        EVERY completed run automatically banks a training-ready trace with no
+        extra plumbing. Point --traces at clips/.diagnostics to use them all."""
     rows = []
     for p in paths:
         try:
@@ -42,11 +49,17 @@ def load_traces(paths: list[Path]) -> list[dict]:
         except Exception as e:
             print(f"[fit_ranker] skip {p} ({type(e).__name__})")
             continue
-        run = p.parent.name or p.stem
-        for c in data.get("candidates", []):
+        if "candidates" not in data and isinstance(data.get("pass_c_candidates"), dict):
+            data = data["pass_c_candidates"]      # last_run_*.json snapshot shape
+        cands = data.get("candidates") or []
+        if not cands:
+            continue
+        run = p.stem  # e.g. last_run_20260705_010127 — matches labels' "run" key
+        for c in cands:
             c = dict(c)
             c["_run"] = run
             rows.append(c)
+        print(f"[fit_ranker] {p.name}: {len(cands)} candidates")
     return rows
 
 
@@ -190,7 +203,8 @@ def main() -> int:
         return 2
     tp = args[args.index("--traces") + 1]
     trace_paths = ([Path(p) for p in Path().glob(tp)] if any(c in tp for c in "*?[")
-                   else list(Path(tp).rglob("pass_c_candidates.json")) if Path(tp).is_dir()
+                   else (list(Path(tp).rglob("pass_c_candidates.json"))
+                         + sorted(Path(tp).glob("last_run_*.json"))) if Path(tp).is_dir()
                    else [Path(tp)])
     labels = [json.loads(l) for l in Path(args[args.index("--labels") + 1]).read_text(
         encoding="utf-8").splitlines() if l.strip()]
