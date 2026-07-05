@@ -98,12 +98,20 @@ def _standardize(X: list[list[float]]):
     return Z, mean, std
 
 
-def _fit_logistic(X, y, l2=1.0, lr=0.3, epochs=400):
+def _fit_logistic(X, y, l2=1.0, lr=0.3, epochs=400, prior_raw=None):
     """Pure-Python L2-regularised logistic regression via gradient descent on
-    standardized features. Returns (weights_std, bias) in standardized space."""
+    standardized features. Returns (weights_std, bias) in standardized space.
+
+    `prior_raw` (optional, raw-feature space): the regulariser shrinks each weight
+    toward its prior instead of toward zero. This is the GENERALIZATION anchor
+    (owner directive 2026-07-05): with the hand-tuned composite feature given a
+    prior of 1.0, weak/noisy/niche-narrow labels leave the model ≈ the generalized
+    hand-tuned ranking; only consistent evidence moves it away."""
     Z, mean, std = _standardize(X)
     n, d = len(Z), len(Z[0])
-    w = [0.0] * d
+    # raw-space prior -> standardized space (w_raw = w_std / std  =>  w_std = w_raw * std)
+    prior = [(prior_raw[j] if prior_raw else 0.0) * std[j] for j in range(d)]
+    w = list(prior)          # start AT the prior — no evidence => stay there
     b = 0.0
     for _ in range(epochs):
         gw = [0.0] * d
@@ -116,7 +124,11 @@ def _fit_logistic(X, y, l2=1.0, lr=0.3, epochs=400):
                 gw[j] += err * Z[i][j]
             gb += err
         for j in range(d):
-            w[j] = w[j] - lr * (gw[j] / n + l2 * w[j] / n)
+            # data step, then PROXIMAL shrink toward the prior — standard convention
+            # (λ NOT divided by n, so l2 means the same thing at any dataset size)
+            # and unconditionally stable for any l2 (no lr*l2 divergence).
+            w[j] = w[j] - lr * gw[j] / n
+            w[j] = prior[j] + (w[j] - prior[j]) / (1.0 + lr * l2)
         b -= lr * gb / n
     return w, b, mean, std
 
@@ -129,20 +141,41 @@ def _destandardize(w_std, b_std, mean, std):
     return w_raw, b_raw
 
 
-def fit(rows: list[dict], l2: float = 1.0) -> dict:
+def fit(rows: list[dict], l2: float = 1.0, anchor: bool = True) -> dict:
+    """Fit the ranker. anchor=True (default) appends a COMPOSITE feature = the
+    hand-tuned log-score (sum of the identity log-factors) with a prior weight of
+    1.0, and shrinks every other weight toward 0. Generalization guarantee: with
+    weak/noisy/niche-narrow labels the fit stays ≈ sigmoid(hand-tuned score) — the
+    generalized baseline ranking — and deviates only on consistent evidence. The
+    composite folds back into the per-feature weights afterwards (composite = sum
+    of identity features, so adding its weight to each is exactly equivalent),
+    keeping the output schema identical for ranker.py."""
     order = list(ranker.FEATURE_ORDER)
     X = [ranker.feature_vector(r, order) for r in rows]
     y = [int(r.get("_label", 0)) for r in rows]
     if sum(y) == 0 or sum(y) == len(y):
         raise SystemExit("[fit_ranker] need both positive and negative labels to fit.")
-    w_std, b_std, mean, std = _fit_logistic(X, y, l2=l2)
+    n_id = len(ranker.IDENTITY_FACTORS)
+    prior = None
+    if anchor:
+        for xi in X:
+            xi.append(sum(xi[:n_id]))            # composite hand-tuned log-score
+        prior = [0.0] * len(order) + [1.0]       # anchor: composite prior = 1.0
+    w_std, b_std, mean, std = _fit_logistic(X, y, l2=l2, prior_raw=prior)
     w_raw, b_raw = _destandardize(w_std, b_std, mean, std)
+    comp_w = None
+    if anchor:
+        comp_w = w_raw.pop()                     # fold composite back into identities
+        for j in range(n_id):
+            w_raw[j] += comp_w
     weights = {order[j]: round(w_raw[j], 5) for j in range(len(order))}
     return {"weights": weights, "bias": round(b_raw, 5),
             "meta": {"feature_order": order, "n_rows": len(rows),
-                     "n_positive": sum(y), "l2": l2,
-                     "note": "Fitted by scripts/research/fit_ranker.py. Loaded failure-soft "
-                             "by scripts/lib/ranker.py; delete this file to revert to hand-tuned scores."}}
+                     "n_positive": sum(y), "l2": l2, "anchored": bool(anchor),
+                     "anchor_composite_weight": round(comp_w, 5) if comp_w is not None else None,
+                     "note": "Fitted by scripts/research/fit_ranker.py (identity-anchored: weak "
+                             "evidence keeps the generalized hand-tuned ranking). Loaded "
+                             "failure-soft by scripts/lib/ranker.py; delete this file to revert."}}
 
 
 def _write(model: dict) -> None:
@@ -176,6 +209,39 @@ def self_test() -> int:
     model = fit(rows, l2=0.5)
     w_ix = model["weights"]["ix_reaction_low_keyword"]
     print(f"[self-test] learned ix_reaction_low_keyword weight = {w_ix:+.3f} (expect strongly +)")
+
+    # GENERALIZATION anchor check — the MECHANISM: as regularization grows, an
+    # anchored fit on uninformative labels must converge to the hand-tuned ranking.
+    # (In-sample, a flexible fit can always mine spurious correlations from finite
+    # noise, so the invariant is monotone convergence with l2, and ≈baseline at
+    # strong l2 — the level the L3 plan prescribes for small label sets.)
+    import itertools
+    noise_rows = []
+    for i in range(300):
+        m = {"normalized_score": rnd(i + 11, 0.2, 0.9),
+             "style_multiplier": rnd(i, 1.0, 1.3),
+             "cross_val_factor": 1.2 if i % 3 == 0 else 1.0,
+             "speaker_factor": 1.0, "pattern_bonus": 1.0,
+             "axis_multiplier": rnd(i + 5, 0.85, 1.3),
+             "length_penalty": rnd(i + 9, 0.8, 1.05),
+             "reaction_score": rnd(i + 2, 0, 1), "keyword_score": rnd(i + 4, 0, 1),
+             # labels from a DIFFERENT hash family than the features
+             "_label": 1 if (math.sin(i * 77.777) * 43758.5453) % 1.0 > 0.5 else 0}
+        m["final_score"] = round(m["normalized_score"] * m["style_multiplier"] *
+                                 m["cross_val_factor"] * m["axis_multiplier"] *
+                                 m["length_penalty"], 4)
+        noise_rows.append(m)
+    hand = [r["final_score"] for r in noise_rows]
+    pairs = list(itertools.combinations(range(0, 300, 7), 2))
+
+    def _conc(model):
+        f = [ranker.score(r, model["weights"], model["bias"]) for r in noise_rows]
+        return sum(1 for a, b in pairs
+                   if (f[a] - f[b]) * (hand[a] - hand[b]) > 0) / len(pairs)
+    c_weak, c_strong = _conc(fit(noise_rows, l2=0.5)), _conc(fit(noise_rows, l2=25.0))
+    print(f"[self-test] anchor convergence: concordance l2=0.5 -> {c_weak:.3f}, "
+          f"l2=25 -> {c_strong:.3f} (expect strong > weak and strong > 0.9)")
+    conc_ok = c_strong > 0.9 and c_strong >= c_weak
     # round-trip: the fitted model must load + rescore through ranker.py
     import os
     _tmp = REPO / "config" / "_selftest_ranker.json"
@@ -187,7 +253,7 @@ def self_test() -> int:
     lo = ranker.maybe_rescore({"normalized_score": 0.5, "reaction_score": 0.1, "keyword_score": 0.9,
                                "final_score": 0.5})
     _tmp.unlink(missing_ok=True)
-    ok = w_ix > 0.5 and hi > lo
+    ok = w_ix > 0.5 and hi > lo and conc_ok
     print(f"[self-test] reaction-carried rescored above word-carried: {hi:.3f} > {lo:.3f} = {hi > lo}")
     print("[self-test]", "PASS" if ok else "FAIL")
     return 0 if ok else 1

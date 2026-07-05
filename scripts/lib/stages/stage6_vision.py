@@ -235,12 +235,24 @@ def _caption_style_fewshot():
     enabled=true AND CLIP_CAPTION_STYLE isn't force-disabled — so it's opt-in (owner
     reviews the profile first) and failure-soft (no file / disabled => no change to
     the prompt, identical to prior behavior). Style-only: we feed the voice summary +
-    a few real hook phrasings so the model mimics the STYLE, never the exact words."""
+    a few real hook phrasings so the model mimics the STYLE, never the exact words.
+
+    GENERALIZATION GUARD (owner directive 2026-07-05: high-variety content incoming,
+    pipeline must stay generalized): the profile's `applies_to` list scopes the learned
+    voice to the channels/niche it was distilled FROM. Non-empty applies_to + no
+    substring match against the current VOD basename => NO injection — an unknown
+    channel gets the neutral prompt, never another niche's slang. Empty/missing
+    applies_to = applies everywhere (explicit owner choice)."""
     if os.environ.get("CLIP_CAPTION_STYLE", "1").strip().lower() in ("0", "false", "no", "off"):
         return ""
     cfg = _load_caption_style()
     if not cfg.get("enabled"):
         return ""
+    applies = [str(a).strip().lower() for a in (cfg.get("applies_to") or []) if str(a).strip()]
+    if applies:
+        vod = os.environ.get("VOD_BASENAME", "").lower()
+        if not vod or not any(a in vod for a in applies):
+            return ""
     ex = [e for e in (cfg.get("hook_phrasings") or cfg.get("examples") or []) if e][:5]
     if not ex:
         return ""

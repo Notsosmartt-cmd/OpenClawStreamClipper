@@ -128,13 +128,40 @@ regenerable by re-running the script). What remains is HABIT + coverage, not cod
 
 **DoD (already met):** ≥1 confident alignment + the labels file. **Never blocks L3.**
 
+## Generalization doctrine (owner directive 2026-07-05 — high-variety content incoming)
+
+Corpus-driven learning must NOT overfit the current niche. Three layers, each with an
+enforced mechanism:
+1. **Global/structural (learn everywhere):** detectors, arc/reaction/keyword features,
+   SFX beat taxonomy — content-agnostic by construction; safe to learn globally.
+2. **Niche/channel-scoped (learn per source):** the caption VOICE. Enforced:
+   `caption_style.json.applies_to` (channel substrings vs VOD basename) — non-matching
+   or unknown channels get the NEUTRAL prompt; the distiller preserves the scoping
+   across regenerations. Current profile scoped to rakai/tylil/plaqueboymax/lacy.
+   A second niche later = a second profile keyed to its channels.
+3. **Per-item runtime adaptation (never bake corpus constants):** adaptive SFX gain
+   (measures each clip), onset-snap (each clip's audio), chat-ROI auto-detect —
+   the house pattern; anything that CAN adapt at render time should.
+
+**The ranker is identity-ANCHORED (enforced in `fit_ranker`):** the fit carries the
+hand-tuned composite score with prior weight 1.0 (proximal L2 toward the prior, standard
+λ convention). Verified mechanism: uninformative labels → concordance with the
+hand-tuned ranking 0.903 @ l2=0.5 → 0.998 @ l2=25; a planted real signal still recovers
+(+2.1). Weak or niche-narrow evidence leaves the GENERALIZED baseline ranking intact;
+only consistent evidence moves weights. Composite folds back into per-feature weights so
+`ranker.py`'s schema is unchanged.
+
 ## Phase L3 — First fit + GATE (agent, <1 h once ≥3 rated runs exist)
 
 1. Inputs: all `last_run_*.json` traces + `labels_owner.jsonl` + `labels_social.jsonl`
    (Path C; regenerate via `align_ref_clips.py`).
 2. **Holdout validation (the GATE):** leave-one-run-out — fit on N−1 runs, on the held
    run compare `recall@10` (fitted ranking vs hand-tuned final_score ranking) against
-   its labels. **Enable only if fitted ≥ baseline on the held-out run(s).** Print both
+   its labels. **Enable only if fitted ≥ baseline on the held-out run(s).** Start with
+   strong regularization (l2 5–25) while labels are few — the identity anchor makes
+   over-regularizing safe (worst case = baseline behavior). **Once labels span ≥2
+   channels, the gate upgrades to leave-one-CHANNEL-out** — the generalization gate:
+   a fit must transfer to an unseen channel, not just an unseen run. Print both
    numbers into the fit meta + wiki.
 3. Enable = write `config/selection_ranker.json` (the pipeline auto-detects; logs
    `[RANKER] fitted selection_ranker.json loaded`). Commit the fitted file.

@@ -1,6 +1,13 @@
 {
   "version": 1,
   "_note": "Learned caption-LANGUAGE voice (Phase 7.2). Consumed by Stage 6 as FEW-SHOT examples in the hook/title prompt when enabled=true. OCR-derived: language style is reliable; visual styling (font/colour/position) is NOT captured. Review + set enabled=true to use.",
+  "_applies_note": "GENERALIZATION: applies_to scopes this voice to the channels/niche it was learned FROM (substring match vs the VOD basename, case-insensitive). Unknown channels get the neutral prompt. Empty list = applies everywhere. Preserved across regenerations.",
+  "applies_to": [
+    "rakai",
+    "tylil",
+    "plaqueboymax",
+    "lacy"
+  ],
   "enabled": false,
   "generated_from_clips": 35,
   "distinct_caption_lines": 1020,
