@@ -78,23 +78,77 @@ def has_assets(kind: str) -> bool:
     return r
 
 
-def _cue_volume(cue: dict, default_volume: float) -> float:
+def measure_program_db(src: str, start: float, duration: float,
+                       *, timeout: int = 45) -> float | None:
+    """Mean program loudness (dB) of the clip's audio segment, via ffmpeg
+    volumedetect. The number that makes SFX gain PROGRAM-RELATIVE instead of
+    absolute (owner feedback 2026-07-04: a 0 dB boom is buried under loud rap
+    audio but pops on a quiet-mic clip — the fixed per-kind gains implicitly
+    assumed one program level). Returns None on any failure (failure-soft)."""
+    import re
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-ss", str(float(start)), "-t",
+             str(float(duration)), "-i", str(src), "-vn",
+             "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=timeout)
+        m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", r.stderr or "")
+        return float(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
+def adaptive_gain_db(src: str, start: float, duration: float,
+                     *, ref_db: float | None = None,
+                     max_boost_db: float | None = None) -> float:
+    """Boost (dB, >= 0) to ADD to every SFX cue so effects stay audible over loud
+    program audio. boost = clamp(program_mean - ref, 0, max). Boost-only by design:
+    quiet clips (program below ref) stay untouched — the owner confirmed SFX are
+    already audible there. Env knobs: CLIP_SFX_ADAPTIVE=0 kills it,
+    CLIP_SFX_REF_DB (default -20: the owner's quiet-mic clip measured -24.9 dB so
+    it still gets 0 boost, while the loud rap clips at ~-15 get ~+5),
+    CLIP_SFX_ADAPT_MAX_DB (default 9)."""
+    if os.environ.get("CLIP_SFX_ADAPTIVE", "1").strip().lower() in ("0", "false", "no", "off"):
+        return 0.0
+    if ref_db is None:
+        try:
+            ref_db = float(os.environ.get("CLIP_SFX_REF_DB", "-20"))
+        except ValueError:
+            ref_db = -20.0
+    if max_boost_db is None:
+        try:
+            max_boost_db = float(os.environ.get("CLIP_SFX_ADAPT_MAX_DB", "9"))
+        except ValueError:
+            max_boost_db = 9.0
+    mean = measure_program_db(src, start, duration)
+    if mean is None:
+        return 0.0
+    return max(0.0, min(mean - ref_db, max_boost_db))
+
+
+def _cue_volume(cue: dict, default_volume: float, adapt_db: float = 0.0) -> float:
     """Per-cue linear volume. A cue may carry `gain_db` (dB relative to the
     source audio, 0 = at speech level, negative = ducked under speech) — the
     research's per-kind mix policy that lets a Vine boom ride hot on a punchline
-    while most SFX sit below speech. Falls back to the layer default volume."""
+    while most SFX sit below speech. Falls back to the layer default volume.
+    `adapt_db` (adaptive_gain_db) shifts EVERY cue up on loud clips so the mix
+    policy holds relative to the actual program level; the linear ceiling is 4.0
+    (~+12 dB) — raised from the old 1.5, which capped any boost at +3.5 dB and
+    made loud-clip SFX inaudible even with a correct gain."""
     g = cue.get("gain_db")
     if g is None:
-        return default_volume
+        return max(0.05, min(default_volume * 10.0 ** (adapt_db / 20.0), 4.0))
     try:
-        return max(0.05, min(10.0 ** (float(g) / 20.0), 1.5))
+        return max(0.05, min(10.0 ** ((float(g) + adapt_db) / 20.0), 4.0))
     except (TypeError, ValueError):
         return default_volume
 
 
 def build_sfx_layer(cues: list[dict], seed: object,
                     base_input_index: int = 1,
-                    sfx_volume: float = 0.7) -> dict:
+                    sfx_volume: float = 0.7,
+                    adapt_db: float = 0.0) -> dict:
     """Resolve each cue to a concrete file + delay, returning the FFmpeg
     pieces the renderer needs to splice into its filter_complex.
 
@@ -126,7 +180,7 @@ def build_sfx_layer(cues: list[dict], seed: object,
         delay_ms = int(round(t * 1000))
         idx = base_input_index + len(inputs) - 1
         label = f"sfx{i}"
-        vol = _cue_volume(cue, sfx_volume)
+        vol = _cue_volume(cue, sfx_volume, adapt_db)
         defs.append(
             f"[{idx}:a]adelay={delay_ms}|{delay_ms},"
             f"volume={vol:.4f}[{label}]"

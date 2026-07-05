@@ -40,8 +40,12 @@ def _out_path() -> Path:
 def log_effect(clip: str, etype: str, data: dict, *, vod: str | None = None) -> None:
     """Append one effect record. Never raises."""
     try:
+        # Stable per-RUN stamp: CLIP_RUN_STAMP is set once by run_pipeline, so all
+        # of a run's clips group under one id. The old strftime-at-log-time gave
+        # each clip its own "run" (clips render seconds apart) — the 2026-07-04
+        # manifest looked like 1/10 coverage when it was really 10 runs of 1.
         rec = {"ts": round(time.time(), 1),
-               "run": time.strftime("%Y%m%d_%H%M%S"),
+               "run": os.environ.get("CLIP_RUN_STAMP") or time.strftime("%Y%m%d_%H%M%S"),
                "vod": vod or os.environ.get("CLIP_CURRENT_VOD") or "",
                "clip": str(clip)[:160], "type": str(etype), "data": data}
         with open(_out_path(), "a", encoding="utf-8") as f:

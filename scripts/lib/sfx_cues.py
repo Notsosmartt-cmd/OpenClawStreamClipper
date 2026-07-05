@@ -39,6 +39,16 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     # one-two punch; large enough to merge coincident cues.
     "dedup_window_s": 0.6,
     "buildup_lead_s": 1.0,
+    # Owner feedback 2026-07-04 ("effects came in a little too early"): the moment
+    # timestamp is the DETECTION time, which typically lands a beat before the
+    # punchline is actually delivered. payoff_delay_s shifts the payoff anchor
+    # later; snap_to_onset then refines it to the strongest acoustic transient in
+    # [payoff, payoff + onset_snap_window_s] (the real hit), falling back to the
+    # fixed delay when audio.wav is unavailable. The riser keeps its 1.0s lead
+    # relative to the REFINED payoff, so the whole one-two punch shifts together.
+    "payoff_delay_s": 0.35,
+    "snap_to_onset": True,
+    "onset_snap_window_s": 1.2,
     "beat_defaults": {
         "punchline": [{"kind": "boom", "offset_s": 0.10, "gain_db": 0.0},
                       {"kind": "impact", "offset_s": 0.08, "gain_db": -3.0}],
@@ -146,6 +156,48 @@ def _laughter_times(temp_dir: str, clip_start: float, clip_end: float) -> list[f
     return out
 
 
+def _refine_payoff(payoff_rel: float, clip_start: float, clip_duration: float,
+                   temp_dir: str, cfg: dict) -> float:
+    """Refine the payoff anchor from the (early) detection timestamp to the actual
+    acoustic hit. Strategy: snap to the strongest RMS transient rise inside
+    [payoff-0.1s, payoff + onset_snap_window_s] of the run's audio.wav (the
+    punchline/impact is ground truth; the detection time is approximate and lands
+    early — owner-reported 2026-07-04). Failure-soft: any problem (no audio.wav,
+    soundfile missing, flat energy) falls back to payoff + payoff_delay_s."""
+    delay = float(cfg.get("payoff_delay_s", 0.35) or 0.0)
+    fallback = max(0.05, min(payoff_rel + delay, clip_duration - 0.2))
+    if not cfg.get("snap_to_onset", True):
+        return fallback
+    try:
+        import numpy as np
+        import soundfile as sf
+        wav = Path(temp_dir, "audio.wav")
+        if not wav.exists():
+            return fallback
+        sr = sf.info(str(wav)).samplerate
+        win = float(cfg.get("onset_snap_window_s", 1.2) or 1.2)
+        t0_abs = clip_start + payoff_rel - 0.1
+        data, sr = sf.read(str(wav), start=max(0, int(t0_abs * sr)),
+                           frames=int((win + 0.4) * sr), dtype="float32",
+                           always_2d=False)
+        if data is None or len(data) < sr // 4:
+            return fallback
+        if getattr(data, "ndim", 1) > 1:
+            data = data.mean(axis=1)
+        hop = max(1, int(0.05 * sr))          # 50 ms energy envelope
+        n_h = len(data) // hop
+        if n_h < 3:
+            return fallback
+        rms = np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
+        flux = np.diff(rms)                    # transient = biggest RMS rise
+        if len(flux) == 0 or float(flux.max()) <= 0:
+            return fallback
+        snap_rel = (payoff_rel - 0.1) + (int(np.argmax(flux)) + 1) * hop / sr
+        return max(0.05, min(snap_rel, clip_duration - 0.2))
+    except Exception:
+        return fallback
+
+
 def build(moment: dict, clip_start: float, clip_duration: float, *,
           temp_dir: str, seed: object = 0, config: dict | None = None) -> list[dict]:
     """Return a list of {t, kind, gain_db} cues (t = clip-relative seconds).
@@ -178,6 +230,8 @@ def build(moment: dict, clip_start: float, clip_duration: float, *,
         payoff_abs = clip_start + clip_duration / 2.0
     payoff_rel = payoff_abs - clip_start
     payoff_rel = max(0.0, min(payoff_rel, clip_duration))
+    # Owner feedback 2026-07-04: detection time lands early → shift to the real hit.
+    payoff_rel = _refine_payoff(payoff_rel, clip_start, clip_duration, temp_dir, cfg)
 
     # (beat_rel, beat_type) anchors before kind/offset resolution.
     anchors: list[tuple[float, str]] = []

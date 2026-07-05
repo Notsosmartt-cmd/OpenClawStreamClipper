@@ -4,7 +4,7 @@ type: concept
 tags: [research, sfx, audio, originality, edit-plan, sound-design, reference, tiktok]
 sources: 0
 status: shipped
-updated: 2026-06-13
+updated: 2026-07-04
 ---
 
 # SFX Cue Taxonomy (2026-06 research)
@@ -157,3 +157,8 @@ Academic: [FunnyNet (ACCV 2022)](https://openaccess.thecvf.com/content/ACCV2022/
 - [[concepts/style-profiles]] / [[concepts/asset-libraries]] — where SFX assets + the injector live
 - [[entities/audio-events]] — the acoustic anchors for beat timing
 - [[concepts/plan-calibration-loop]] — turns these defaults into fitted constants
+
+
+## Live tuning (2026-07-04, owner critique)
+
+First real listen (p4cal run): SFX **buried on loud clips** (fixed per-kind `gain_db` is program-blind; 1.5× volume ceiling) and **early on the quiet clip** (anchor = detection timestamp, a beat before the delivered punchline). Fixes: **loudness-adaptive gain** (`sfx_inject.adaptive_gain_db` — ffmpeg volumedetect on the clip segment, boost-only clamp(mean−ref,0,+9 dB), ref −20 dB, ceiling 4.0×, env `CLIP_SFX_ADAPTIVE/_REF_DB/_ADAPT_MAX_DB`, `sfx_adapt_db` logged to the effects manifest) and **payoff onset-snap** (`sfx_cues._refine_payoff` — strongest RMS transient within 1.2 s after the nominal payoff, fallback +0.35 s; riser lead measured from the refined payoff; config `payoff_delay_s`/`snap_to_onset`/`onset_snap_window_s`). Owner-clip probe matched perception exactly: Rap Battle −14.9 dB→+5.1 boost, Shakespeare −24.9→+0.0. See [[log]] 2026-07-04.
