@@ -202,10 +202,15 @@ per 10 s window — 1162 independent STFT/median-filter runs over overlapping au
 2. HPSS median filtering is time-local → block-slices ≈ per-window results except at
    block edges; **overlap blocks by one window** and take interior windows only.
 3. Keep the old path as default until validation passes; flag flips default later.
-**Verify / DoD:** reference-VOD comparison old vs new: per-window dial deltas ≤ 0.02
-absolute AND identical fire counts at the thresholds (0.7/0.5/0.6) — the dials feed
-threshold gates, so sub-threshold jitter is inert. **Gain: first-scan 970 s → ~60–180 s
-single-threaded; supersedes #2. Do LAST (needs the most careful validation).**
+**Verify / DoD:** reference-VOD comparison old vs new — the dials feed BINARY threshold
+gates (verified `stage4_moments.py:827-837`: rhythmic ≥0.7 / crowd ≥0.5 / music ≥0.6, and
+≥0.40 for the anomaly lane; each just increments `total_signals` — the value above
+threshold is irrelevant), so sub-threshold jitter is INERT and the ONLY quality-relevant
+change is a window flipping its gate. Acceptance gate: **PER-WINDOW fire equality** (NOT
+just equal aggregate counts — a compensating on/off pair would hide under equal counts) AND
+per-window dial deltas ≤ 0.02. If ANY window flips any gate, do not ship. This is the one
+proposal with a genuine (small, bounded, validation-gated) quality risk — hence "highest
+validation burden." **Gain: first-scan 970 s → ~60–180 s single-threaded; supersedes #2.**
 
 ## #7 — Durable run metrics + reader · observability · zero risk · S effort
 
