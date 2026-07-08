@@ -554,6 +554,58 @@ def _scan_parallel(
                 pass
 
 
+def _resolve_thread_count() -> int:
+    """AUDIO_EVENTS_THREADS env → int, default 0 (off). Threads are the SAFE in-process
+    parallel path (Speed #2, plan-pipeline-speed-2026-07): no spawn / no shared_memory /
+    no child librosa import, so they cannot hit the multiprocessing spawn-hang class that
+    motivated `--audio-workers 1`. The process pool stays available but non-default."""
+    raw = os.environ.get("AUDIO_EVENTS_THREADS", "").strip()
+    try:
+        return int(raw) if raw else 0
+    except ValueError:
+        return 0
+
+
+def _scan_threads(y_full, sr, tasks, n_threads, librosa, np,
+                  n_total_estimate, progress_every, t_scan):
+    """Threaded per-window scan. Each worker slices the SHARED READ-ONLY ``y_full`` and
+    calls the SAME ``_run_detectors`` as the serial loop; ``ThreadPoolExecutor.map``
+    yields in submission order → the windows list is byte-identical to serial. numpy/scipy
+    FFT + median filtering release the GIL, so the HPSS/onset work overlaps across threads.
+    No process spawn / shared_memory / child import → cannot hang the multiprocessing way."""
+    from concurrent.futures import ThreadPoolExecutor
+    print(f"[AUDIO_EVENTS] threaded scan: {len(tasks)} windows across {n_threads} threads",
+          file=sys.stderr)
+    sys.stderr.flush()
+
+    def _one(task):
+        s_idx, e_idx, t_start, t_end = task
+        return t_start, t_end, _run_detectors(y_full[s_idx:e_idx], sr, librosa, np)
+
+    windows: List[Dict[str, Any]] = []
+    nr = nc = nm = 0
+    done = 0
+    with ThreadPoolExecutor(max_workers=n_threads) as ex:
+        for t_start, t_end, result in ex.map(_one, tasks):
+            windows.append({"start": round(t_start, 1), "end": round(t_end, 1), **result})
+            if result["rhythmic_speech"] >= 0.7:
+                nr += 1
+            if result["crowd_response"] >= 0.5:
+                nc += 1
+            if result["music_dominance"] >= 0.6:
+                nm += 1
+            done += 1
+            if progress_every > 0 and done % progress_every == 0:
+                elapsed = time.time() - t_scan
+                rate = done / elapsed if elapsed > 0 else 0.0
+                eta = max(0, n_total_estimate - done) / rate if rate > 0 else 0.0
+                print(f"[AUDIO_EVENTS] {done}/~{n_total_estimate} windows "
+                      f"({elapsed:.0f}s elapsed, ~{eta:.0f}s remaining, {rate:.1f} win/s) [threads]",
+                      file=sys.stderr)
+                sys.stderr.flush()
+    return windows, (nr, nc, nm)
+
+
 def scan_audio_events(
     audio_path: str,
     out_path: str,
@@ -562,6 +614,7 @@ def scan_audio_events(
     duration_hint: Optional[float] = None,
     progress_every: int = 100,
     n_workers: Optional[int] = None,
+    n_threads: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Slide ``window_size`` / ``step`` windows across ``audio_path`` and
     write per-window detector outputs to ``out_path`` as JSON.
@@ -689,8 +742,14 @@ def scan_audio_events(
     # Resolve worker count and decide which path to take. Parallel is only
     # worth it when there are enough tasks to amortize pool startup.
     resolved_workers = _resolve_worker_count(n_workers)
+    resolved_threads = n_threads if n_threads is not None else _resolve_thread_count()
+    # Speed #2: the thread path takes precedence over the process pool when enabled
+    # (AUDIO_EVENTS_THREADS>=2). It's the safe (in-process) parallelism; the process
+    # pool stays reachable but is no longer the default parallel path.
+    use_threads = resolved_threads >= 2 and len(tasks) >= PARALLEL_MIN_WINDOWS
     use_parallel = (
-        resolved_workers >= 2
+        not use_threads
+        and resolved_workers >= 2
         and len(tasks) >= PARALLEL_MIN_WINDOWS
     )
 
@@ -700,6 +759,14 @@ def scan_audio_events(
     n_fired_music = 0
     t_scan = time.time()
     backend_used = "librosa"
+
+    if use_threads:
+        windows, (n_fired_rhythmic, n_fired_crowd, n_fired_music) = _scan_threads(
+            y_full=y_full, sr=sr, tasks=tasks, n_threads=resolved_threads,
+            librosa=librosa, np=np, n_total_estimate=n_total_estimate,
+            progress_every=progress_every, t_scan=t_scan)
+        backend_used = f"librosa+threads{resolved_threads}"
+        del y_full
 
     if use_parallel:
         windows, fires, parallel_ok = _scan_parallel(
@@ -720,7 +787,7 @@ def scan_audio_events(
             windows = []
             use_parallel = False
 
-    if not use_parallel:
+    if not use_parallel and not use_threads:
         print(
             f"[AUDIO_EVENTS] serial scan: {len(tasks)} windows",
             file=sys.stderr,
@@ -839,9 +906,15 @@ def _cli() -> None:
     ap.add_argument("--duration", type=float, default=None, help="Audio duration hint (sec)")
     ap.add_argument(
         "--workers", type=int, default=0,
-        help="Parallel worker count for the per-window scan. 0=auto "
+        help="PROCESS worker count for the per-window scan. 0=auto "
              "(env AUDIO_EVENTS_WORKERS, else min(8, cpu-2)); 1=force serial; "
-             "N>=2=that many workers (default: 0)",
+             "N>=2=that many processes (default: 0). Note the spawn-hang class — prefer --threads.",
+    )
+    ap.add_argument(
+        "--threads", type=int, default=0,
+        help="THREAD worker count (Speed #2) — the SAFE in-process parallel path "
+             "(no spawn/SHM). N>=2 takes precedence over --workers. 0=off "
+             "(env AUDIO_EVENTS_THREADS). Byte-identical output to serial.",
     )
     args = ap.parse_args()
     summary = scan_audio_events(
@@ -849,6 +922,7 @@ def _cli() -> None:
         window_size=args.window, step=args.step,
         duration_hint=args.duration,
         n_workers=(args.workers if args.workers > 0 else None),
+        n_threads=(args.threads if args.threads > 0 else None),
     )
     json.dump(summary, sys.stdout)
     sys.stdout.write("\n")

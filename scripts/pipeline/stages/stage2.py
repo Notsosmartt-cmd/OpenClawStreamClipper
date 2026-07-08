@@ -109,13 +109,43 @@ def run(ctx) -> None:
     # Tier-2 M2 — audio events scan (boost-only signals for Pass A).
     # The cached-transcript path above now also extracts audio.wav, so
     # this branch fires on both fresh and cached runs (post-2026-06-04).
+    #
+    # Speed #1 (2026-07-08, plan-pipeline-speed-2026-07): the scan output is
+    # deterministic per VOD (~10-16 min serial) yet only the transcript was cached —
+    # mirror that cache to `<stem>.audio_events.json` so re-runs skip the rescan. Same
+    # reuse semantics as the transcript (reuse unless --force, minus the
+    # CLIP_REUSE_TRANSCRIPT dev override). audio.wav extraction above is unaffected
+    # (Stage 7 clip_tighten/sfx read it); ONLY the scan is skipped on a hit. A scan is
+    # cached ONLY when valid (non-empty `windows`, no `skipped_reason`) so a transient
+    # scanner error is never immortalized.
     events = p.work("audio_events.json")
-    if audio.exists():
+    cached_events = p.transcriptions_dir / f"{stem}.audio_events.json"
+
+    def _valid_events(path_) -> bool:
+        try:
+            d = json.loads(Path(path_).read_text(encoding="utf-8"))
+            return isinstance(d.get("windows"), list) and len(d["windows"]) > 0 \
+                and not d.get("skipped_reason")
+        except Exception:
+            return False
+
+    if cached_events.exists() and _valid_events(cached_events) and (not ctx.force or _reuse_transcript):
+        log.log(f"Found cached audio events for '{ctx.vod_basename}' — skipping scan.")
+        shutil.copyfile(cached_events, events)
+    elif audio.exists():
+        if ctx.force and cached_events.exists():
+            cached_events.unlink(missing_ok=True)  # discard stale under --force, like the transcript
         log.log("Tier-2 M2: scanning audio events (rhythmic / crowd / music)...")
         r = common.run_module(log, "audio_events.py",
                               ["--audio", str(audio), "--out", str(events)],
                               env=ctx.child_env(), check=False)
         if r.returncode != 0:
             events.write_text('{"windows": [], "skipped_reason": "scanner_error"}', encoding="utf-8")
+        elif _valid_events(events):
+            try:
+                shutil.copyfile(events, cached_events)
+                log.log(f"Audio events cached to {cached_events.name}")
+            except OSError:
+                pass
     else:
         events.write_text('{"windows": [], "skipped_reason": "no_audio_source"}', encoding="utf-8")

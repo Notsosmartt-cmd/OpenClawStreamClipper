@@ -468,6 +468,38 @@ def cleanup(log: Logger, persistent_log: Path, exit_code: int, start_epoch: floa
     except Exception as e:
         log.warn(f"stage-timing report failed: {e}")
 
+    # Speed #7 (2026-07-08, plan-pipeline-speed-2026-07): durable append-only run metrics.
+    # stage_timings lives INSIDE last_run_*.json — which prune_traces can delete — so this
+    # row is the speed history that survives cleanup. One line per run; failure-soft;
+    # queried/backfilled by scripts/research/run_metrics.py. run_metrics.jsonl is not a
+    # last_run_* glob, so prune_traces never touches it.
+    try:
+        _stages = {t["stage"]: t["seconds"] for t in timings} if _STAGE_MARKS else {}
+        _vod, _vod_s = "", None
+        try:
+            _pcp = PATHS.work_dir / "pass_c_candidates.json"
+            if _pcp.exists():
+                _pc = json.loads(_pcp.read_text(encoding="utf-8"))
+                _vod = _pc.get("vod") or ""
+                _vod_s = _pc.get("max_time_s")
+        except Exception:
+            pass
+        _clips = 0
+        try:
+            if PATHS.clips_made.exists():
+                _clips = len([ln for ln in PATHS.clips_made.read_text(encoding="utf-8").splitlines()
+                              if ln.strip()])
+        except Exception:
+            pass
+        _row = {"ts": datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+                "vod": _vod, "vod_seconds": _vod_s, "clips": _clips,
+                "total_seconds": elapsed, "exit_code": exit_code, "stages": _stages}
+        PATHS.diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        with open(PATHS.diagnostics_dir / "run_metrics.jsonl", "a", encoding="utf-8") as _fh:
+            _fh.write(json.dumps(_row) + "\n")
+    except Exception as e:
+        log.warn(f"run-metrics append failed: {e}")
+
     # Diagnostics: snapshot every work-dir JSON (ported from pipeline_common.sh)
     try:
         PATHS.diagnostics_dir.mkdir(parents=True, exist_ok=True)
