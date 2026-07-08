@@ -215,9 +215,13 @@ Cases: *Shower Bluff* — 19.5 s of setup before the punchline (start should be 
 - Applies ONLY to payoff-type categories (funny / reactive / hot_take / social_callout /
   controversial). **storytime / rap / emotional lanes EXEMPT** — long segments preserved
   by construction.
-- Head trim: locate the acoustic payoff (the `_refine_payoff` rescue/snap machinery,
-  which now finds the true beat); if setup before it exceeds ~8-10 s, pull `clip_start`
-  to payoff − lead (6-8 s) — enough context, no dead run-up. Cold-open still prepends.
+- Head trim (REBUILT 2026-07-05 — content-adaptive, owner: "no fixed length"): snaps
+  `clip_start` to the NATURAL start of the utterance leading into the payoff — the most
+  recent silence gap in the audio (speech level referenced from the payoff so it holds in
+  mostly-silent windows), refined to the nearest transcript sentence boundary. Head length
+  is DERIVED from content (a 1-sentence setup → ~3 s, a built-up bit → more, a monologue
+  capped at head_max_lead_s). Bounds head_min_lead_s(2)/head_max_lead_s(12) are guardrails,
+  not targets. Verified: same payoff + 3 different setups → heads 3.0/11.0/5.0 s.
 - Tail trim: end at the last speech/reaction burst within payoff + ~8 s; drop trailing
   low-RMS/no-keyword filler (the Breakdown −5 s case).
 - Acceptance: Shower-Bluff-class clips land ≈ payoff−8s → payoff+reaction; storytime
