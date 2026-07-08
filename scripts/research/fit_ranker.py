@@ -365,25 +365,56 @@ def _num(x, d=0.0):
         return d
 
 
+def load_frozen(frozen_dir: Path) -> tuple[list[dict], list[dict]]:
+    """(rows, labels) from the durable learning/frozen_runs store — trace-independent.
+    Each frozen run file is self-contained {run, vod, candidates, labels}, so this
+    needs NOTHING from clips/.diagnostics; the trace pile can be fully deleted."""
+    rows, labels = [], []
+    files = ([frozen_dir] if frozen_dir.is_file() else sorted(frozen_dir.glob("*.json")))
+    for p in files:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        run, cands = d.get("run") or p.stem, d.get("candidates") or []
+        if not cands or "style_multiplier" not in cands[0]:
+            continue
+        for c in cands:
+            c = dict(c); c["_run"] = run; rows.append(c)
+        for lab in d.get("labels") or []:
+            labels.append({"run": run, "timestamp": lab["timestamp"], "label": lab["label"],
+                           "source": lab.get("source", "owner")})
+        print(f"[fit_ranker] frozen {p.name}: {len(cands)} candidates, {len(d.get('labels') or [])} label(s)")
+    return rows, labels
+
+
 def main() -> int:
     args = sys.argv[1:]
     if "--self-test" in args:
         return self_test()
-    if "--traces" not in args or "--labels" not in args:
-        print("usage: fit_ranker.py --traces <glob-or-dir> --labels <labels.jsonl> "
-              "[--l2 1.0] [--tol 10] [--gate [--gate-n 10]]\n"
-              "       fit_ranker.py --self-test")
-        return 2
-    tp = args[args.index("--traces") + 1]
-    trace_paths = ([Path(p) for p in Path().glob(tp)] if any(c in tp for c in "*?[")
-                   else (list(Path(tp).rglob("pass_c_candidates.json"))
-                         + sorted(Path(tp).glob("last_run_*.json"))) if Path(tp).is_dir()
-                   else [Path(tp)])
-    labels = [json.loads(l) for l in Path(args[args.index("--labels") + 1]).read_text(
-        encoding="utf-8").splitlines() if l.strip()]
     l2 = float(args[args.index("--l2") + 1]) if "--l2" in args else 1.0
     tol = float(args[args.index("--tol") + 1]) if "--tol" in args else 2.0
-    rows = attach_labels(load_traces(trace_paths), labels, tol=tol)
+
+    if "--frozen" in args:
+        # trace-independent path: everything comes from the committed durable store
+        fd = args[args.index("--frozen") + 1] if args.index("--frozen") + 1 < len(args) \
+            else str(REPO / "learning" / "frozen_runs")
+        rows, labels = load_frozen(Path(fd))
+    elif "--traces" in args and "--labels" in args:
+        tp = args[args.index("--traces") + 1]
+        trace_paths = ([Path(p) for p in Path().glob(tp)] if any(c in tp for c in "*?[")
+                       else (list(Path(tp).rglob("pass_c_candidates.json"))
+                             + sorted(Path(tp).glob("last_run_*.json"))) if Path(tp).is_dir()
+                       else [Path(tp)])
+        labels = [json.loads(l) for l in Path(args[args.index("--labels") + 1]).read_text(
+            encoding="utf-8").splitlines() if l.strip()]
+        rows = load_traces(trace_paths)
+    else:
+        print("usage: fit_ranker.py --frozen [learning/frozen_runs] [--gate]\n"
+              "       fit_ranker.py --traces <dir> --labels <labels.jsonl> [--l2] [--tol] [--gate]\n"
+              "       fit_ranker.py --self-test")
+        return 2
+    rows = attach_labels(rows, labels, tol=tol)
     if not rows:
         print("[fit_ranker] no candidate rows found."); return 1
 

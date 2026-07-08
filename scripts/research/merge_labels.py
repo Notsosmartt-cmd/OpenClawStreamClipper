@@ -61,6 +61,8 @@ def main() -> int:
     ap.add_argument("--out")
     ap.add_argument("--tol", type=float, default=10.0,
                     help="seconds within which a B row overrides a C row (default 10)")
+    ap.add_argument("--no-freeze", action="store_true",
+                    help="skip freezing into the durable learning/frozen_runs store")
     a = ap.parse_args()
 
     owner = _load_jsonl(DIAG / "labels_owner.jsonl")
@@ -93,6 +95,14 @@ def main() -> int:
     out = Path(a.out) if a.out else (DIAG / "labels_all.jsonl")
     out.write_text("\n".join(json.dumps(x) for x in out_rows) + ("\n" if out_rows else ""),
                    encoding="utf-8")
+    # FREEZE into the durable committed store so the trace pile is safe to delete
+    # (owner directive 2026-07-08). Additive + idempotent.
+    if out_rows and not a.no_freeze:
+        try:
+            import label_store
+            label_store.freeze(out_rows)
+        except Exception as e:
+            print(f"[merge_labels] freeze skipped ({type(e).__name__}: {e})")
     pos = sum(1 for x in out_rows if x["label"] == 1)
     b = sum(1 for x in out_rows if x["source"] == "owner")
     print(f"[merge_labels] {len(out_rows)} labels ({pos} pos / {len(out_rows)-pos} neg; "

@@ -227,6 +227,30 @@ Cases: *Shower Bluff* — 19.5 s of setup before the punchline (start should be 
 - Acceptance: Shower-Bluff-class clips land ≈ payoff−8s → payoff+reaction; storytime
   durations unchanged byte-identically with the flag off AND on.
 
+## Durable label store — trace pile is safe to clean up (2026-07-08, owner directive)
+
+Owner: make both label paths safe to clean up by keeping their own copy of what
+training needs, since any labeled moment / reference clip matters for future work.
+Built `scripts/research/label_store.py` + `learning/frozen_runs/<run>.json`:
+
+- **Freeze:** `merge_labels` now auto-freezes every LABELED run into the committed store
+  — the run's FULL candidate set (features only, no media) + its labels. That's
+  everything the fit AND the gate need (positives, the ~240 negatives, recall@N), so the
+  ephemeral `clips/.diagnostics/last_run_*.json` trace becomes disposable. Additive +
+  idempotent; only B1-complete runs (pre-B1 are untrainable).
+- **Train trace-independently:** `fit_ranker --frozen learning/frozen_runs [--gate]` reads
+  ONLY the committed store — verified byte-identical gate verdict vs the trace path
+  (REJECT, fitted 0.417 / baseline 0.5). Survives a `clips/.diagnostics/` wipe or a fresh
+  checkout (the store is git-tracked; the traces are gitignored).
+- **Safe prune:** `scripts/research/prune_traces.py` deletes traces that are unlabeled OR
+  already frozen (keeps the newest `--keep-recent`, default 8); REFUSES to delete a
+  labeled-but-unfrozen trace (would orphan a label). Dry-run by default, `--apply` to
+  delete. On the current pile: 124 of 132 traces (~28 MB) prunable with zero risk.
+
+Reference clips: their derived `.words.json` is regenerable via `corpus_refresh` (source
+clips kept in `reference_clips/`), and any Path-C label they produce is frozen durably —
+so cleaning `.cache/` is also safe.
+
 ## Phase L4 — Cadence (steady state)
 
 - Every VOD run: trace banks automatically (zero effort).
