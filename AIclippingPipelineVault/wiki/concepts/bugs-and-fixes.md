@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-06-12
+updated: 2026-07-08
 ---
 
 # Bugs and Fixes
@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 65 bugs (highest number BUG 65) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 66 bugs (highest number BUG 66) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1717,6 +1717,45 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 > [!warning] Recurred (6/6 13:57 run) → central fix
 > The per-module patch wasn't enough: the next run hit the SAME failure in a **third** process — `[MMR] sentence-transformers unavailable (Could not load libtorchcodec ...)`. MMR diversity ranking lives in `scripts/lib/stages/stage4_diversity.py`, its own subprocess, which also imports the torch stack and didn't have the bootstrap. (`transformers`/`sentence-transformers` eagerly probe torchcodec on import, so ANY torch-stack stage breaks without the FFmpeg DLLs.)
 > **Central fix:** added `scripts/lib/sitecustomize.py` (just calls `ffmpeg_dll.enable_ffmpeg_dll_dir()`). `PATHS.child_env()` already puts `scripts/lib` on `PYTHONPATH` for every stage subprocess, so Python's `site` machinery **auto-imports this sitecustomize at startup in every stage process** — before any heavy import — covering M3, MMR, pyannote, and any future torch-stack stage in one place. Verified: with only `PYTHONPATH=scripts/lib`, a fresh interpreter auto-runs the hook and `import sentence_transformers` / `torchcodec` succeed with no explicit call. The explicit calls in speech.py/stage4_moments.py stay as idempotent belt-and-suspenders.
+
+---
+
+## BUG 66 — Stage 6 rebuild drops per-moment metadata → P-TIGHT's rap exemption never fired
+
+> [!success] Resolved 2026-07-08 (found by owner clip review)
+
+**Symptom**: on the Activation-Wave Run 1 (2xRaKai, `CLIP_TIGHT_PUNCHLINE=1`), P-TIGHT trimmed
+`T=9567` from 20 s → 11.7 s even though its `primary_pattern` is `rap_battle_freestyle` —
+a pattern `clip_tighten._EXEMPT_PATTERN_SUBSTR` explicitly exempts ("rap clips were a good
+length, don't touch"). The owner's review caught the effect: "Save all that shit for Disney"
+(rap-battle commentary) lost its pre-punchline flow.
+
+**Cause**: `stage6_vision._process_moment` **rebuilds each moment's output entry from
+scratch** (a fixed key list) instead of carrying the Stage-4 moment through — so any field
+not on that list silently dies between Stage 4 and Stage 7. `primary_pattern` wasn't on the
+list → `scored_moments.json` rows have no pattern → Stage 7 passed `row.get("primary_pattern",
+"")` = `""` to `tighten()` → the exemption check `any(s in "" ...)` never matched. The
+exemption was designed, shipped, synthetic-tested (where the moment dict HAD the pattern) —
+and structurally unreachable in production. **Same root class as the `src` drop** found
+2026-07-08 while wiring the ANOMALY_ filename tag: the Stage-6 rebuild is a metadata
+bottleneck; every new Stage-4 field must be explicitly added or it vanishes.
+
+**Fix** (`stage6_vision.py`, `stage7.py`, `clip_tighten.py`): (1) preserve `primary_pattern`
+through the Stage-6 entry (like `src`); (2) Stage 7 forwards it + `segment_type` into the
+`tighten()` moment dict; (3) `clip_tighten` gained a `segment_type` exemption
+(rap/freestyle/music/karaoke/singing) as belt-and-suspenders for moments whose per-moment
+pattern missed the rap context (the Disney clip was patterned `social_callout` inside a rap
+segment); (4) head defaults tightened per the same review: `head_min_lead_s` 2→4 and a new
+`head_min_sentences=2` guard (the head must include the payoff's lead-in line — the
+Coke-Machine escalation/dialog build-up complaint). Synthetic 4-case verification PASS.
+
+**Lesson**: a stage that *rebuilds* records instead of *enriching* them turns every new
+upstream field into a latent bug. When adding a Stage-4 field consumed at Stage 7, grep the
+Stage-6 entry dict FIRST. (Candidates for a future refactor: spread the incoming moment and
+override, instead of whitelisting.) Also: title/hook are generated at Stage 6 over the FULL
+window, so a deep P-TIGHT head cut can orphan the caption — a >8 s head-cut now logs a
+`[p-tight] WARNING`; the structural fix (tighten before Stage 6) is filed in
+[[concepts/plan-activation-wave-2026-07]].
 
 ---
 

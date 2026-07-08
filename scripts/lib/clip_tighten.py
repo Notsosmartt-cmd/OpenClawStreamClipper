@@ -44,6 +44,10 @@ _TIGHTEN_CATS = {"funny", "reactive", "hot_take", "controversial", "comedy",
 _EXEMPT_PATTERN_SUBSTR = ("rap", "freestyle", "storytell", "interview", "informational",
                           "ramble")
 _EXEMPT_CATS = {"storytime", "emotional"}
+# Segment types whose flow matters (owner 2026-07-08: the Disney clip was rap-battle
+# commentary mis-patterned as social_callout — when the SEGMENT classifier catches the
+# rap/music context, exempt even if the per-moment pattern missed it).
+_EXEMPT_SEGMENT_SUBSTR = ("rap", "freestyle", "music", "karaoke", "singing")
 
 # NB: none of these is a TARGET length. head_min/max_lead + tail_max are BOUNDS
 # (guardrails), the clip edges themselves are derived from the audio/transcript.
@@ -52,10 +56,14 @@ _DEFAULTS = {
     # HEAD: start snaps to the natural beginning of the utterance leading to the
     # payoff (silence gap / sentence boundary). These only BOUND that search — a
     # short setup stays short, a long one is capped; the value is content-derived.
-    "head_min_lead_s": 2.0,     # always keep at least this much run-up (never start ON the joke)
+    "head_min_lead_s": 4.0,     # always keep at least this much run-up (owner 2026-07-08:
+                                # 2.0 cut too close to the punchline on dialog clips)
     "head_max_lead_s": 12.0,    # never keep MORE setup than this (guardrail for monologues)
     "head_gap_min_s": 0.30,     # a silence >= this counts as an utterance boundary
     "head_silence_frac": 0.20,  # "silence" = RMS below this fraction of the window's speech level
+    "head_min_sentences": 2,    # head must start >= this many transcript sentence-starts
+                                # before the payoff (keeps the prior exchange line — the
+                                # Coke-Machine escalation/dialog build-up guard)
     "tail_max_s": 8.0,          # look at most this far past the payoff for the last activity
     "tail_pad_s": 1.0,          # keep this much after the last burst
     "min_final_s": 6.0,         # safety floor — never emit a clip shorter than this
@@ -67,7 +75,7 @@ def _cfg() -> dict:
     c["enabled"] = os.environ.get("CLIP_TIGHT_PUNCHLINE", "0").strip().lower() in (
         "1", "true", "yes", "on")
     for k in ("head_min_lead_s", "head_max_lead_s", "head_gap_min_s", "head_silence_frac",
-              "tail_max_s", "tail_pad_s", "min_final_s"):
+              "head_min_sentences", "tail_max_s", "tail_pad_s", "min_final_s"):
         v = os.environ.get("CLIP_TIGHT_" + k.upper())
         if v:
             try:
@@ -133,6 +141,25 @@ def _natural_head_start(payoff_abs: float, clip_start: float, temp_dir: str,
         anchor = natural if natural is not None else earliest
         natural = min(segs, key=lambda s: abs(s - anchor))
 
+    # --- min-sentences guard (owner 2026-07-08): the head must start at least
+    # head_min_sentences transcript sentence-starts before the payoff — i.e. keep the
+    # payoff's own line PLUS the exchange line(s) leading into it. Fixes the
+    # dialog/escalation over-cut (Coke-Machine: students' argument build-up trimmed;
+    # Disney: punchline left without its lead-in). Content-derived: if the transcript
+    # has no earlier sentence in the max_lead window, nothing is forced. ---
+    if natural is not None:
+        min_sent = int(cfg.get("head_min_sentences", 0) or 0)
+        if min_sent > 0:
+            all_starts = [s for s in _segment_starts(temp_dir) if earliest <= s <= payoff_abs]
+            # count sentences the clip will CONTAIN up to the payoff (inclusive of the
+            # one the head starts on): payoff's line + its lead-in line(s).
+            n_have = sum(1 for s in all_starts if natural <= s <= payoff_abs)
+            if n_have < min_sent:
+                earlier = [s for s in all_starts if s < natural]
+                need = min_sent - n_have
+                if len(earlier) >= need:
+                    natural = earlier[-need]
+
     if natural is None:
         # No boundary found. If the run-up exceeds the guardrail, cap it; otherwise
         # keep the original start (the setup is already a reasonable length).
@@ -150,7 +177,10 @@ def _exempt(moment: dict) -> bool:
     if cat in _EXEMPT_CATS or cat not in _TIGHTEN_CATS:
         return True
     pat = str(moment.get("primary_pattern") or "").lower()
-    return any(s in pat for s in _EXEMPT_PATTERN_SUBSTR)
+    if any(s in pat for s in _EXEMPT_PATTERN_SUBSTR):
+        return True
+    seg = str(moment.get("segment_type") or "").lower()
+    return any(s in seg for s in _EXEMPT_SEGMENT_SUBSTR)
 
 
 def _rms_env(temp_dir: str, a_abs: float, b_abs: float):

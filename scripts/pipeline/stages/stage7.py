@@ -145,6 +145,9 @@ def _generate_manifest(ctx) -> list[dict]:
             "segment_type": _scrub(m.get("segment_type", "unknown")),
             "clip_start": clip_start,
             "clip_duration": clip_duration,
+            # P-TIGHT exemption inputs (owner review 2026-07-08): pattern survives
+            # Stage 6 now; without it the rap/freestyle exemption never fired.
+            "primary_pattern": _scrub(m.get("primary_pattern") or ""),
         }
         rows.append(row)
         lines.append("|".join(str(x) for x in (
@@ -181,10 +184,19 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
         import clip_tighten as _ctgh
         _ns, _nl = _ctgh.tighten(
             {"timestamp": T, "category": category, "primary_category": category,
-             "primary_pattern": row.get("primary_pattern", "")},
+             "primary_pattern": row.get("primary_pattern", ""),
+             "segment_type": seg_type},
             clip_start, clip_length, temp_dir=str(p.work_dir))
         if (abs(_ns - clip_start) > 0.4 or abs(_nl - clip_length) > 0.4):
+            _head_cut = _ns - clip_start
             log.log(f"  [p-tight] {clip_start}+{clip_length}s -> {_ns}+{_nl}s (T={T} {category})")
+            if _head_cut > 8.0:
+                # Title decoherence guard (owner review 2026-07-08): the title/hook were
+                # generated at Stage 6 over the FULL window; a deep head cut can remove
+                # the content they reference (Coke-Machine case). Flag it for review
+                # until tighten runs pre-Stage-6 (single source of truth).
+                log.log(f"  [p-tight] WARNING T={T}: head cut {_head_cut:.1f}s — title/hook may "
+                        f"reference trimmed setup (re-check caption vs video)")
             clip_start, clip_length = _ns, _nl
     except Exception as _te:
         log.warn(f"p-tight skipped for T={T}: {_te}")

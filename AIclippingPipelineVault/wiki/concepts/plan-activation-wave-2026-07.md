@@ -18,6 +18,24 @@ updated: 2026-07-08
 > behind `CLIP_JUDGE_TIMELINE` (default off, activates in Run 2), failure-soft, render verified.
 > All flag-off / byte-identical. `py_compile` clean. Left: the Phase-1 flagged render + owner review.
 
+> [!note] Phase 1 RUN + Phase 2 OWNER REVIEW done 2026-07-08 — promotions decided
+> Run 1 (2xRaKai, all flags): exit 0, 10 clips, 82m37s. **Owner verdict: 7/10 good with no
+> correction** (incl. the previously-critiqued Shower Bluff — P-TIGHT's target case validated),
+> 3 need tweaks (Disney: rap-flow head over-cut; Coke Machine: escalation build-up cut + title
+> orphaned; Wimpy Kid: same class, left unrated). Review exposed **[[concepts/bugs-and-fixes#BUG 66]]**:
+> Stage-6's rebuild dropped `primary_pattern` → the rap/freestyle exemption NEVER fired live
+> (T=9567 `rap_battle_freestyle` was trimmed). Fixed same-session + head defaults per review
+> (`head_min_lead_s` 2→4, `head_min_sentences=2`, segment-type exemption) — synthetic 4-case PASS.
+> **Promotions:** P-TIGHT = KEEP (re-validate the 3 tweak clips next run). Adaptive count =
+> **HOLD IN SHADOW** — the floor's one real-run trim (t=9926 Disney) was owner-GOOD, and the
+> re-run τ sweep now shows every trimming τ cuts a GOOD clip → promotion blocked by the label
+> constraint, exactly as designed. Anomaly lane = INCONCLUSIVE (4 proposed, all merged into
+> transcript candidates within the 25 s dedup — the lane only adds distinct clips for ISOLATED
+> cross-modal moments; 2xRaKai had none). Labels: 9 positives filed + frozen (4 runs / 20 labels
+> now); ranking gate re-ran → still REJECT (0.63 < 0.963 — confirmatory positives can't beat the
+> baseline that picked them; the differentiator is near-miss keepers, still unflagged).
+> Judge-timeline Run 2 still pending.
+
 Owner directive (2026-07-08): evaluate five ready items and compile them into one
 implementation plan. Verdict: **they belong in ONE plan** because they converge on a
 single validation run + a single owner review session — planned separately they'd each
