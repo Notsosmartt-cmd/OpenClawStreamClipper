@@ -81,9 +81,13 @@ One network ingests **raw audio waveforms + video frames + text in the same cont
 > only text+image content types** — the audio door is shut at the server layer, exactly as predicted.
 > The whitelist is explicit, so no alternate audio field name helps. The pipeline talks to this API
 > (not the chat UI), so **option 5 remains blocked for the pipeline regardless of whether the LM
-> Studio chat UI can accept an audio attachment**. Consistent with the still-open LM Studio audio-API
-> feature request (`/v1/audio/*`). Re-test when LM Studio ships audio content parts (or `/v1/audio`)
-> in the OpenAI-compat server; the model is already on disk, so it's a 10-minute re-probe.
+> Studio chat UI can accept an audio attachment**. Confirmed from a second angle: the dedicated audio
+> endpoints don't work either — `/v1/audio/transcriptions` rejects the multipart file upload a real ASR
+> route needs (`415 "must use application/json"` — a generic JSON-only guard, not a working audio
+> handler) and `/v1/audio/speech` returns an "unexpected endpoint" body. So even gemma-4-e4b's
+> advertised ASR is unreachable via the API today. Re-test when LM Studio ships audio content parts
+> (or a real `/v1/audio/*`) in the OpenAI-compat server; the model is already on disk, so it's a
+> 10-minute re-probe.
 > Fallback harness if pursuing sooner: serve the GGUF via `llama.cpp`'s own server (also Vulkan →
 > still reaches both GPUs) and check whether its multimodal endpoint takes audio.
 **Realistic endgame:** hybrid — option 1 proposes cheaply across the whole VOD; an omni model *verifies* the top-N 30–60 s windows with true perception, as/alongside the Stage 5.5 judge.
