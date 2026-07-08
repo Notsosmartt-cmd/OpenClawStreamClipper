@@ -19,10 +19,20 @@ updated: 2026-07-08
 > so a transient moment-call failure changes later prior-context — fixed with an exact
 > **reconciliation pass** (rebuild+re-run only succeeded chunks whose prior-window held a
 > failed chunk; zero cost on the happy path). Two-phase is now byte-exact to serial even
-> under transient failures. **Remaining for #5 (LIVE session):** wire `stage4_moments.py`'s
-> real `call_llm`/`_build_chunk_card`/grounding closures into the driver (I5.0 instrumentation
-> + I5.2 cut-over) and clear the live gates (temp-0 hash baseline, workers=3 live check,
-> outage drill, soak). The engine they'll wire to is done and proven.
+> under transient failures.
+> **I5.0 SHIPPED 2026-07-08:** prompt-hash instrumentation added to the LIVE Pass-B loop
+> (`_PASSB_PROMPT_HASHES` → `passb_prompt_hashes.json`; additive, zero behavior change) +
+> `CLIP_PASSB_DETERMINISTIC=1` greedy-decode validation flag (call_llm temp 0). Baseline
+> temp-0 run launched (2xRaKai, reuse-transcript) to capture the golden manifest.
+> **Loop-complexity finding (reshapes I5.2):** reading the real loop showed it is FAR more
+> stateful than passb_driver's clean model — a signal GATE with dead-streak SAMPLING state
+> (`_PASSB_DEAD_STREAK`), per-chunk `conversation_shape` mutating a shared index, skip-records,
+> per-chunk signals — ALL before the prompt/moments/card work the driver models. So the
+> cut-over must extract a SEQUENTIAL cheap pre-pass (gate + shape + signals → the alive-chunk
+> list) and hand only alive chunks to the driver's two-phase. This is exactly why it's
+> incremental-with-a-live-gate, NOT a one-shot rewrite. **Remaining:** I5.1 pre-pass extraction
+> (gate: hashes == baseline) → I5.2 driver cut-over (gate: hashes == baseline) → I5.4 workers=3
+> live → I5.5 outage drill → I5.6 soak.
 > **#6 — harness SHIPPED (`scripts/research/vector_equiv.py`, I6.0 old-vs-old PASS: 0
 > deltas/0 flips), full vectorization NOT built — ROI reassessed:** #2 (threaded scan, now
 > DEFAULT 4, 3.3×) + #1 (cache, skips re-run scans) already collapsed the scan cost #6
