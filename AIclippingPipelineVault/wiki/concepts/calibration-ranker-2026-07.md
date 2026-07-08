@@ -111,7 +111,7 @@ Until then everything runs on the hand-tuned constants exactly as before. This i
 rare-but-cross-validated reaction-carried moment the hand-tuned axis stack currently
 drops.
 
-Related: [[concepts/plan-calibration-loop]] · [[concepts/plan-pipeline-upgrade-2026-07]] ·
+Related: [[concepts/label-paths-and-store-2026-07]] (how labels are sourced + the durable store) · [[concepts/plan-calibration-loop]] · [[concepts/plan-pipeline-upgrade-2026-07]] ·
 [[concepts/case-rap-battle-missed]] · [[concepts/case-incongruity-comedy]] ·
 [[concepts/corpus-learning-loop-2026-07]] (7.3 transcript-value = a source of anomaly labels) ·
 [[entities/bootstrap-twitch-clips]]
