@@ -358,6 +358,105 @@ def run_gate(rows: list[dict], l2: float, n: int) -> dict:
             "mean_baseline": round(mb, 3), "per_run": scored}
 
 
+def run_count_gate(rows: list[dict], l2: float, min_keep: int = 3, band: float = 0.15) -> dict:
+    """Plan B COUNT gate (concepts/plan-adaptive-clip-count-2026-07) — leave-one-run-out.
+
+    The ranking gate decides whether the fitted ORDER beats baseline; this decides
+    whether the fitted SCORE is calibrated enough to also drive the clip COUNT via an
+    absolute threshold. For each held run: fit on the OTHERS, learn theta = the largest
+    threshold on the DEPLOYMENT key (sigmoid(score)*position — identical to the pipeline's
+    pre_bucket_score when the ranker is on) that keeps ALL training positives, then check
+    it generalizes to the held run:
+      * keeps every held positive          (drops no keeper),
+      * yields a SANE count                (min_keep <= kept < all candidates),
+      * admits no MORE owner-BAD (label 0) clips than the quota already did
+        (neg_admit_theta <= neg_admit_quota — the 074956 rank-1-BAD fix must not regress).
+    ENABLE-COUNT only if EVERY fold passes AND the learned thetas are stable (max-min <=
+    band). Deployed count_threshold = the MOST INCLUSIVE (min) learned theta — recall-
+    first, per the miss-costlier-than-false-positive doctrine. Count only makes sense atop
+    the fitted score, so callers run this ONLY after the ranking gate ENABLEs."""
+    by_run: dict[str, list[dict]] = {}
+    for r in rows:
+        by_run.setdefault(r.get("_run", ""), []).append(r)
+    holdable = [run for run, rs in by_run.items() if any(x.get("_label") == 1 for x in rs)]
+    if len(by_run) < 2 or not holdable:
+        return {"verdict": "UNDECIDED", "reason": "need >=2 runs and a held positive",
+                "n_runs": len(by_run), "per_run": []}
+    thetas, per = [], []
+    for held in holdable:
+        train = [r for run, rs in by_run.items() if run != held for r in rs]
+        if not (any(r.get("_label") == 1 for r in train) and any(r.get("_label") == 0 for r in train)):
+            continue
+        m = fit(train, l2=l2)
+
+        def _fkey(r, _m=m):
+            return ranker._sigmoid(ranker.score(r, _m["weights"], _m["bias"])) * \
+                _num(r.get("position_weight"), 1.0)
+        train_pos = [_fkey(r) for r in train if r.get("_label") == 1]
+        if not train_pos:
+            continue
+        theta = min(train_pos)                        # keep every TRAIN positive
+        h = by_run[held]
+        hpos = [r for r in h if r.get("_label") == 1]
+        hneg = [r for r in h if r.get("_label") == 0]
+        if not hpos:
+            continue
+        pos_kept = sum(1 for r in hpos if _fkey(r) >= theta) / len(hpos)
+        n_kept = sum(1 for r in h if _fkey(r) >= theta)
+        thetas.append(theta)
+        per.append({"held": held, "theta": round(theta, 4), "pos_kept": round(pos_kept, 3),
+                    "n_kept": n_kept, "n_cands": len(h),
+                    "neg_admit_theta": sum(1 for r in hneg if _fkey(r) >= theta),
+                    "neg_admit_quota": sum(1 for r in hneg if r.get("selected"))})
+    if not per:
+        return {"verdict": "UNDECIDED", "reason": "no fold had a held positive + trainable fit",
+                "per_run": per}
+    all_pos = all(p["pos_kept"] == 1.0 for p in per)
+    sane = all(min_keep <= p["n_kept"] < p["n_cands"] for p in per)
+    neg_ok = all(p["neg_admit_theta"] <= p["neg_admit_quota"] for p in per)
+    stable = (max(thetas) - min(thetas)) <= band
+    verdict = "ENABLE-COUNT" if (all_pos and sane and neg_ok and stable) else "HOLD"
+    return {"verdict": verdict, "count_threshold": round(min(thetas), 4),
+            "all_pos_kept": all_pos, "sane_counts": sane, "neg_no_worse": neg_ok,
+            "theta_stable": stable, "theta_band": round(max(thetas) - min(thetas), 4),
+            "per_run": per}
+
+
+def count_gate_self_test() -> int:
+    """Two synthetic runs with a separable planted signal (reaction-carried positives).
+    A correct count gate learns a threshold that keeps all positives, admits no negatives
+    the quota didn't, and generalizes across both runs -> ENABLE-COUNT."""
+    def rnd(i, a, b):
+        x = math.sin(i * 12.9898) * 43758.5453
+        return a + (x - math.floor(x)) * (b - a)
+    rows = []
+    for base, run in ((0, "runA"), (1000, "runB")):
+        for i in range(120):
+            pos = i % 3 == 0
+            rx = rnd(base + i, 0.6, 0.95) if pos else rnd(base + i, 0.0, 0.3)
+            kw = rnd(base + i + 7, 0.0, 0.25) if pos else rnd(base + i + 7, 0.5, 0.9)
+            ns = rnd(base + i + 3, 0.4, 0.6)
+            rows.append({"_run": run, "normalized_score": ns, "style_multiplier": 1.0,
+                         "cross_val_factor": 1.0, "speaker_factor": 1.0, "pattern_bonus": 1.0,
+                         "axis_multiplier": 1.0, "length_penalty": 1.0,
+                         "reaction_score": rx, "keyword_score": kw, "final_score": ns,
+                         "position_weight": 1.0, "selected": pos,
+                         "_label": 1 if pos else 0})
+    cg = run_count_gate(rows, l2=0.5)
+    print(f"[count-gate self-test] verdict={cg['verdict']} threshold={cg.get('count_threshold')} "
+          f"all_pos_kept={cg.get('all_pos_kept')} neg_no_worse={cg.get('neg_no_worse')} "
+          f"stable={cg.get('theta_stable')}")
+    ok = cg["verdict"] == "ENABLE-COUNT" and cg.get("all_pos_kept")
+    # a NON-separable control (random labels) must NOT enable
+    for r in rows:
+        r["_label"] = 1 if (math.sin(hash(r["_run"]) * 0.0 + rows.index(r) * 91.7) % 1.0) > 0.5 else 0
+    cg2 = run_count_gate(rows, l2=0.5)
+    ctrl_ok = cg2["verdict"] != "ENABLE-COUNT"
+    print(f"[count-gate self-test] random-label control verdict={cg2['verdict']} (expect not ENABLE-COUNT)")
+    print("[count-gate self-test]", "PASS" if (ok and ctrl_ok) else "FAIL")
+    return 0 if (ok and ctrl_ok) else 1
+
+
 def _num(x, d=0.0):
     try:
         return float(x)
@@ -391,7 +490,9 @@ def load_frozen(frozen_dir: Path) -> tuple[list[dict], list[dict]]:
 def main() -> int:
     args = sys.argv[1:]
     if "--self-test" in args:
-        return self_test()
+        rc = self_test()
+        rc2 = count_gate_self_test()
+        return rc or rc2
     l2 = float(args[args.index("--l2") + 1]) if "--l2" in args else 1.0
     tol = float(args[args.index("--tol") + 1]) if "--tol" in args else 2.0
 
@@ -418,6 +519,7 @@ def main() -> int:
     if not rows:
         print("[fit_ranker] no candidate rows found."); return 1
 
+    count_fields: dict = {}
     if "--gate" in args:
         n = int(args[args.index("--gate-n") + 1]) if "--gate-n" in args else 10
         g = run_gate(rows, l2=l2, n=n)
@@ -436,7 +538,29 @@ def main() -> int:
             return 0
         print("[GATE] passed — fitting final model on ALL runs for deployment...")
 
-    _write(fit(rows, l2=l2))
+        # Plan B: only atop an ENABLED ranking fit does an absolute COUNT threshold mean
+        # anything (the calibrated sigmoid must be deployed for the threshold to apply).
+        if "--count-gate" in args:
+            cg = run_count_gate(rows, l2=l2)
+            print(f"\n[COUNT-GATE] verdict={cg['verdict']}")
+            for k in ("reason", "count_threshold", "all_pos_kept", "sane_counts",
+                      "neg_no_worse", "theta_stable", "theta_band"):
+                if k in cg:
+                    print(f"             {k}: {cg[k]}")
+            for p in cg.get("per_run", []):
+                print(f"             held {p['held']}: theta={p['theta']} pos_kept={p['pos_kept']} "
+                      f"kept={p['n_kept']}/{p['n_cands']} neg_admit theta={p['neg_admit_theta']} "
+                      f"quota={p['neg_admit_quota']}")
+            if cg["verdict"] == "ENABLE-COUNT":
+                count_fields = {"count_mode": "absolute", "count_threshold": cg["count_threshold"]}
+                print(f"[COUNT-GATE] ENABLE-COUNT => writing count_threshold={cg['count_threshold']} "
+                      f"(absolute); clip COUNT becomes content-driven.")
+            else:
+                print("[COUNT-GATE] not enabled => count stays on Plan-A/quota (ranker still on).")
+
+    model = fit(rows, l2=l2)
+    model.update(count_fields)
+    _write(model)
     return 0
 
 

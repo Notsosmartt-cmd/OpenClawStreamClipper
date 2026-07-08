@@ -140,6 +140,9 @@ def load_weights() -> dict | None:
         if not isinstance(weights, dict) or not weights:
             raise ValueError("no weights")
         _CACHE = {"weights": weights, "bias": float(data.get("bias", 0.0)),
+                  "count_mode": data.get("count_mode"),
+                  "count_threshold": (float(data["count_threshold"])
+                                      if data.get("count_threshold") is not None else None),
                   "meta": data.get("meta", {})}
         _CACHE_MTIME = mtime
         return _CACHE
@@ -198,6 +201,20 @@ def maybe_rescore(moment: dict) -> float | None:
         return _sigmoid(score(moment, cfg["weights"], cfg["bias"]))
     except (ValueError, OverflowError):
         return None
+
+
+def count_config() -> tuple:
+    """Plan B: (count_mode, count_threshold) from the fitted config, or (None, None).
+    `('absolute', θ)` tells Pass C to make the clip COUNT a consequence of content —
+    keep candidates whose calibrated pre_bucket_score (= sigmoid(score)×position) clears
+    θ, clamped to bounds — instead of the duration quota. Only ever set by fit_ranker's
+    count gate (concepts/plan-adaptive-clip-count-2026-07 Plan B), so it is double-gated:
+    a fitted file must exist AND have passed the leave-one-VOD-out count gate. Absent /
+    unfitted → (None, None) → count stays on Plan-A/quota. Never raises."""
+    cfg = load_weights()
+    if cfg is None:
+        return (None, None)
+    return (cfg.get("count_mode"), cfg.get("count_threshold"))
 
 
 if __name__ == "__main__":
