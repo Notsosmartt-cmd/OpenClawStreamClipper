@@ -439,6 +439,10 @@ def _process_moment(moment):
         "voiceover": None,              # {text, placement, tone, duration_estimate_s}
         "group_id": moment.get("group_id", ""),
         "group_kind": moment.get("group_kind", "solo"),
+        # Anomaly-lane provenance (owner req 2026-07-08): _process_moment rebuilds the
+        # entry from scratch, so `src` would be dropped here — carry it forward so Stage 7
+        # can prefix ANOMALY_ onto the clip filename. None for normal moments.
+        "src": moment.get("src"),
     }
 
     # Check stage timeout before attempting vision (OR with the outage flag

@@ -152,13 +152,53 @@ def run_judge(
                     if float(s.get("end", 0)) >= float(cs) and float(s.get("start", 0)) <= float(ce)]
             return " ".join((s.get("text", "") or "").strip() for s in segs)[:480]
 
+        # Fusion option 3 (Activation Wave 0.3): behind CLIP_JUDGE_TIMELINE (default OFF,
+        # activated in Run 2 per plan-activation-wave-2026-07), give the judge a
+        # time-aligned event stream per clip (words + the Stage-2 crowd_response audio
+        # dial) so it can weigh reaction cues, not just frames+words. Full value arrives
+        # only with CLAP-live (named events vs one energy dial). Failure-soft: any error
+        # -> no timeline, judge falls back to frames+words exactly as before.
+        _tl_fn = None
+        if os.environ.get("CLIP_JUDGE_TIMELINE", "").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                import event_timeline as _et
+                _aud: List[Dict[str, Any]] = []
+                try:
+                    import audio_events as _ae
+                    _raw = _ae.load_events(f"{work_dir}/audio_events.json") if work_dir else {}
+                    _aud = [{"t": (s + e) / 2.0, "label": "crowd",
+                             "score": float(v.get("crowd_response", 0.0))}
+                            for (s, e), v in (_raw or {}).items()
+                            if float(v.get("crowd_response", 0.0)) >= 0.40]
+                except Exception:
+                    _aud = []
+                _words = [{"word": (s.get("text", "") or "").strip(),
+                           "start": float(s.get("start", 0) or 0)}
+                          for s in tindex if (s.get("text") or "").strip()]
+                _tl_full = _et.build_timeline(words=_words, audio_events=_aud)
+
+                def _tl_fn(clip, _tl=_tl_full, _et=_et):  # noqa: E306
+                    cs, ce = clip.get("clip_start"), clip.get("clip_end")
+                    if cs is None or ce is None:
+                        t = float(clip.get("timestamp", 0) or 0)
+                        cs, ce = t - 8, t + 8
+                    try:
+                        return _et.render_for_prompt(_tl, float(cs), float(ce), max_lines=30)
+                    except Exception:
+                        return ""
+                log(f"[judge] timeline fusion ON ({len(_words)} words, {len(_aud)} audio events)")
+            except Exception as _tle:
+                log(f"[judge] timeline fusion unavailable ({type(_tle).__name__}); frames+words only")
+                _tl_fn = None
+
         _outage_lock = threading.Lock()
 
         def _cmp(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
             # Called concurrently when workers>1 (Fix 2B). compare_pair only
             # reads a/b + issues an HTTP request, so the only shared state is
             # the outage circuit-breaker counter — guard it.
-            res = vlm_judge.compare_pair(a, b, work_dir=work_dir, transcript_fn=_tw, cfg=cfg)
+            res = vlm_judge.compare_pair(a, b, work_dir=work_dir, transcript_fn=_tw,
+                                         timeline_fn=_tl_fn, cfg=cfg)
             with _outage_lock:
                 if res.get("outage"):
                     outage_streak[0] += 1
