@@ -7,6 +7,14 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-07-08] update | Activation Wave Phase 1 RUN — 2xRaKai, all flags fired, awaiting owner review
+Ran the validation render on `20260424_2xRaKai_2756365448` with `CLIP_ANOMALY_LANE=1 CLIP_TIGHT_PUNCHLINE=1 CLIP_COUNT_ADAPTIVE=1 CLIP_COUNT_SHADOW=1` (via phase_runner, bounded). Exit 0, 10 clips, 82m37s. Trace `last_run_20260708_091249.json` (carries the true `pre_bucket_score` now). All three flags validated in the log:
+- **P-TIGHT**: fired on 9/10 clips, aggressive — e.g. 45s→9.25s (T=5025 hot_take), 53s→19.28s (T=6499 funny), 26s→9.56s (T=9926). Content-adaptive spread held; 1 clip (exempt category) untouched. Owner to review if tightening feels right vs over-cut.
+- **Count shadow**: `WOULD trim 1 tail clip` t=9926 ("Save all that shit for Disney", score 1.536 < relative floor τ0.94×median1.715=1.612), keep 9/10. Nothing trimmed (shadow). On the TRUE pre_bucket_score.
+- **Anomaly lane**: proposed 4 src=ANOMALY from 218 crowd-reaction windows, but **0 selected / 0 survive in the trace** — all 4 landed within the 25s dedup window of stronger transcript candidates and merged in (keeping the transcript candidate's null src). FINDING: the lane only contributes a *distinct* clip for moments >25s from any transcript candidate (the isolated cross-modal / bus-clip class); 2xRaKai (talkative) had none, so no ANOMALY_ clip to review this run. The `ANOMALY_` filename tag is verified-wired but had nothing to apply to.
+- **near_miss** on the fresh trace surfaces the [[concepts/case-rap-battle-missed]] Mockingbird t=5305 again (idx 12) + 11 other rank-11–22 rejects for owner keeper-flagging.
+- Ops: the watchdog false-tripped on Stage 5.5 (Vision Judge tournament ran ~11 min SILENT — it batches logging to the end — then completed fine); raised the stall tolerance. Note for future runs: Stage 5.5 can legitimately be quiet >10 min. Pages: [[concepts/plan-activation-wave-2026-07]], [[hot]].
+
 ## [2026-07-08] update | Activation Wave Phase 0 SHIPPED (near-miss tool + anomaly filename tag + judge-timeline)
 Implemented the three Phase-0 builds of [[concepts/plan-activation-wave-2026-07]], all default-off / byte-identical:
 - **Near-miss review** `scripts/research/near_miss.py` (list/keep/drop + `--cut` snippets + `--self-test` PASS): surfaces REJECTED candidates at OVERALL rank ~11–30 from a run's trace/frozen store, files keepers as label=1 into `ratings_<stem>_nearmiss.jsonl` (the rate_run `collect`→`merge_labels` path — zero pipeline coupling). Live-verified on frozen run 010127: it surfaced the proven [[concepts/case-rap-battle-missed]] Mockingbird miss (t=5305) in the window. The miss-class label source the guards can't otherwise reach.
