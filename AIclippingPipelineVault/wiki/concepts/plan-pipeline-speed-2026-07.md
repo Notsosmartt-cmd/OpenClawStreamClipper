@@ -34,12 +34,14 @@ see §Excluded at the bottom.
 >   fires the judge-shaped multi-image request at concurrency 1–4. **Ready to run** (needs LM
 >   Studio + ~5 min); raising `STAGE6_WORKERS`/`JUDGE_WORKERS` is env-only AFTER the bench +
 >   KV-headroom check confirm the encoder scales past 2.
-> - **#5 two-phase Pass B — STAGED (not shipped):** the design below is complete and
->   default-safe (`CLIP_PASSB_WORKERS=1` = untouched serial loop), but it is a large refactor
->   of the most delicate stage and can only be validated by a live prompt-hash-equivalence run
->   on a real VOD. Deliberately NOT shipped unverified — own session with that validation.
-> - **#6 vectorized scan — DEFERRED:** highest validation burden (reference-VOD dial
->   equivalence); #1 (cache) + #2 (threads) already remove most of the scan cost.
+> - **#5 two-phase Pass B — STAGED:** default-safe design (`CLIP_PASSB_WORKERS=1` = untouched
+>   serial loop); **detailed iteration/validation plan filed:
+>   [[concepts/plan-speed56-execution-2026-07]]** (incl. a validation-design correction — the
+>   naive cross-run prompt-hash test is confounded by temp-0.3 stochastic cards; the real
+>   proof is a mock-injected driver harness + a temp-0 live check).
+> - **#6 vectorized scan — DEFERRED, execution plan filed** (same page): fire-equality
+>   guaranteed via a near-threshold hybrid recompute; #1 (cache) + #2 (threads) already
+>   remove most of the scan cost, so it goes second.
 > All shipped items are flag-gated/default-preserving, `py_compile` clean.
 
 > [!note] Ground truth: measured distribution across 21 runs (stage_timings in diagnostics)
