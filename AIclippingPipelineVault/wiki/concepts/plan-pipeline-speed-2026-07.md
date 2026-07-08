@@ -17,10 +17,15 @@ naive Pass-B threading, whisper batching, frame downscaling) are explicitly EXCL
 see §Excluded at the bottom.
 
 > [!note] Ground truth: measured distribution across 21 runs (stage_timings in diagnostics)
-> Medians: Stage 4 Moment Detection **1156 s** · Stage 2 whisper **781 s** (fresh only;
-> cached after) · Stage 2 audio-events scan **~500–970 s (EVERY run — uncached)** ·
-> Stage 7 render **338 s** · Vision Judge **261 s** · Stage 6 vision **204 s** ·
-> Stage 3 **165 s**. Realtime ratio n=18: median **0.262**, range 0.18–0.82.
+> Medians: Stage 4 Moment Detection **1156 s** · **Stage 2 total 781 s** · Stage 7 render
+> **338 s** · Vision Judge **261 s** · Stage 6 vision **204 s** · Stage 3 **165 s**.
+> Realtime ratio n=18: median **0.262**, range 0.18–0.82.
+> **Stage-2 decomposition (measured 2026-07-08, corrects the earlier "whisper 781 s"
+> label):** the 781 s bucket is DOMINATED by the audio-events scan, NOT Whisper. Actual
+> WhisperX work (already batched — `batch=16 float16 large-v3-turbo` on CUDA) = ASR
+> **107 s** + word-align **75 s** ≈ **~200 s incl. load** (~45–55× realtime). The rest of
+> Stage 2 is the ~500–970 s audio-events scan (EVERY run — uncached). So the transcription
+> slice is small + already fast; #1/#2/#6 (scan) are where Stage-2 time actually lives.
 > Two corrections vs the first draft of this page: (1) timing IS persisted (the "one
 > measured run" claim was wrong — 21 runs have it); (2) **Pass-B chunks are NOT
 > independent** — chunk N's prompt embeds a `prior_context_block` from chunks N-1/N-2's
@@ -215,8 +220,12 @@ one-command answer.**
 ## Excluded (would trade quality — owner constraint)
 - **Judge diet** (frames 4→3, comparisons 30→24): real ranking-resolution trade.
 - **Naive Pass-B chunk threading**: breaks the prior-context callback memory (superseded by #5).
-- **Whisper batched-inference / distil models**: near-neutral but not bit-identical at
-  segment boundaries; revisit only if fresh-VOD transcription (781 s, once per VOD) matters.
+- **Whisper batched-inference / distil models**: **already batched** (WhisperX `batch=16
+  float16 large-v3-turbo`, verified 2026-07-08) → batching offers **~0** additional gain.
+  Transcription is only ~200 s (not the 781 s Stage-2 bucket — that's the scan). A distil
+  swap saves ~0–10% (turbo already runs at distil-class speed, doesn't touch the 75 s
+  wav2vec align step, and loses accuracy on slang/overlap — this corpus). batch_size 16→32
+  saves ~15–20 s if VRAM allows — trivial, not a project. Net: not worth it.
 - **Frame downscaling**: frames are already 960×540 q2 — nothing to gain.
 
 ## Threading-vs-quality note (owner Q 2026-07-08, verified)
