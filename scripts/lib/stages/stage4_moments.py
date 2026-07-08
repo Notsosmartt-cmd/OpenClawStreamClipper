@@ -3081,6 +3081,31 @@ for m in deduped:
 for m in deduped:
     m["pre_bucket_score"] = m["final_score"]
 
+# Plan B: calibrated absolute COUNT. If a fitted, count-GATED ranker is loaded
+# (count_mode='absolute'), the clip COUNT becomes a consequence of content: keep
+# candidates whose calibrated pre_bucket_score (= sigmoid(ranker)xposition, which is
+# exactly what maybe_rescore+position produced above) clears the learned threshold,
+# clamped to [3, ceiling]. Double-gated (a fitted file that PASSED fit_ranker's count
+# gate) => default-off. Plan A's relative tail floor is skipped when this is active
+# (theta IS the boundary); the absolute floor in the trim block enforces theta on the
+# final set, and the [3, ceiling] bounds remain the backstop against a miscalibrated fit.
+_COUNT_ABSOLUTE = False
+_cthresh = None
+try:
+    if _ranker is not None:
+        _cmode, _cthresh = _ranker.count_config()
+        if _cmode == "absolute" and _cthresh is not None:
+            _count_ceiling = max(3, min(int(math.ceil(vod_hours * 5)), 24))
+            _n_elig = sum(1 for m in deduped if (m.get("pre_bucket_score") or 0.0) >= _cthresh)
+            SELECT_TARGET = max(3, min(_n_elig, _count_ceiling))
+            _COUNT_ABSOLUTE = True
+            print(f"[COUNT] absolute threshold theta={_cthresh:.4f}: {_n_elig} eligible "
+                  f"-> target {SELECT_TARGET} (ceiling {_count_ceiling})", file=sys.stderr)
+except Exception as _cae:
+    print(f"[COUNT] absolute-count path skipped ({type(_cae).__name__}: {_cae})", file=sys.stderr)
+    _COUNT_ABSOLUTE = False
+    _cthresh = None
+
 # --- WITHIN-BUCKET NORMALIZATION ---
 # Normalize scores within each bucket so moments in quiet segments compete fairly
 # with moments in high-energy segments. A 0.6 in a dead bucket is as valuable as
@@ -3360,16 +3385,25 @@ final.sort(key=lambda x: x["final_score"], reverse=True)
 # floor and the pipeline treats a missed arc as costlier than a false positive).
 # Failure-soft: any exception leaves `final` exactly as selected.
 _count_trim_info = None
-if _COUNT_ADAPTIVE and len(final) > 3:
+if (_COUNT_ADAPTIVE or _COUNT_ABSOLUTE) and len(final) > 3:
     try:
         def _pbs(_m):
             return _m.get("pre_bucket_score", _m.get("final_score", 0.0)) or 0.0
         _ranked_final = sorted(final, key=_pbs, reverse=True)
-        _head = _ranked_final[:MAX_CLIPS] or _ranked_final
-        _svals = sorted(_pbs(m) for m in _head)
-        _n = len(_svals)
-        _median = _svals[_n // 2] if _n % 2 else 0.5 * (_svals[_n // 2 - 1] + _svals[_n // 2])
-        _floor = _COUNT_TAU * _median
+        if _COUNT_ABSOLUTE:
+            # Plan B: theta IS the boundary (calibrated, count-gated). Not shadowed —
+            # the gate already validated it leave-one-VOD-out.
+            _floor = float(_cthresh); _median = None
+            _shadow = False; _fmode = "absolute"; _fdesc = f"theta={_floor:.3f}"
+        else:
+            # Plan A: relative floor = tau x median(pre_bucket_score of top MAX_CLIPS).
+            _head = _ranked_final[:MAX_CLIPS] or _ranked_final
+            _svals = sorted(_pbs(m) for m in _head)
+            _n = len(_svals)
+            _median = _svals[_n // 2] if _n % 2 else 0.5 * (_svals[_n // 2 - 1] + _svals[_n // 2])
+            _floor = _COUNT_TAU * _median
+            _shadow = _COUNT_SHADOW; _fmode = "relative"
+            _fdesc = f"tau{_COUNT_TAU}x median{_median:.3f}={_floor:.3f}"
         _keep, _trimmed = [], []
         for m in _ranked_final:
             if len(_keep) < 3 or _pbs(m) >= _floor or m.get("primary_category") == "arc":
@@ -3377,20 +3411,19 @@ if _COUNT_ADAPTIVE and len(final) > 3:
             else:
                 _trimmed.append(m)
         if _trimmed:
-            _verb = "WOULD trim" if _COUNT_SHADOW else "trimmed"
-            print(f"[COUNT] {_verb} {len(_trimmed)} weak tail clip(s) "
-                  f"(floor={_floor:.3f}=tau{_COUNT_TAU}x median{_median:.3f}; "
+            _verb = "WOULD trim" if _shadow else "trimmed"
+            print(f"[COUNT] {_verb} {len(_trimmed)} tail clip(s) ({_fmode} floor {_fdesc}; "
                   f"keep {len(_keep)}/{len(final)}):", file=sys.stderr)
             for m in _trimmed:
                 _ttl = (m.get("why") or m.get("preview") or "")[:60]
                 print(f"[COUNT]   - t={m.get('timestamp')} score={_pbs(m):.3f} "
                       f"[{m.get('primary_category','?')}] {_ttl}", file=sys.stderr)
-            if not _COUNT_SHADOW:
+            if not _shadow:
                 _keep_ids = {id(m) for m in _keep}
                 final = [m for m in final if id(m) in _keep_ids]
         _count_trim_info = {
-            "adaptive": True, "shadow": _COUNT_SHADOW, "tau": _COUNT_TAU,
-            "floor": round(_floor, 4), "median": round(_median, 4),
+            "mode": _fmode, "shadow": _shadow, "tau": _COUNT_TAU,
+            "floor": round(_floor, 4), "median": round(_median, 4) if _median is not None else None,
             "legacy_target": MAX_CLIPS, "select_ceiling": SELECT_TARGET,
             "kept": len(_keep), "trimmed": len(_trimmed),
             "trimmed_ts": [m.get("timestamp") for m in _trimmed],

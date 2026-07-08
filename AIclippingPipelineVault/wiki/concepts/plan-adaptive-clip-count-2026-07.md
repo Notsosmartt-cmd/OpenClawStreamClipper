@@ -9,15 +9,22 @@ updated: 2026-07-08
 
 # Adaptive Clip Count — replace the duration quota
 
-> [!note] Plan A SHIPPED 2026-07-08 (default-off) · Plan B still planned
-> Plan A is implemented in `stage4_moments.py` behind `CLIP_COUNT_ADAPTIVE`
-> (+ `CLIP_COUNT_SHADOW`, `CLIP_COUNT_TAU`), failure-soft, flag-off byte-identical.
-> Offline validator `scripts/research/count_sweep.py` (+ `--self-test`) ships too. The
-> τ sweep over the three frozen runs: **default τ=0.94 is safe + conservative** (trims 1
-> unlabeled tail clip total), **τ=0.97 is the largest safe value** (trims 4, never a GOOD
-> clip), **τ≥0.98 is UNSAFE** (cuts owner-liked clips). Remaining before non-shadow enable:
-> a **shadow render** on a real VOD for owner review, then re-freeze so the sweep uses the
-> true `pre_bucket_score` (the frozen runs predate that stamp → used the final_score proxy).
+> [!note] BOTH plans' machinery SHIPPED 2026-07-08 — default-off, neither ENABLED yet
+> **Plan A** — `stage4_moments.py` behind `CLIP_COUNT_ADAPTIVE` (+ `CLIP_COUNT_SHADOW`,
+> `CLIP_COUNT_TAU`), failure-soft, flag-off byte-identical. Validator
+> `scripts/research/count_sweep.py` (+ `--self-test`). τ sweep over the 3 frozen runs:
+> **τ=0.94 safe/conservative** (1 trim), **τ=0.97 largest safe** (4 trims, 0 GOOD),
+> **τ≥0.98 UNSAFE**. Left: a **shadow render** for owner review + re-freeze (frozen runs
+> predate the `pre_bucket_score` stamp → sweep used the final_score proxy).
+>
+> **Plan B** — count gate `run_count_gate` in `fit_ranker.py` (`--count-gate`, double-gated
+> behind ranking ENABLE) emits `count_mode`/`count_threshold` into `selection_ranker.json`;
+> `ranker.count_config()` exposes it; `stage4_moments.py` turns it into a content-driven
+> count (θ-eligible count → `SELECT_TARGET`, absolute floor via the shared trim block, bounds
+> as backstop). `--self-test` PASSES (separable signal → ENABLE-COUNT; random-label control →
+> HOLD). On the real 2-VOD data the **ranking gate REJECTs (fitted recall 0.667 < baseline
+> 1.0) → count gate never runs, no config written, pipeline byte-identical**. Both plans
+> activate on the SAME fuel: more labeled VODs.
 
 Owner question (2026-07-08): *is there a better implementation than the fixed
 3-clips-per-hour quota?* This page is the detailed plan for the two-stage answer:
@@ -164,18 +171,24 @@ yields 14. The no-fixed-anything endgame.
   spacing stays hard; bucket coverage becomes soft (a genuinely dead bucket no longer
   gets a pity pick — that *is* the feature).
 
-### Implementation steps
-1. `fit_ranker.py`: count-gate sweep + verdict + `count_threshold` emission (~50 lines,
-   research-side only).
-2. `stage4_moments.py`: threshold selection path when `count_mode=absolute` (reuses the
-   Plan-A trim/bounds plumbing; flag interplay documented in code).
-3. Shadow comparison mode: log quota-list vs threshold-list side by side for owner review
-   before the switch flips.
+### Implementation steps — SHIPPED 2026-07-08 (machinery; not ENABLED)
+1. ✅ `fit_ranker.py` `run_count_gate(rows, l2, min_keep=3, band=0.15)`: leave-one-run-out;
+   per fold θ = min(train-positive deployment keys) → applied to the held run; ENABLE-COUNT
+   iff every fold keeps all held positives, count is sane (`3 ≤ kept < all`), admits no more
+   owner-BAD than quota, and θ is stable (`max−min ≤ band`). Deployed `count_threshold` =
+   min(θ) across folds (recall-first). Wired via `--count-gate` (only after ranking ENABLE).
+2. ✅ `ranker.count_config()` → `(count_mode, count_threshold)`; `stage4_moments.py` computes
+   the θ-eligible count → `SELECT_TARGET` clamped `[3, ceil(h×5)/24]`, and the shared trim
+   block applies θ as an ABSOLUTE floor (min-keep 3, arc-exempt). Reuses Plan-A plumbing.
+3. ✅ `--self-test` (in `fit_ranker.py`): separable planted signal → ENABLE-COUNT (kept all
+   positives, admitted 0 extra negatives, stable); random-label control → HOLD.
 
 ### Validation / DoD
-- Count gate ENABLE across ≥3 labeled VODs (leave-one-out, θ stable).
-- Shadow run: owner agrees the threshold list ⊇ the keepers and ⊉ the padding.
-- Bounds/backstop verified by forcing a miscalibrated fit in a test (clamps engage).
+- ✅ Self-test PASS (both the positive and the negative control).
+- ✅ Real-data behavior verified: ranking gate REJECTs on the 2 labeled VODs → count gate
+   correctly does not run, no config written, pipeline byte-identical.
+- ⏳ Count gate ENABLE across ≥3 labeled VODs (leave-one-out, θ stable) — needs more labels.
+- ⏳ Post-ENABLE: owner review that the threshold list ⊇ the keepers and ⊉ the padding.
 
 ### Expected improvement (honest)
 - **Count and ordering improve from the same fit**: the 074956 #1-BAD label becomes
