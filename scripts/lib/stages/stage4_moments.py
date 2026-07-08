@@ -934,6 +934,11 @@ def _looks_like_network_outage(err_msg):
     return any(pat in s for pat in _NET_ERR_PATTERNS)
 
 
+# Speed #5 I5.0: validation-only greedy-decode switch (see call_llm). Default off.
+_PASSB_DETERMINISTIC = os.environ.get("CLIP_PASSB_DETERMINISTIC", "").strip().lower() in (
+    "1", "true", "yes", "on")
+
+
 def call_llm(prompt, model=TEXT_MODEL_PASSB, max_retries=2, timeout=240, max_tokens=8000):
     """Call LM Studio (OpenAI-compatible) API.
 
@@ -976,7 +981,10 @@ def call_llm(prompt, model=TEXT_MODEL_PASSB, max_retries=2, timeout=240, max_tok
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
-            "temperature": 0.3,
+            # Speed #5 I5.0: CLIP_PASSB_DETERMINISTIC forces greedy decoding so a
+            # workers=1-vs-workers=N prompt/output comparison is meaningful (temp 0.3 is
+            # stochastic run-to-run). VALIDATION-ONLY; never the production default.
+            "temperature": 0.0 if _PASSB_DETERMINISTIC else 0.3,
             "max_tokens": max_tokens,
             "chat_template_kwargs": {"enable_thinking": False},
         }).encode()
@@ -1577,6 +1585,10 @@ CONVO_SHAPE_INDEX = {}
 # concepts/pipeline-optimizations-2026-06.md §5/§D.
 _PASSB_SKIPPED_CHUNKS = []          # records: {chunk_index, time_range, signals, mode}
 _PASSB_DEAD_STREAK = [0]            # list so nested writes can mutate (closure friendly)
+# Speed #5 I5.0 (plan-speed56-execution-2026-07): per-chunk Pass-B prompt hashes. Purely
+# observational — the GOLDEN BASELINE that the two-phase cut-over is validated against
+# (a passing two-phase must reproduce every chunk's prompt hash). Written post-loop.
+_PASSB_PROMPT_HASHES = {}           # chunk_count -> sha1(prompt)[:12]
 
 
 def _passb_resolve_gate_mode():
@@ -1932,6 +1944,15 @@ If nothing stands out at all, respond: {{"moments": []}}"""
 
     print(f"  Chunk {chunk_count} ({int(chunk_start)}s-{int(chunk_end)}s): {seg_type}, {word_count} words...", file=sys.stderr)
 
+    # Speed #5 I5.0: capture the assembled prompt's hash (observational — the golden
+    # baseline for the two-phase cut-over). Includes only chunks that reach the LLM call
+    # (post-gate), so the manifest also proves the two-phase path gates the same chunks.
+    try:
+        import hashlib as _hl
+        _PASSB_PROMPT_HASHES[chunk_count] = _hl.sha1(prompt.encode("utf-8")).hexdigest()[:12]
+    except Exception:
+        pass
+
     response = call_llm(prompt)  # uses call_llm default max_tokens (3000)
     if response:
         chunk_moments = parse_llm_moments(response, int(chunk_start), int(chunk_end))
@@ -2196,6 +2217,19 @@ except (OSError, TypeError) as _ccerr:
 # Persist the dead-chunk skip audit log so `logtool dead` can show what was
 # skipped + why. Written even when no chunks were skipped (an empty list
 # is a positive signal that the gate didn't drop anything this run).
+try:
+    with open(f"{TEMP_DIR}/passb_prompt_hashes.json", "w") as _phf:
+        json.dump({
+            "deterministic": _PASSB_DETERMINISTIC,
+            "workers": int(os.environ.get("CLIP_PASSB_WORKERS", "1") or "1"),
+            "n_chunks": len(_PASSB_PROMPT_HASHES),
+            "hashes": _PASSB_PROMPT_HASHES,
+        }, _phf, indent=2)
+    print(f"[PASS B] prompt-hash manifest: {len(_PASSB_PROMPT_HASHES)} chunks "
+          f"(deterministic={_PASSB_DETERMINISTIC}) -> passb_prompt_hashes.json", file=sys.stderr)
+except Exception as _phe:
+    print(f"[PASS B] prompt-hash manifest failed ({type(_phe).__name__}: {_phe})", file=sys.stderr)
+
 try:
     with open(f"{TEMP_DIR}/pass_b_skipped_chunks.json", "w") as _sf:
         json.dump({
