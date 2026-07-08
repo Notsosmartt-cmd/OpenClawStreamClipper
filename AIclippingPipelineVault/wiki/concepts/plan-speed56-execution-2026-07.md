@@ -3,11 +3,33 @@ title: "Execution Plan — Speed #5 (two-phase Pass B) & #6 (vectorized scan) wi
 type: concept
 tags: [plan, performance, pass-b, stage-4, audio-events, vectorization, validation, concurrency]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-07-08
 ---
 
 # Execution Plan: Speed #5 & #6 — iteration-by-iteration, validation-gated
+
+> [!note] Execution status 2026-07-08 — #5 engine PROVEN (logic); #6 harness done + ROI re-called
+> **#5 — equivalence engine SHIPPED + PROVEN in pure logic (the hard part):**
+> `scripts/lib/passb_driver.py` (serial + two-phase, dependency-injected) +
+> `scripts/research/passb_equiv.py` (mock proof, **PASS**: 6 sizes × 4 worker counts →
+> identical prompts/moments/summaries; prior-context window; card-failure fallback;
+> failed-chunk set + retry; happy-path breaker). The proof FOUND a real bug in pure logic
+> before any live run: serial creates a chunk's summary only after its moment call succeeds,
+> so a transient moment-call failure changes later prior-context — fixed with an exact
+> **reconciliation pass** (rebuild+re-run only succeeded chunks whose prior-window held a
+> failed chunk; zero cost on the happy path). Two-phase is now byte-exact to serial even
+> under transient failures. **Remaining for #5 (LIVE session):** wire `stage4_moments.py`'s
+> real `call_llm`/`_build_chunk_card`/grounding closures into the driver (I5.0 instrumentation
+> + I5.2 cut-over) and clear the live gates (temp-0 hash baseline, workers=3 live check,
+> outage drill, soak). The engine they'll wire to is done and proven.
+> **#6 — harness SHIPPED (`scripts/research/vector_equiv.py`, I6.0 old-vs-old PASS: 0
+> deltas/0 flips), full vectorization NOT built — ROI reassessed:** #2 (threaded scan, now
+> DEFAULT 4, 3.3×) + #1 (cache, skips re-run scans) already collapsed the scan cost #6
+> targeted. #6 would take a FRESH scan from ~5 min (threaded) to ~2 min — a ~3 min gain on
+> fresh VODs only — for a large, quality-surfaced DSP refactor of `_run_detectors`.
+> **Recommendation: DEFER #6 indefinitely.** The harness stays as the ready gate if the
+> fresh-scan cost ever becomes the bottleneck again.
 
 Owner directive: a detailed structured implementation plan for the two staged speed items,
 with the validation testing built into each iteration (not bolted on at the end). Designs
