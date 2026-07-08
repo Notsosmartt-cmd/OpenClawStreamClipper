@@ -443,6 +443,11 @@ def _process_moment(moment):
         # entry from scratch, so `src` would be dropped here — carry it forward so Stage 7
         # can prefix ANOMALY_ onto the clip filename. None for normal moments.
         "src": moment.get("src"),
+        # P-TIGHT exemption input (owner review 2026-07-08): same rebuild-drop bug hit
+        # `primary_pattern` — without it Stage 7's tighten() saw "" and the designed
+        # rap/freestyle/storytell exemption NEVER fired (T=9567 rap_battle_freestyle got
+        # trimmed). Carry it forward.
+        "primary_pattern": moment.get("primary_pattern"),
     }
 
     # Check stage timeout before attempting vision (OR with the outage flag
