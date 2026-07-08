@@ -62,7 +62,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/calibration-ranker-2026-07]] — **Phase 4 (machinery shipped)**: log-space fittable Pass-C ranker (`ranker.py`+`fit_ranker.py`, default-off) + gemma-4 rubric decorrelation (`text_model_passd`)
 - [[concepts/plan-learning-activation-2026-07]] — **Unified plan**: render batch → owner-ratings label loop (+ opportunistic Twitch labels) → gated first ranker fit (L0-L4, agent-iterable)
 - [[concepts/label-paths-and-store-2026-07]] — **REFERENCE**: how ranker labels work — Path B (owner feedback) vs C (viewer-clip alignment), the trace/label fetch-and-join model, and the committed frozen store that makes the trace pile safe to delete
-- [[concepts/plan-adaptive-clip-count-2026-07]] — Replace the 3/hour clip quota: Plan A bounds+tail floor (now), Plan B calibrated count gate (**planned 2026-07-08**)
+- [[concepts/plan-adaptive-clip-count-2026-07]] — Replace the 3/hour clip quota: Plan A bounds+tail floor (**shipped 2026-07-08**, default-off), Plan B calibrated count gate (**planned**)
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
