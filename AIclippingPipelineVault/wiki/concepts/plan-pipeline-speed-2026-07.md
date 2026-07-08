@@ -11,9 +11,28 @@ updated: 2026-07-08
 
 Owner question: how do we make the pipeline faster — specifically Stage 2 and Stage 6 —
 **without reintroducing the concurrency hazard** that caused the 58-min zombie
-(multiprocessing spawn + shared_memory + librosa import on Windows)? Formulated from the
-one fully-measured run (Activation-Wave Run 1, 2xRaKai 3.22 h → 82m37s with `--force` +
-`--audio-workers 1`).
+(multiprocessing spawn + shared_memory + librosa import on Windows)?
+
+> [!warning] Two corrections from the 2026-07-08 deep review (supersede claims below)
+> 1. **Timing IS persisted** — `stage_timings.json` is snapshotted into every
+>    `last_run_*.json` diagnostic (the "only one measured run" claim was wrong; the probe
+>    missed the key). **21 runs have full per-stage timing.** Measured distribution
+>    (medians): Stage 4 Moment Detection **1156 s**, Stage 2 whisper **781 s**, Stage 7
+>    render **338 s**, Vision Judge **261 s**, Stage 6 vision **204 s**, Stage 3 **165 s**.
+>    Realtime ratio n=18: **median 0.262, mean 0.319, range 0.18–0.82** (the 0.82 outlier
+>    is the 6.8 h Lacy run). Caveat: `prune_traces` deletes unlabeled diagnostics, so this
+>    history is prunable — a durable append-only metrics row (P4) still has value.
+> 2. **P2's "chunks are independent" claim is FALSE.** Chunk N's Pass B prompt embeds a
+>    `prior_context_block` built from chunks N-1/N-2's card summaries
+>    (`stage4_moments.py:1818-1834` — the cross-chunk setup→payoff memory; the Lacy
+>    penthouse callback class). Naive concurrent chunks would stale/drop that context →
+>    a QUALITY regression on the highest-value clip class. P2 is superseded by **P2′
+>    (two-phase Pass B)** below: chunk CARDS depend only on their own chunk's text →
+>    Phase A extracts all cards in parallel; Phase B then runs all moment calls in
+>    parallel, each with its exact prior-context block reconstructed from the
+>    precomputed summaries — prompt content equivalent to today's, so quality-neutral.
+>    Same-thread-safety profile as Stage 6; bigger refactor (the Pass B loop carries
+>    grounding, failed-chunk retry, and the BUG-31 outage breaker — all must survive).
 
 ## Measured baseline (the only persisted full timing — see the metrics gap below)
 
