@@ -15,12 +15,19 @@ categories, and never for the long-form lanes:
     pattern is a rap / freestyle / storytelling / interview / informational arc — the
     "keep long talking segments" guarantee, structural not hoped-for.
 
+NOTHING here has a fixed/target length — both edges are DERIVED FROM THE CONTENT
+(owner directive 2026-07-05: "I don't want a fixed length, content is highly
+variable"). The only fixed numbers are BOUNDS (min/max lead, tail cap, min floor)
+that keep the result sane, never a target.
+
 Head: find the true payoff (reusing sfx_cues._refine_payoff — the rescue/snap that
-fixes the Hot-Cheeto 'boom at 1 s, real beat at 18 s' mis-anchor), and if the setup
-before it exceeds head_max_s, pull clip_start up to payoff − head_lead_s (keeps a
-breath of context, not a dead run-up). The cold-open teaser still prepends the payoff.
-Tail: end at the last speech/reaction burst within payoff + tail_max_s and drop the
-trailing low-RMS filler.
+fixes the Hot-Cheeto 'boom at 1 s, real beat at 18 s' mis-anchor), then snap clip_start
+to the NATURAL BEGINNING of the utterance leading into it — the most recent silence gap
+in the audio (the streamer's pause before starting the bit), refined to the nearest
+transcript sentence boundary. A one-sentence setup yields a short head; a built-up bit
+keeps more; a monologue is capped at head_max_lead_s. The cold-open teaser still
+prepends the payoff. Tail: end at the last speech/reaction burst within payoff +
+tail_max_s and drop the trailing low-RMS filler — also content-derived.
 
 Flag `CLIP_TIGHT_PUNCHLINE` (default OFF) + failure-soft: no flag, exempt category,
 missing audio, or any error -> the ORIGINAL (clip_start, clip_duration), byte-identical
@@ -38,13 +45,20 @@ _EXEMPT_PATTERN_SUBSTR = ("rap", "freestyle", "storytell", "interview", "informa
                           "ramble")
 _EXEMPT_CATS = {"storytime", "emotional"}
 
+# NB: none of these is a TARGET length. head_min/max_lead + tail_max are BOUNDS
+# (guardrails), the clip edges themselves are derived from the audio/transcript.
 _DEFAULTS = {
     "enabled": False,
-    "head_max_s": 10.0,     # setup longer than this before the payoff -> trim the head
-    "head_lead_s": 6.0,     # keep this much run-up before the payoff after trimming
-    "tail_max_s": 8.0,      # look this far past the payoff for the last real activity
-    "tail_pad_s": 1.0,      # keep this much after the last burst
-    "min_final_s": 6.0,     # never cut a clip below this
+    # HEAD: start snaps to the natural beginning of the utterance leading to the
+    # payoff (silence gap / sentence boundary). These only BOUND that search — a
+    # short setup stays short, a long one is capped; the value is content-derived.
+    "head_min_lead_s": 2.0,     # always keep at least this much run-up (never start ON the joke)
+    "head_max_lead_s": 12.0,    # never keep MORE setup than this (guardrail for monologues)
+    "head_gap_min_s": 0.30,     # a silence >= this counts as an utterance boundary
+    "head_silence_frac": 0.20,  # "silence" = RMS below this fraction of the window's speech level
+    "tail_max_s": 8.0,          # look at most this far past the payoff for the last activity
+    "tail_pad_s": 1.0,          # keep this much after the last burst
+    "min_final_s": 6.0,         # safety floor — never emit a clip shorter than this
 }
 
 
@@ -52,7 +66,8 @@ def _cfg() -> dict:
     c = dict(_DEFAULTS)
     c["enabled"] = os.environ.get("CLIP_TIGHT_PUNCHLINE", "0").strip().lower() in (
         "1", "true", "yes", "on")
-    for k in ("head_max_s", "head_lead_s", "tail_max_s", "tail_pad_s", "min_final_s"):
+    for k in ("head_min_lead_s", "head_max_lead_s", "head_gap_min_s", "head_silence_frac",
+              "tail_max_s", "tail_pad_s", "min_final_s"):
         v = os.environ.get("CLIP_TIGHT_" + k.upper())
         if v:
             try:
@@ -60,6 +75,70 @@ def _cfg() -> dict:
             except ValueError:
                 pass
     return c
+
+
+def _segment_starts(temp_dir: str) -> list:
+    """Transcript segment/word start times (sorted) for boundary snapping, or []."""
+    import json
+    try:
+        segs = json.loads(Path(temp_dir, "transcript.json").read_text(encoding="utf-8"))
+        return sorted(float(s["start"]) for s in segs if isinstance(s.get("start"), (int, float)))
+    except Exception:
+        return []
+
+
+def _natural_head_start(payoff_abs: float, clip_start: float, temp_dir: str,
+                        cfg: dict) -> float:
+    """Content-adaptive clip start: the beginning of the utterance that leads into the
+    payoff, NOT a fixed offset. Walk back from the payoff through the audio energy;
+    the start is just after the most recent real SILENCE GAP (the natural pause before
+    the streamer starts the bit). Snap that to the nearest transcript sentence
+    boundary when a transcript is present. Bounded only by head_min_lead_s /
+    head_max_lead_s (guardrails, not targets). Returns the absolute start; falls back
+    to clip_start (no head trim) if nothing can be resolved."""
+    min_lead = float(cfg["head_min_lead_s"])
+    max_lead = float(cfg["head_max_lead_s"])
+    latest = payoff_abs - min_lead          # a start must be at least this far before the payoff
+    earliest = payoff_abs - max_lead        # ...and at most this far
+    if latest <= clip_start:
+        return clip_start                   # already tighter than min_lead — leave it
+
+    natural = None
+    # --- acoustic: last silence gap in [earliest-1, latest] -> utterance start ---
+    env, hop = _rms_env(temp_dir, max(clip_start, earliest - 1.0), latest)
+    if env is not None and len(env) > 3:
+        import numpy as np
+        base = max(earliest - 1.0, clip_start)
+        # Speech reference from the PAYOFF (always speech) so the silence threshold
+        # holds even when the head window is mostly silence — else p75 of a quiet
+        # window collapses and real pauses go undetected.
+        ref, _ = _rms_env(temp_dir, payoff_abs, payoff_abs + 1.5)
+        speech = (float(np.percentile(ref, 75)) if ref is not None and len(ref) else
+                  float(np.percentile(env, 90))) or 1e-6
+        thr = float(cfg["head_silence_frac"]) * speech
+        gap_frames = max(1, int(float(cfg["head_gap_min_s"]) / hop))
+        run = 0
+        # scan forward; the END of the LAST qualifying gap is the utterance start
+        for i, v in enumerate(env):
+            if float(v) < thr:
+                run += 1
+            else:
+                if run >= gap_frames:
+                    natural = base + i * hop        # first speech frame after the gap
+                run = 0
+
+    # --- transcript refinement: snap to the nearest sentence boundary in-window ---
+    segs = [s for s in _segment_starts(temp_dir) if earliest <= s <= latest]
+    if segs:
+        anchor = natural if natural is not None else earliest
+        natural = min(segs, key=lambda s: abs(s - anchor))
+
+    if natural is None:
+        # No boundary found. If the run-up exceeds the guardrail, cap it; otherwise
+        # keep the original start (the setup is already a reasonable length).
+        return earliest if (payoff_abs - clip_start) > max_lead else clip_start
+    # clamp into [earliest, latest] and only ever move the start LATER (shrink)
+    return max(clip_start, min(max(natural, earliest), latest))
 
 
 def _category(moment: dict) -> str:
@@ -131,9 +210,10 @@ def tighten(moment: dict, clip_start: float, clip_duration: float, *,
 
         new_start, new_end = clip_start, clip_end
 
-        # --- HEAD: too much setup before the payoff -> pull start up ---
-        if payoff_rel > cfg["head_max_s"]:
-            new_start = max(clip_start, payoff_abs - cfg["head_lead_s"])
+        # --- HEAD: snap start to the natural beginning of the utterance leading to
+        # the payoff (silence gap / sentence boundary) — content-derived, NOT a fixed
+        # lead. Only shrinks; bounded by head_min/max_lead guardrails. ---
+        new_start = _natural_head_start(payoff_abs, clip_start, temp_dir, cfg)
 
         # --- TAIL: end at the last real activity within payoff + tail_max_s ---
         env, hop_s = _rms_env(temp_dir, payoff_abs, min(clip_end, payoff_abs + cfg["tail_max_s"]))
