@@ -22,8 +22,16 @@ updated: 2026-07-08
 > under transient failures.
 > **I5.0 SHIPPED 2026-07-08:** prompt-hash instrumentation added to the LIVE Pass-B loop
 > (`_PASSB_PROMPT_HASHES` → `passb_prompt_hashes.json`; additive, zero behavior change) +
-> `CLIP_PASSB_DETERMINISTIC=1` greedy-decode validation flag (call_llm temp 0). Baseline
-> temp-0 run launched (2xRaKai, reuse-transcript) to capture the golden manifest.
+> `CLIP_PASSB_DETERMINISTIC=1` greedy-decode validation flag (call_llm temp 0). **Baseline
+> temp-0 run COMPLETE (exit 0):** golden manifest captured + saved durably to
+> `learning/passb_baseline/2xRaKai_temp0_workers1.json` — 25 chunks, fingerprint
+> `8e0316624c64089a`. This is the reference the two-phase cut-over is gated against.
+> (Watchdog note: `--force` temp-0 + the ~11-min judge pushed the run past 60 min — a false
+> timeout, not a hang; the manifest is written mid-Stage-4 so it was captured well before.)
+> **Reproducibility caveat (fold into the cut-over's first run):** the strategy assumes temp-0
+> gives identical prompts run-to-run. The FIRST cut-over run must be workers=1 temp-0 and
+> match this fingerprint — proving temp-0 reproducibility — BEFORE trusting the workers=3
+> comparison (else temp-0 kernel noise can't be told apart from a cut-over bug).
 > **Loop-complexity finding (reshapes I5.2):** reading the real loop showed it is FAR more
 > stateful than passb_driver's clean model — a signal GATE with dead-streak SAMPLING state
 > (`_PASSB_DEAD_STREAK`), per-chunk `conversation_shape` mutating a shared index, skip-records,
