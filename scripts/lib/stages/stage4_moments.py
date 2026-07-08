@@ -333,6 +333,31 @@ MAX_CANDIDATES = MAX_CLIPS * 2
 
 print(f"VOD: {vod_hours:.1f} hours => target {MAX_CLIPS} clips (max {MAX_CANDIDATES} candidates)", file=sys.stderr)
 
+# --- Plan A: adaptive clip COUNT (bounds + relative tail floor) --------------
+# The legacy quota (MAX_CLIPS) fills to a duration-derived number with NO quality
+# floor -> padding on thin VODs, truncation on dense ones. Flag-gated + failure-soft
+# (concepts/plan-adaptive-clip-count-2026-07). OFF or SHADOW => byte-identical:
+# SELECT_TARGET == MAX_CLIPS and the tail trim below only LOGS.
+def _count_flag(_name):
+    return os.environ.get(_name, "").strip().lower() in ("1", "true", "yes", "on")
+_COUNT_ADAPTIVE = _count_flag("CLIP_COUNT_ADAPTIVE")
+_COUNT_SHADOW = _count_flag("CLIP_COUNT_SHADOW")
+try:
+    _COUNT_TAU = float(os.environ.get("CLIP_COUNT_TAU", "0.94") or "0.94")
+except ValueError:
+    _COUNT_TAU = 0.94
+# Non-shadow adaptive mode WIDENS the selection ceiling (x5, cap 24) so dense VODs
+# aren't truncated; the tail floor trims weak picks back down. Bucket-guarantee math
+# (clips_per_bucket) stays on the legacy MAX_CLIPS so per-bucket time-spread is
+# unchanged -- the extra headroom is filled by the spread-preserving round-robin.
+if _COUNT_ADAPTIVE and not _COUNT_SHADOW:
+    SELECT_TARGET = max(3, min(int(math.ceil(vod_hours * 5)), 24))
+else:
+    SELECT_TARGET = MAX_CLIPS
+if _COUNT_ADAPTIVE:
+    print(f"[COUNT] adaptive count ON (shadow={_COUNT_SHADOW}) tau={_COUNT_TAU} "
+          f"legacy_target={MAX_CLIPS} select_ceiling={SELECT_TARGET}", file=sys.stderr)
+
 def get_segment_type(timestamp):
     """Return the stream segment type for a given timestamp."""
     for seg in segment_map:
@@ -3050,6 +3075,12 @@ for m in deduped:
     m["final_score"] = round(m["final_score"] * pw, 4)
     m["position_weight"] = pw
 
+# Plan A (adaptive clip count): snapshot the post-position, PRE-bucket-norm score.
+# The bucket-norm blend below LIFTS dead-bucket moments (good for time spread) but
+# HIDES tail weakness -- the relative tail floor must judge on this un-lifted score.
+for m in deduped:
+    m["pre_bucket_score"] = m["final_score"]
+
 # --- WITHIN-BUCKET NORMALIZATION ---
 # Normalize scores within each bucket so moments in quiet segments compete fairly
 # with moments in high-energy segments. A 0.6 in a dead bucket is as valuable as
@@ -3237,7 +3268,7 @@ def _phase2_round_robin(buckets, selected, max_clips, min_spacing_fn):
         if not added:
             return  # nothing pickable anywhere
 
-_phase2_round_robin(buckets, selected, MAX_CLIPS, min_spacing)
+_phase2_round_robin(buckets, selected, SELECT_TARGET, min_spacing)
 
 # Phase 2.5 (Fix 5 / arc Phase 3): guarantee the single strongest A1 arc a
 # slot if none survived Phase 1/2 on score. A1 arcs are the conceptual/ironic
@@ -3287,7 +3318,7 @@ if CLIP_STYLE == "variety":
     final = []
     cats = list(by_category.keys())
     idx = 0
-    while len(final) < MAX_CLIPS and any(by_category.values()):
+    while len(final) < SELECT_TARGET and any(by_category.values()):
         cat = cats[idx % len(cats)]
         if by_category.get(cat):
             final.append(by_category[cat].pop(0))
@@ -3298,29 +3329,75 @@ if CLIP_STYLE == "variety":
 elif CLIP_STYLE not in ("auto", ""):
     # Style-specific: re-sort selected by style-weighted score, pick top N
     selected.sort(key=lambda x: x["final_score"], reverse=True)
-    final = selected[:MAX_CLIPS]
+    final = selected[:SELECT_TARGET]
 else:
     # Auto: category cap — no single category exceeds 50% of clips
     selected.sort(key=lambda x: x["final_score"], reverse=True)
     final = []
     cat_counts = {}
-    max_per_cat = max(2, int(MAX_CLIPS * 0.50))
+    max_per_cat = max(2, int(SELECT_TARGET * 0.50))
     for m in selected:
         cat = m.get("primary_category", "hype")
         if cat_counts.get(cat, 0) < max_per_cat:
             final.append(m)
             cat_counts[cat] = cat_counts.get(cat, 0) + 1
-        if len(final) >= MAX_CLIPS:
+        if len(final) >= SELECT_TARGET:
             break
-    # Backfill if we didn't reach MAX_CLIPS due to category cap
-    if len(final) < MAX_CLIPS:
+    # Backfill if we didn't reach the target due to category cap
+    if len(final) < SELECT_TARGET:
         for m in selected:
             if m not in final:
                 final.append(m)
-                if len(final) >= MAX_CLIPS:
+                if len(final) >= SELECT_TARGET:
                     break
 
 final.sort(key=lambda x: x["final_score"], reverse=True)
+
+# --- Plan A tail floor: drop weak tail picks (relative to THIS run) ----------
+# Floor = tau x median(pre_bucket_score of the top `MAX_CLIPS` picks). Judges on the
+# PRE-bucket-norm score (the blend hides tail weakness). Only ever REMOVES; never
+# below min 3; never trims an arc-guaranteed pick (Phase 2.5 gave it its own quality
+# floor and the pipeline treats a missed arc as costlier than a false positive).
+# Failure-soft: any exception leaves `final` exactly as selected.
+_count_trim_info = None
+if _COUNT_ADAPTIVE and len(final) > 3:
+    try:
+        def _pbs(_m):
+            return _m.get("pre_bucket_score", _m.get("final_score", 0.0)) or 0.0
+        _ranked_final = sorted(final, key=_pbs, reverse=True)
+        _head = _ranked_final[:MAX_CLIPS] or _ranked_final
+        _svals = sorted(_pbs(m) for m in _head)
+        _n = len(_svals)
+        _median = _svals[_n // 2] if _n % 2 else 0.5 * (_svals[_n // 2 - 1] + _svals[_n // 2])
+        _floor = _COUNT_TAU * _median
+        _keep, _trimmed = [], []
+        for m in _ranked_final:
+            if len(_keep) < 3 or _pbs(m) >= _floor or m.get("primary_category") == "arc":
+                _keep.append(m)
+            else:
+                _trimmed.append(m)
+        if _trimmed:
+            _verb = "WOULD trim" if _COUNT_SHADOW else "trimmed"
+            print(f"[COUNT] {_verb} {len(_trimmed)} weak tail clip(s) "
+                  f"(floor={_floor:.3f}=tau{_COUNT_TAU}x median{_median:.3f}; "
+                  f"keep {len(_keep)}/{len(final)}):", file=sys.stderr)
+            for m in _trimmed:
+                _ttl = (m.get("why") or m.get("preview") or "")[:60]
+                print(f"[COUNT]   - t={m.get('timestamp')} score={_pbs(m):.3f} "
+                      f"[{m.get('primary_category','?')}] {_ttl}", file=sys.stderr)
+            if not _COUNT_SHADOW:
+                _keep_ids = {id(m) for m in _keep}
+                final = [m for m in final if id(m) in _keep_ids]
+        _count_trim_info = {
+            "adaptive": True, "shadow": _COUNT_SHADOW, "tau": _COUNT_TAU,
+            "floor": round(_floor, 4), "median": round(_median, 4),
+            "legacy_target": MAX_CLIPS, "select_ceiling": SELECT_TARGET,
+            "kept": len(_keep), "trimmed": len(_trimmed),
+            "trimmed_ts": [m.get("timestamp") for m in _trimmed],
+        }
+    except Exception as _cte:
+        print(f"[COUNT] tail floor skipped ({type(_cte).__name__}: {_cte})", file=sys.stderr)
+        _count_trim_info = None
 
 print(f"  Final selection: {len(final)} clips across {len(set(min(int(m['timestamp']/bucket_duration), NUM_BUCKETS-1) for m in final))} of {NUM_BUCKETS} time buckets", file=sys.stderr)
 
@@ -3363,6 +3440,7 @@ try:
             "baseline_multiplier": _m.get("baseline_multiplier"),
             "engagement_multiplier": _m.get("engagement_multiplier"),
             "axis_multiplier": _m.get("axis_multiplier"),
+            "pre_bucket_score": _m.get("pre_bucket_score"),
             "final_score": _m.get("final_score"),
             "base_rank": _m.get("base_rank"),
             "pass_c_rank": _m.get("pass_c_rank"),
@@ -3394,6 +3472,7 @@ try:
         "overflow_slots": overflow_slots,
         "style": CLIP_STYLE,
         "max_time_s": round(max_time, 1),
+        "count_trim": _count_trim_info,   # Plan A: adaptive-count trim record (or None)
         "candidates": _trace_records,
     }
     with open(f"{TEMP_DIR}/pass_c_candidates.json", "w", encoding="utf-8") as _tf:

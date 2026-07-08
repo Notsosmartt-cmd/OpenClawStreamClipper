@@ -3,11 +3,21 @@ title: "Adaptive Clip Count — Plan A (bounds + tail floor) / Plan B (calibrate
 type: concept
 tags: [plan, selection, clip-count, quota, calibration, ranker, pass-c, stage-4]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-07-08
 ---
 
 # Adaptive Clip Count — replace the duration quota
+
+> [!note] Plan A SHIPPED 2026-07-08 (default-off) · Plan B still planned
+> Plan A is implemented in `stage4_moments.py` behind `CLIP_COUNT_ADAPTIVE`
+> (+ `CLIP_COUNT_SHADOW`, `CLIP_COUNT_TAU`), failure-soft, flag-off byte-identical.
+> Offline validator `scripts/research/count_sweep.py` (+ `--self-test`) ships too. The
+> τ sweep over the three frozen runs: **default τ=0.94 is safe + conservative** (trims 1
+> unlabeled tail clip total), **τ=0.97 is the largest safe value** (trims 4, never a GOOD
+> clip), **τ≥0.98 is UNSAFE** (cuts owner-liked clips). Remaining before non-shadow enable:
+> a **shadow render** on a real VOD for owner review, then re-freeze so the sweep uses the
+> true `pre_bucket_score` (the frozen runs predate that stamp → used the final_score proxy).
 
 Owner question (2026-07-08): *is there a better implementation than the fixed
 3-clips-per-hour quota?* This page is the detailed plan for the two-stage answer:
