@@ -18,9 +18,12 @@ see §Excluded at the bottom.
 
 > [!note] Implementation status (2026-07-08) — 4 shipped, #4 was already done, 2 staged
 > - **#1 cache audio-events — SHIPPED** (`stage2.py`, default-on, mirrors transcript cache).
-> - **#2 threaded scan — SHIPPED** (`audio_events.py` `_scan_threads`, `AUDIO_EVENTS_THREADS`
->   default off; equivalence-verified: serial vs 4-thread on a 300 s wav → **byte-identical
->   windows, 27.4 s → 8.4 s = 3.3×**).
+> - **#2 threaded scan — SHIPPED + PROMOTED TO DEFAULT 2026-07-08** (`audio_events.py`
+>   `_scan_threads`): `AUDIO_EVENTS_THREADS` now defaults to `min(4, cores-2)` (=4 on the
+>   i9), BLAS-pinned at runtime via threadpoolctl (`threads × BLAS ≤ cores`, no
+>   oversubscription). Re-verified: DEFAULT (threaded) path is **byte-identical to forced
+>   serial**, 3.3×. The old `--audio-workers 1` serial mitigation is now obsolete (threads
+>   supersede the process pool; set `AUDIO_EVENTS_THREADS=1` to force serial).
 > - **#7 run-metrics — SHIPPED** (`common.cleanup` → `run_metrics.jsonl`;
 >   `scripts/research/run_metrics.py backfill|report` — backfilled all 21 historical runs).
 > - **#4 parallel renders — ALREADY IMPLEMENTED** (correction): Stage 7 has rendered via

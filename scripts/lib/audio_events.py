@@ -555,15 +555,22 @@ def _scan_parallel(
 
 
 def _resolve_thread_count() -> int:
-    """AUDIO_EVENTS_THREADS env → int, default 0 (off). Threads are the SAFE in-process
-    parallel path (Speed #2, plan-pipeline-speed-2026-07): no spawn / no shared_memory /
-    no child librosa import, so they cannot hit the multiprocessing spawn-hang class that
-    motivated `--audio-workers 1`. The process pool stays available but non-default."""
+    """AUDIO_EVENTS_THREADS env → int; DEFAULT is CPU-aware (min(4, cores-2)).
+
+    Speed #2 (plan-pipeline-speed-2026-07), promoted to DEFAULT 2026-07-08 after the
+    serial-vs-4-thread equivalence proof (byte-identical windows, 3.3×). Threads are the
+    SAFE in-process parallel path: no spawn / no shared_memory / no child librosa import,
+    so they cannot hit the multiprocessing spawn-hang class that motivated
+    `--audio-workers 1` — that mitigation is now obsolete (threads supersede the process
+    pool as the default parallel path). BLAS is pinned at runtime in `_scan_threads` so
+    threads × BLAS ≤ cores. Set `AUDIO_EVENTS_THREADS=1` to force the serial path."""
     raw = os.environ.get("AUDIO_EVENTS_THREADS", "").strip()
-    try:
-        return int(raw) if raw else 0
-    except ValueError:
-        return 0
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return min(4, max(1, (os.cpu_count() or 2) - 2))
 
 
 def _scan_threads(y_full, sr, tasks, n_threads, librosa, np,
@@ -574,8 +581,19 @@ def _scan_threads(y_full, sr, tasks, n_threads, librosa, np,
     FFT + median filtering release the GIL, so the HPSS/onset work overlaps across threads.
     No process spawn / shared_memory / child import → cannot hang the multiprocessing way."""
     from concurrent.futures import ThreadPoolExecutor
-    print(f"[AUDIO_EVENTS] threaded scan: {len(tasks)} windows across {n_threads} threads",
-          file=sys.stderr)
+    # Pin BLAS so n_threads × BLAS-threads ≤ cores — the same no-oversubscription rule the
+    # process pool enforces via OMP=1 in _worker_init. Threads can't use the env-var pin
+    # (numpy is already imported → vars cached), so use threadpoolctl at RUNTIME. Failure-
+    # soft: without threadpoolctl, proceed unpinned (measured still ~3.3× on a 32-core box).
+    try:
+        from threadpoolctl import threadpool_limits
+        _cores = os.cpu_count() or n_threads
+        _limiter = threadpool_limits(limits=max(1, _cores // max(1, n_threads)))
+    except Exception:
+        from contextlib import nullcontext
+        _limiter = nullcontext()
+    print(f"[AUDIO_EVENTS] threaded scan: {len(tasks)} windows across {n_threads} threads "
+          f"(BLAS-pinned)", file=sys.stderr)
     sys.stderr.flush()
 
     def _one(task):
@@ -585,7 +603,7 @@ def _scan_threads(y_full, sr, tasks, n_threads, librosa, np,
     windows: List[Dict[str, Any]] = []
     nr = nc = nm = 0
     done = 0
-    with ThreadPoolExecutor(max_workers=n_threads) as ex:
+    with _limiter, ThreadPoolExecutor(max_workers=n_threads) as ex:
         for t_start, t_end, result in ex.map(_one, tasks):
             windows.append({"start": round(t_start, 1), "end": round(t_end, 1), **result})
             if result["rhythmic_speech"] >= 0.7:
