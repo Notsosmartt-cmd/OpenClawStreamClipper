@@ -87,6 +87,35 @@ numbers. Stage 8 should append one JSONL row per run to
 per_stage}`. ~10 lines, no flag. After a few runs the speed questions get real averages
 and regressions become visible.
 
+## Does threading reduce inference QUALITY? (owner Q 2026-07-08) — No, with one caveat
+
+Threading the requests does **not** change what the model returns per request. Verified:
+- **Each request is an independent forward pass.** LM Studio's continuous batching packs
+  multiple sequences but computes each one's logits independently — co-batching does not
+  alter a given prompt's output (only negligible batch-kernel FP noise).
+- **Pass B already runs at `temperature=0.3`** (`stage4_moments.py:979`) — it is
+  non-deterministic run-to-run *serially* today. Threading adds no new variance to any
+  single prompt; the stochasticity is pre-existing and unchanged.
+- **Assembly is order-independent by construction.** Chunk results are `.extend()`-ed then
+  **re-sorted by timestamp** (`all_moments.sort` line 2602), and each moment carries its own
+  `chunk_start/chunk_end` from `parse_llm_moments`. Arrival order is erased → concurrent
+  collection yields the identical candidate set. (Required invariant: collect-then-sort, which
+  holds; do NOT introduce order-dependent cross-chunk state.)
+- **The judge is explicitly parallel==serial**: `vlm_judge.swiss_tournament` fixes each
+  round's pairings from the round-start ranking (comment at the fn) — re-ranking only happens
+  *between* rounds, sequentially. Parallel folds the same comparisons faster.
+
+**The real risk is NOT threading — it's context/VRAM contention.** `context_length=32768`
+(config/models.json) with `PARALLEL=4` means N concurrent slots share the KV cache. If prompts
+were large enough that N full contexts don't fit, the server could truncate/evict context →
+*that* would degrade output. Pass B prompts are small (a ~480 s transcript window, few-k
+tokens), so 2–3 workers are safe; **before pushing to 4, confirm KV headroom** (a provisioning
+check, not a correctness one). This is why P2/P3 default to today's value and validate upward.
+
+**Distinct: the "judge diet" (P3.2, frames 4→3 / comparisons 30→24) IS a real quality trade** —
+less visual context / tournament resolution. That is a *parameter* change, independent of
+threading, and optional; evaluate it on its own against the current ordering.
+
 ## Projected effect (3.2 h VOD, 10 clips)
 
 | Scenario | Today | After P0 | +P2 | +P3 | All |
