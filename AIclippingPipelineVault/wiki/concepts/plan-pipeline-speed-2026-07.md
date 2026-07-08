@@ -16,16 +16,28 @@ implementation plan for the 7 accepted proposals. Quality-touching ideas (judge 
 naive Pass-B threading, whisper batching, frame downscaling) are explicitly EXCLUDED —
 see §Excluded at the bottom.
 
-> [!note] Implementation status (2026-07-08)
-> **#1 cache audio-events — SHIPPED** (`stage2.py`, default-on, mirrors transcript cache).
-> **#2 threaded scan — SHIPPED** (`audio_events.py` `_scan_threads`, `AUDIO_EVENTS_THREADS`
-> default off; equivalence-verified: serial vs 4-thread on a 300 s wav → **byte-identical
-> windows, 27.4 s → 8.4 s = 3.3×**). **#7 run-metrics — SHIPPED** (`common.cleanup` appends
-> `run_metrics.jsonl`; `scripts/research/run_metrics.py backfill|report` — backfilled all 21
-> historical runs). All flag-gated/default-preserving, `py_compile` clean.
-> **#4 parallel renders / #3 vision-slot bench — SHIPPED next (this session).**
-> **#5 two-phase Pass B** — flag-gated, needs a live prompt-hash equivalence run to ENABLE.
-> **#6 vectorized scan** — deferred (highest validation burden; #1+#2 already blunt its cost).
+> [!note] Implementation status (2026-07-08) — 4 shipped, #4 was already done, 2 staged
+> - **#1 cache audio-events — SHIPPED** (`stage2.py`, default-on, mirrors transcript cache).
+> - **#2 threaded scan — SHIPPED** (`audio_events.py` `_scan_threads`, `AUDIO_EVENTS_THREADS`
+>   default off; equivalence-verified: serial vs 4-thread on a 300 s wav → **byte-identical
+>   windows, 27.4 s → 8.4 s = 3.3×**).
+> - **#7 run-metrics — SHIPPED** (`common.cleanup` → `run_metrics.jsonl`;
+>   `scripts/research/run_metrics.py backfill|report` — backfilled all 21 historical runs).
+> - **#4 parallel renders — ALREADY IMPLEMENTED** (correction): Stage 7 has rendered via
+>   `ThreadPoolExecutor` at `STAGE7_WORKERS` **default 4** since 2026-06-04; audio extraction
+>   is threaded too. The 338 s render median is already 4-way parallel → no work / no further
+>   gain. The plan's #4 was based on a wrong "renders are serial" assumption.
+> - **#3 vision-slot bench — SHIPPED as a tool** (`scripts/research/bench_vision_slots.py`):
+>   fires the judge-shaped multi-image request at concurrency 1–4. **Ready to run** (needs LM
+>   Studio + ~5 min); raising `STAGE6_WORKERS`/`JUDGE_WORKERS` is env-only AFTER the bench +
+>   KV-headroom check confirm the encoder scales past 2.
+> - **#5 two-phase Pass B — STAGED (not shipped):** the design below is complete and
+>   default-safe (`CLIP_PASSB_WORKERS=1` = untouched serial loop), but it is a large refactor
+>   of the most delicate stage and can only be validated by a live prompt-hash-equivalence run
+>   on a real VOD. Deliberately NOT shipped unverified — own session with that validation.
+> - **#6 vectorized scan — DEFERRED:** highest validation burden (reference-VOD dial
+>   equivalence); #1 (cache) + #2 (threads) already remove most of the scan cost.
+> All shipped items are flag-gated/default-preserving, `py_compile` clean.
 
 > [!note] Ground truth: measured distribution across 21 runs (stage_timings in diagnostics)
 > Medians: Stage 4 Moment Detection **1156 s** · **Stage 2 total 781 s** · Stage 7 render
@@ -115,7 +127,13 @@ Whether the mtmd vision encoder serializes server-side is **empirical** — benc
 clip set, judge verdicts sane, stage times drop). **Gain: judge+vision ~465 s → ~250–320 s
 if slots scale; ~0 code.**
 
-## #4 — Parallel clip renders (`CLIP_RENDER_WORKERS`) · both · quality-identical · M effort
+## #4 — Parallel clip renders · both · quality-identical · ALREADY IMPLEMENTED
+
+> [!success] Already shipped 2026-06-04 — no work needed (plan premise was wrong)
+> Stage 7 already renders via `ThreadPoolExecutor` at `STAGE7_WORKERS` (default **4**), and
+> the 7d audio extraction is threaded too. The 338 s render median is already 4-way parallel.
+> The design below is retained only as a record of the (incorrect) "renders are serial"
+> assumption; the actual knob is `STAGE7_WORKERS`, not a new `CLIP_RENDER_WORKERS`.
 
 **Problem:** Stage 7 renders ~10 clips sequentially (median 338 s); each render is an
 independent ffmpeg pipeline.

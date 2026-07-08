@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-07-08] update | Speed plan #3 bench shipped + #4 found already-done; #5/#6 staged
+Continued [[concepts/plan-pipeline-speed-2026-07]]: **#3** vision-slot bench shipped as `scripts/research/bench_vision_slots.py` (fires the judge-shaped multi-image request at concurrency 1–4 → data-driven `STAGE6_WORKERS`/`JUDGE_WORKERS` decision + KV-headroom note; ready to run, needs LM Studio ~5 min). **#4 correction:** parallel clip renders are ALREADY implemented — Stage 7 renders via `ThreadPoolExecutor` at `STAGE7_WORKERS` default 4 since 2026-06-04 (the plan's "renders are serial" premise was wrong; 338 s render median is already 4-way parallel → no work, no further gain). **#5 two-phase Pass B STAGED, not shipped:** the design is complete + default-safe (`CLIP_PASSB_WORKERS=1` = untouched serial loop) but it refactors the most delicate stage and can only be validated by a live prompt-hash-equivalence run — deliberately not shipping unverified per the quality constraint; own session. **#6 deferred** (reference-VOD equivalence burden; #1+#2 already remove most scan cost). Net shipped this session: #1, #2, #7 (verified) + #3 (tool). Pages: [[concepts/plan-pipeline-speed-2026-07]], [[hot]]; files: `scripts/research/bench_vision_slots.py` (new).
+
 ## [2026-07-08] update | Speed plan #1/#2/#7 SHIPPED (cache audio-events, threaded scan, run-metrics)
 Implemented the first batch of [[concepts/plan-pipeline-speed-2026-07]], all flag-gated / default-preserving, `py_compile` clean:
 - **#1 cache audio-events** (`stage2.py`): mirror the transcript cache to `vods/.transcriptions/<stem>.audio_events.json`; reuse unless `--force` (minus CLIP_REUSE_TRANSCRIPT); cache only VALID scans (non-empty windows, no skipped_reason); audio.wav extraction untouched. Kills the ~10-16 min rescan on every re-run.
