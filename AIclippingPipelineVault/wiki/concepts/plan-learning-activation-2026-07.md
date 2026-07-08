@@ -18,6 +18,8 @@ bounded + verified not-stuck ([[concepts/plan-pipeline-upgrade-2026-07]] §rules
 
 ## Label paths — tested verdicts (2026-07-05)
 
+> [!info] Full mechanism reference: [[concepts/label-paths-and-store-2026-07]] — how each path works, the fetch-and-join model, and the durable frozen store.
+
 **Path A (Twitch clip API) is DEAD — wrong universe, not just broken.** Owner
 correction: in this niche community highlights are NOT Twitch clips — **viewers
 screen-record moments and post them on social media themselves** (that's exactly how the
