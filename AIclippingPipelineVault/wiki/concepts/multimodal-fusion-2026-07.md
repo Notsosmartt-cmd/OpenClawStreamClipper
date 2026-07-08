@@ -92,6 +92,24 @@ One network ingests **raw audio waveforms + video frames + text in the same cont
 > still reaches both GPUs) and check whether its multimodal endpoint takes audio.
 **Realistic endgame:** hybrid — option 1 proposes cheaply across the whole VOD; an omni model *verifies* the top-N 30–60 s windows with true perception, as/alongside the Stage 5.5 judge.
 
+## Implementation status — AUDITED against code 2026-07-08
+
+Grepped the live code to correct a prior over-claim (option 3 was mistakenly reported as
+"built"). What actually exists:
+
+| # | Option | Status | Evidence |
+|---|---|---|---|
+| 1 | Symbol-level timeline fusion (anomaly lane) | **Built, flag-gated OFF** | `event_timeline.py` + `anomaly_propose.py`; wired `stage4_moments.py` behind `CLIP_ANOMALY_LANE` (default off), boost-only `src=ANOMALY` into Pass C. Live lane scores reaction from the librosa `crowd_response` dial (not full CLAP labels — those are offline-only in forensics) |
+| 2 | Interaction features in scoring | **Built but DORMANT** | `ranker.py` `ix_reaction_low_keyword`, `ix_motion_low_keyword`, `is_anomaly` — default weight 0.0; only non-zero via a fit that survives the gate, which currently REJECTs → they never touch a live score yet |
+| 3 | Richer joint prompts at 5.5/6 (timeline into the judge) | **NOT built** | `vlm_judge.py` prompt = frames + transcript window only (`_INSTRUCTION`: "time-ordered frames plus the words spoken"). `event_timeline` is NOT imported by the judge or Stage 6. What shipped under "Phase 3" was the `known_format` probe (metadata tagging), a different thing |
+| 4 | CLAP embedding incongruity | **NOT built** | No CLAP audio↔text distance detector in Stage 4; the only embedding signal is `CLIP_PASSA_EMBED` (text↔category-prototype cosine), unrelated |
+| 5 | True omni models | **NOT usable** | Blocked by LM Studio's API (text/image only), verified 2026-07-08 above — not VRAM |
+
+**Net on a stock run today: zero of the five convergence mechanisms are active** — #1 is behind a
+default-off flag, #2 behind the un-flipped ranker gate. The pipeline still proposes from transcript,
+then combines senses arithmetically. See [[concepts/plan-learning-activation-2026-07]] for how #2
+activates (labels → gate) and [[concepts/calibration-ranker-2026-07]] for the fitted-score mechanism.
+
 ## Recommended sequence (when the owner green-lights implementation)
 
 1. Timeline-builder (merge transcript + `audio_sense` + `visual_sense.motion_events` into one ordered stream) → 2. anomaly-proposer producing `src=ANOMALY` candidates (flag-gated, failure-soft, boost-only entry into Pass C) → 3. pass the timeline into the Stage 5.5 judge prompt → 4. interaction features once the calibration ranker lands. Steps 1–3 reuse only already-verified components.
