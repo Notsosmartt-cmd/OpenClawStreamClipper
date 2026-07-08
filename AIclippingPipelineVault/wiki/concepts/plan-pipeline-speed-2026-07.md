@@ -1,152 +1,234 @@
 ---
-title: "Pipeline Speed Plan — Stage 2/4/5.5/6 levers without the Windows-spawn hazard"
+title: "Pipeline Speed Plan — 7 quality-neutral optimizations (detailed implementation)"
 type: concept
-tags: [plan, performance, speed, stage-2, stage-4, stage-6, vision-judge, concurrency, audio-events]
+tags: [plan, performance, speed, stage-2, stage-4, stage-6, stage-7, vision-judge, concurrency, audio-events, metrics]
 sources: 0
 status: planned
 updated: 2026-07-08
 ---
 
-# Pipeline Speed Plan (2026-07)
+# Pipeline Speed Plan (2026-07) — detailed implementation per proposal
 
-Owner question: how do we make the pipeline faster — specifically Stage 2 and Stage 6 —
-**without reintroducing the concurrency hazard** that caused the 58-min zombie
-(multiprocessing spawn + shared_memory + librosa import on Windows)?
+Owner directive: make the pipeline faster for BOTH fresh and pre-processed VODs
+**without sacrificing quality** and without the Windows-spawn hazard (the 58-min zombie:
+multiprocessing spawn + shared_memory + child librosa import). This page is the detailed
+implementation plan for the 7 accepted proposals. Quality-touching ideas (judge diet,
+naive Pass-B threading, whisper batching, frame downscaling) are explicitly EXCLUDED —
+see §Excluded at the bottom.
 
-> [!warning] Two corrections from the 2026-07-08 deep review (supersede claims below)
-> 1. **Timing IS persisted** — `stage_timings.json` is snapshotted into every
->    `last_run_*.json` diagnostic (the "only one measured run" claim was wrong; the probe
->    missed the key). **21 runs have full per-stage timing.** Measured distribution
->    (medians): Stage 4 Moment Detection **1156 s**, Stage 2 whisper **781 s**, Stage 7
->    render **338 s**, Vision Judge **261 s**, Stage 6 vision **204 s**, Stage 3 **165 s**.
->    Realtime ratio n=18: **median 0.262, mean 0.319, range 0.18–0.82** (the 0.82 outlier
->    is the 6.8 h Lacy run). Caveat: `prune_traces` deletes unlabeled diagnostics, so this
->    history is prunable — a durable append-only metrics row (P4) still has value.
-> 2. **P2's "chunks are independent" claim is FALSE.** Chunk N's Pass B prompt embeds a
->    `prior_context_block` built from chunks N-1/N-2's card summaries
->    (`stage4_moments.py:1818-1834` — the cross-chunk setup→payoff memory; the Lacy
->    penthouse callback class). Naive concurrent chunks would stale/drop that context →
->    a QUALITY regression on the highest-value clip class. P2 is superseded by **P2′
->    (two-phase Pass B)** below: chunk CARDS depend only on their own chunk's text →
->    Phase A extracts all cards in parallel; Phase B then runs all moment calls in
->    parallel, each with its exact prior-context block reconstructed from the
->    precomputed summaries — prompt content equivalent to today's, so quality-neutral.
->    Same-thread-safety profile as Stage 6; bigger refactor (the Pass B loop carries
->    grounding, failed-chunk retry, and the BUG-31 outage breaker — all must survive).
+> [!note] Ground truth: measured distribution across 21 runs (stage_timings in diagnostics)
+> Medians: Stage 4 Moment Detection **1156 s** · Stage 2 whisper **781 s** (fresh only;
+> cached after) · Stage 2 audio-events scan **~500–970 s (EVERY run — uncached)** ·
+> Stage 7 render **338 s** · Vision Judge **261 s** · Stage 6 vision **204 s** ·
+> Stage 3 **165 s**. Realtime ratio n=18: median **0.262**, range 0.18–0.82.
+> Two corrections vs the first draft of this page: (1) timing IS persisted (the "one
+> measured run" claim was wrong — 21 runs have it); (2) **Pass-B chunks are NOT
+> independent** — chunk N's prompt embeds a `prior_context_block` from chunks N-1/N-2's
+> card summaries (`stage4_moments.py:1818-1834`); naive chunk threading would degrade the
+> setup→payoff callback class. Proposal #5 is the quality-preserving restructure.
 
-## Measured baseline (the only persisted full timing — see the metrics gap below)
+## Why none of this reintroduces the spawn hazard
+Every lever is (a) caching, (b) **threads in one process** (no spawn, no SHM, no child
+re-import; numpy/scipy FFT release the GIL), (c) independent **ffmpeg subprocesses**
+(full processes, not Python multiprocessing — no shared interpreter state to wedge), or
+(d) pure vectorization. The BLAS-oversubscription rule (`threads × BLAS_threads ≤ cores`)
+is already handled by `audio_events.py`'s OMP/MKL pinning.
 
-| Stage | Time | Scales with | Notes |
-|---|---|---|---|
-| 2 Transcription (whisper) | ~500 s | VOD length | cached across runs → paid once per VOD |
-| 2 Audio-events scan | **~970 s** | VOD length | **NOT cached — paid EVERY run**; serial (`--audio-workers 1`) |
-| 3 Segments | 163 s | VOD length | |
-| 4 Moment Detection | **1974 s** | VOD length | Pass B chunks run SEQUENTIALLY (LM Studio has PARALLEL=4 slots) |
-| 5.5 Vision Judge | 660 s | clip count | ≤30 pairwise comparisons, 2 workers, ~22 s/comparison |
-| 6 Vision Enrichment | 401 s | clip count | 10 moments, 2 thread workers, ~40 s/moment wall |
-| 7 Render | 237 s | clip count | NVENC; fine |
-| 1/4.5/5/8 | ~22 s | fixed | frames already 960×540 q2 |
+---
 
-Re-run of a cached-transcript VOD today ≈ **74 min** (everything except whisper repeats).
+## #1 — Cache audio-events per VOD  · re-runs · zero risk · S effort
 
-## Do the two quoted designs cost speed? YES, quantified
-- **Stage 2 serial scan** (the deliberate no-zombie trade): ~16 min per 3.2 h VOD, every run.
-- **Stage 6 workers=2**: caps vision at ~2× serial; LM Studio is provisioned for 4 slots.
-- Neither is wrong today — the plan below removes the *cost* without the *hazard*.
+**Problem:** the scan's output is deterministic per VOD, yet only the transcript is
+cached — stage2 rescans on EVERY run (~970 s serial on a 3.2 h VOD) and writes only to
+the cleaned work dir.
 
-## Why the fixes below carry NO Windows-spawn risk
-The hang class was **processes**: spawn semantics re-import librosa in fresh children +
-`multiprocessing.shared_memory` handshakes — uncatchable when they wedge. Everything here
-is either **no concurrency at all** (cache, vectorize) or **threads in one process**
-(no spawn, no re-import, no SHM; numpy/scipy FFT release the GIL). The only real
-thread-side risk is BLAS oversubscription — already solved in `audio_events.py` (OMP/BLAS
-pinning before numpy import); rule: `threads × BLAS_threads ≤ cores`.
+**Implementation** (`scripts/pipeline/stages/stage2.py`, the events block at ~line 109):
+1. `cached_events = p.transcriptions_dir / f"{stem}.audio_events.json"` (same dir as the
+   transcript cache — already exists, gitignored, regenerable).
+2. Reuse semantics MIRROR the transcript exactly: reuse when
+   `cached_events.exists() and (not ctx.force or CLIP_REUSE_TRANSCRIPT)`; on `--force`
+   unlink the stale cache and rescan (same `_reuse_transcript` flag — the deterministic
+   rationale is identical).
+3. On cache hit: `shutil.copyfile(cached_events, events)` + log
+   `"Found cached audio events — skipping scan"`.
+4. On scan success: cache it — but **only if valid** (JSON parses, has `windows`, no
+   `skipped_reason`) so a scanner error is never immortalized.
+5. **Do NOT skip `audio.wav` extraction** on the hit path — Stage 7 (`clip_tighten`,
+   `sfx_cues`) reads the work-dir `audio.wav`; only the scan is skipped.
 
-## The path (ordered by value ÷ risk)
+**Verify / DoD:** run the same VOD twice; second run logs the cache hit, Stage 2 drops
+by the scan time, and the copied events file equals the cached one byte-for-byte.
+`--force` rescans. **Gain: −10–16 min on every re-run.**
 
-### P0 — Cache audio-events per VOD (zero risk, biggest paid-every-run win)
-`stage2.py` already caches transcripts to `vods/.transcriptions/`; mirror that:
-after a successful scan, copy `audio_events.json` to `vods/.transcriptions/
-<basename>.audio_events.json` (or a sibling `.audio_events/` dir); on the next run,
-copy it back instead of rescanning (keyed by basename + duration; `--force` still
-rescans). **Saves ~16 min on every re-run of a 3 h VOD. No concurrency involved.**
-Also fixes the asymmetry that the transcript is cached but the (deterministic) audio
-features are not.
+## #2 — Threaded audio scan (`AUDIO_EVENTS_THREADS`) · fresh VODs · zero quality risk · S-M effort
 
-### P1 — Vectorize the scan itself (single-thread, 5–15× on first-scan cost)
-The per-window cost is `librosa.effects.hpss` + onset detection recomputed
-**per 10 s window, 1,162 times** — overlapping FFT work done from scratch each time.
-Restructure to **block processing**: load a 10-min block, compute ONE STFT/HPSS for the
-block, then derive the 3 dials (rhythmic/crowd/music) per window by slicing the
-precomputed spectrogram/onset envelope. Estimated 970 s → **60–180 s** single-threaded.
-First-scan cost only (P0 covers re-runs). Medium effort; verify per-window outputs match
-the current scanner on a reference VOD (tolerance ~1e-3) before swapping in.
+**Problem:** first-scan cost is a serial loop (`audio_events.py:729-755`) over ~1160
+windows; each calls the pure function `_run_detectors(y_full[s:e], sr, ...)`.
 
-### P2 — Stage 4 concurrent Pass-B chunks (threads + HTTP, the Stage-6-safe pattern)
-Stage 4 sends chunk prompts to LM Studio **sequentially**; the server runs PARALLEL=4
-slots. Add a small ThreadPool (2–3 in flight) over chunk requests — identical failure
-profile to Stage 6's existing pool (I/O threads, mutex on shared counters), which has
-run clean for weeks. Chunks are independent; ordering restored on collection.
-Flag `CLIP_PASSB_WORKERS` default 1 (=today), validated at 2–3.
-Estimated 1974 s → **~1000–1300 s**. This is the single biggest absolute lever.
+**Implementation** (`scripts/lib/audio_events.py`):
+1. New `_scan_threads(y_full, sr, tasks, n_threads, ...)`:
+   `ThreadPoolExecutor(max_workers=n_threads).map()` over `tasks`, each worker slicing
+   the shared **read-only** `y_full` and calling the SAME `_run_detectors`. `map()`
+   preserves submission order → identical output ordering; identical math → identical
+   values. Fires counted on the collected results; progress line tagged `[threads]`.
+2. Knobs: env `AUDIO_EVENTS_THREADS` + CLI `--threads N`. Default **0 = off**.
+   Precedence: `threads>=2` → thread path; else the existing process-pool/serial logic
+   is untouched (the flaky mp pool stays available-but-non-default).
+3. GIL note: hpss/onset are scipy-FFT/median-filter heavy → GIL released; expect 2–3×
+   at 4 threads. BLAS pinning already in-module; keep `threads × BLAS ≤ cores`.
+**Verify / DoD:** equivalence harness — synthetic 60 s wav, serial vs `--threads 4`,
+assert **identical** windows JSON; then one real first-scan timing. **Gain: 970 s →
+~350–500 s on first scans (superseded later by #6).**
 
-### P3 — Vision-side: measure the slot ceiling, then trim the judge
-1. **Bench, don't guess:** `STAGE6_WORKERS`/`JUDGE_WORKERS` 2 vs 3 vs 4 on a fixed
-   moment set. The "encoder may serialize" caveat is empirical — if the mtmd encoder is
-   a server-side mutex, gains cap near 2×; if not, ~3.5×. One bench answers it.
-2. **Judge diet** (5.5 costs more than 6): `frames_per_clip` 4→3 and
-   `max_comparisons` 30→24 (Swiss on 10 items converges by ~5 rounds). Ranking-quality
-   trade — validate on one run against the current ordering.
-3. (Rejected: frame downscaling — frames are already 960×540 q2, little to gain.)
+## #3 — Vision-slot bench, then raise STAGE6/JUDGE workers · both · quality-neutral · S effort
 
-### P4 — Metrics so "average" becomes measurable (the gap this question exposed)
-Timing lives only in `pipeline.log`, overwritten per run → only ONE run has full
-numbers. Stage 8 should append one JSONL row per run to
-`clips/.diagnostics/run_metrics.jsonl`: `{run, vod, vod_seconds, clips, total_seconds,
-per_stage}`. ~10 lines, no flag. After a few runs the speed questions get real averages
-and regressions become visible.
+**Problem:** LM Studio runs `PARALLEL=4` slots; Stage 6 and the judge both cap at 2.
+Whether the mtmd vision encoder serializes server-side is **empirical** — bench, don't guess.
 
-## Does threading reduce inference QUALITY? (owner Q 2026-07-08) — No, with one caveat
+**Implementation:**
+1. `scripts/research/bench_vision_slots.py` (NEW, research-side): take N frame files from
+   any completed run, fire the SAME vision request at concurrency 1/2/3/4, report
+   latency + throughput per level. (Load qwen3.6, bounded, ~5 min.)
+2. **KV-headroom check first:** `context_length=32768` × 4 slots share the KV budget —
+   confirm via LM Studio the 4-slot allocation fits (provisioning check; Pass-B/vision
+   prompts are few-k tokens so truncation is unlikely, but verify — this is the ONE
+   quality-relevant failure mode of more workers).
+3. If scaling holds at 3–4: set `STAGE6_WORKERS`/`JUDGE_WORKERS` in the standard run
+   env (both knobs already exist — no pipeline code change).
+**Verify / DoD:** throughput curve filed here; worker bump validated on one run (same
+clip set, judge verdicts sane, stage times drop). **Gain: judge+vision ~465 s → ~250–320 s
+if slots scale; ~0 code.**
 
-Threading the requests does **not** change what the model returns per request. Verified:
-- **Each request is an independent forward pass.** LM Studio's continuous batching packs
-  multiple sequences but computes each one's logits independently — co-batching does not
-  alter a given prompt's output (only negligible batch-kernel FP noise).
-- **Pass B already runs at `temperature=0.3`** (`stage4_moments.py:979`) — it is
-  non-deterministic run-to-run *serially* today. Threading adds no new variance to any
-  single prompt; the stochasticity is pre-existing and unchanged.
-- **Assembly is order-independent by construction.** Chunk results are `.extend()`-ed then
-  **re-sorted by timestamp** (`all_moments.sort` line 2602), and each moment carries its own
-  `chunk_start/chunk_end` from `parse_llm_moments`. Arrival order is erased → concurrent
-  collection yields the identical candidate set. (Required invariant: collect-then-sort, which
-  holds; do NOT introduce order-dependent cross-chunk state.)
-- **The judge is explicitly parallel==serial**: `vlm_judge.swiss_tournament` fixes each
-  round's pairings from the round-start ranking (comment at the fn) — re-ranking only happens
-  *between* rounds, sequentially. Parallel folds the same comparisons faster.
+## #4 — Parallel clip renders (`CLIP_RENDER_WORKERS`) · both · quality-identical · M effort
 
-**The real risk is NOT threading — it's context/VRAM contention.** `context_length=32768`
-(config/models.json) with `PARALLEL=4` means N concurrent slots share the KV cache. If prompts
-were large enough that N full contexts don't fit, the server could truncate/evict context →
-*that* would degrade output. Pass B prompts are small (a ~480 s transcript window, few-k
-tokens), so 2–3 workers are safe; **before pushing to 4, confirm KV headroom** (a provisioning
-check, not a correctness one). This is why P2/P3 default to today's value and validate upward.
+**Problem:** Stage 7 renders ~10 clips sequentially (median 338 s); each render is an
+independent ffmpeg pipeline.
 
-**Distinct: the "judge diet" (P3.2, frames 4→3 / comparisons 30→24) IS a real quality trade** —
-less visual context / tournament resolution. That is a *parameter* change, independent of
-threading, and optional; evaluate it on its own against the current ordering.
+**Implementation** (`scripts/pipeline/stages/stage7.py`):
+1. ThreadPool over the solo-clip rows calling `_render_clip` (each worker just drives
+   ffmpeg/profile_render subprocesses — I/O waits). Flag `CLIP_RENDER_WORKERS`
+   default **1** (= today's serial loop).
+2. **Shared-state audit (the real work):** effects_log JSONL appends → guard with one
+   lock (or queue rows, flush at end); log lines interleave (acceptable — prefix has T);
+   work-dir temp files are keyed by `T` (`clip_{T}.srt`, `moment_{T}.json`) → no
+   collisions; cold-open move is per-clip file → safe.
+3. **Keep sequential:** stitch/group member handling (deferred rows + group assembly)
+   and the P-TIGHT audio reads (read-only, safe).
+4. Bound workers at **2** initially: NVENC sessions (~8 hw cap, ~100–300 MB VRAM each —
+   only ~2.2 GB free while qwen stays loaded) + CPU blur-fill filter load.
+**Verify / DoD:** 2-worker run produces the same clip set with identical render
+parameters (commands logged identical); no effects_log row lost; VRAM stays under
+budget. **Gain: 338 s → ~180–220 s.**
 
-## Projected effect (3.2 h VOD, 10 clips)
+## #5 — P2′: Two-phase Pass B (`CLIP_PASSB_WORKERS`) · both · quality-preserving BY CONSTRUCTION · L effort
 
-| Scenario | Today | After P0 | +P2 | +P3 | All |
-|---|---|---|---|---|---|
-| Re-run (cached transcript) | ~74 min | ~58 min | ~43 min | **~37 min** | 0.19× realtime |
-| First-time VOD | ~83 min | ~83 min | ~68 min | ~62 min | +P1 → **~49 min** |
+**Problem:** Stage 4 is the boss (median 1156 s) and its ~24 chunk iterations each make
+2 sequential LLM calls (moment call + card call) while 4 server slots sit idle. Naive
+threading is REJECTED: chunk N's prompt needs chunks N-1/N-2's summaries.
+
+**The dependency, precisely:** `prior_context_block(N) = f(summaries[N-2], summaries[N-1])`;
+`summary(K) = one-liner(card(K))`; `card(K) = f(chunk_text(K))` **only**. So cards are
+chunk-local → precompute them all, and every Pass-B prompt becomes constructible upfront
+with content IDENTICAL to today's.
+
+**Implementation** (`scripts/lib/stages/stage4_moments.py`, Pass B region ~1700–2160):
+1. **Refactor step (no behavior change):** extract the chunk builder into a pre-pass
+   materializing `[{ci, chunk_start, chunk_end, seg_type, chunk_text, chunk_segs}]`,
+   and the loop body into `_chunk_card_phase(chunk)` / `_chunk_moments_phase(chunk,
+   prior_block)` functions. Run serially → verify a run is unchanged.
+2. **Phase A (cards):** ThreadPool(workers) over `_build_chunk_card(chunk_text)` for all
+   chunks → `chunk_cards` + `chunk_summaries` (including today's exact fallback:
+   first-12-words when a card fails). Quote verification is pure/per-chunk.
+3. **Phase B (moments):** ThreadPool(workers) over chunks; each builds its
+   `prior_context_block` from the precomputed `summaries[ci-2:ci]` (byte-equivalent to
+   today's), calls the LLM, parses, runs the grounding cascade. **Collect results into
+   `results[ci]` and extend `llm_moments` in ascending `ci` order** → assembly identical
+   to the serial loop.
+4. **Invariants to preserve:** BUG-31 outage breaker (shared counter under a lock;
+   stop submitting once tripped); `_failed_chunks` end-of-pass retry (thread-safe append,
+   retry stays serial); arc register (built AFTER, from `chunk_cards` — unchanged);
+   grounding shared state audit (denylist maps are read-only; judge calls are HTTP —
+   verify no module-level mutation during implementation).
+5. Flag `CLIP_PASSB_WORKERS` default **1 = the existing serial loop runs untouched**
+   (zero-risk fallback); `>=2` activates two-phase.
+**Verify / DoD:** (a) workers=1 → byte-identical behavior; (b) workers=3 vs serial on the
+same VOD: same chunk count, per-chunk `prior_context_block` hashes IDENTICAL (log a hash
+per chunk in both modes — this is the quality proof), moment counts within normal
+temp-0.3 run-to-run variance; (c) outage drill (kill LM Studio mid-pass → breaker trips).
+**Gain: Stage 4 ~1156 s → ~550–750 s. Biggest absolute lever. Own session.**
+
+## #6 — Block-vectorized audio scan · fresh VODs · needs equivalence validation · M-L effort
+
+**Problem:** the per-window cost is `librosa.effects.hpss` + onset detection recomputed
+per 10 s window — 1162 independent STFT/median-filter runs over overlapping audio.
+
+**Implementation** (`scripts/lib/audio_events.py`, behind `AUDIO_EVENTS_VECTOR=1`):
+1. Process in ~600 s blocks (bounded RAM): ONE STFT + ONE HPSS + ONE onset-envelope per
+   block; derive each window's 3 dials by slicing the block-level arrays.
+2. HPSS median filtering is time-local → block-slices ≈ per-window results except at
+   block edges; **overlap blocks by one window** and take interior windows only.
+3. Keep the old path as default until validation passes; flag flips default later.
+**Verify / DoD:** reference-VOD comparison old vs new: per-window dial deltas ≤ 0.02
+absolute AND identical fire counts at the thresholds (0.7/0.5/0.6) — the dials feed
+threshold gates, so sub-threshold jitter is inert. **Gain: first-scan 970 s → ~60–180 s
+single-threaded; supersedes #2. Do LAST (needs the most careful validation).**
+
+## #7 — Durable run metrics + reader · observability · zero risk · S effort
+
+**Problem:** stage timings live inside `last_run_*.json` diagnostics — which
+`prune_traces` deletes. Speed history should survive cleanup and be trivially queryable.
+
+**Implementation:**
+1. `common.cleanup` (after the diag dict is built): extract
+   `{run, ts, vod, vod_seconds (pass_c.max_time_s), clips (clips_made count),
+   total_seconds, exit_code, stages:{label: seconds}}` → append ONE line to
+   `clips/.diagnostics/run_metrics.jsonl` (append-only, failure-soft, ~15 lines of code).
+2. `scripts/research/run_metrics.py` (NEW): `--backfill` scans existing `last_run_*.json`
+   (recovers the 21 historical rows before any prune), `report` prints medians/trends
+   per stage + realtime ratios, flags regressions (>1.5× median).
+3. Add `run_metrics.jsonl` to the prune-safe set (it's not a `last_run_*` glob — already
+   safe from `prune_traces`).
+**Verify / DoD:** backfill yields ≥21 rows matching the distribution above; the next run
+appends. **Gain: permanent speed history; the "what's our average" question becomes a
+one-command answer.**
+
+---
 
 ## Sequencing
-P0 + P4 first (tiny, zero-risk, immediate). P2 next (one flag, big win, proven pattern).
-P3 bench alongside any normal run. P1 last (real refactor; needs output-equivalence
-verification). All flag-gated / default-current per house rules.
+
+| Order | Items | Why |
+|---|---|---|
+| 1 | **#1 + #7** | trivial, zero-risk, immediate; #7's backfill also locks in history |
+| 2 | **#2** | small, hazard-free, helps every fresh VOD |
+| 3 | **#3** | bench runs alongside any normal run; env-only change after |
+| 4 | **#4** | contained Stage-7 change, real win |
+| 5 | **#5** | the big refactor — own session, staged (refactor→verify→parallelize) |
+| 6 | **#6** | highest validation burden; #1+#2 already blunt the cost it targets |
+
+## Projected effect (3.2 h VOD, 10 clips, medians)
+
+| Scenario | Today | After #1–#4 | +#5 | +#6 |
+|---|---|---|---|---|
+| Re-run (cached transcript+events) | ~50 min | ~35 min | **~25 min** (0.13×) | — |
+| Fresh VOD | ~66 min | ~52 min | ~42 min | **~33 min** (0.17×) |
+
+## Excluded (would trade quality — owner constraint)
+- **Judge diet** (frames 4→3, comparisons 30→24): real ranking-resolution trade.
+- **Naive Pass-B chunk threading**: breaks the prior-context callback memory (superseded by #5).
+- **Whisper batched-inference / distil models**: near-neutral but not bit-identical at
+  segment boundaries; revisit only if fresh-VOD transcription (781 s, once per VOD) matters.
+- **Frame downscaling**: frames are already 960×540 q2 — nothing to gain.
+
+## Threading-vs-quality note (owner Q 2026-07-08, verified)
+Threading changes no per-request output: each request is an independent forward pass
+(continuous batching computes each sequence's logits independently); Pass B already runs
+`temperature=0.3` (stochastic run-to-run today — threading adds no new variance); chunk
+results are extend+re-sorted by timestamp (order-independent assembly); the judge fixes
+each round's pairings up-front (parallel == serial by design). The one genuine risk is
+**KV/context contention at high worker counts** — a provisioning check (#3.2), not a
+correctness issue.
 
 Related: [[concepts/plan-activation-wave-2026-07]] (Run-1 timing source) ·
 [[concepts/bugs-and-fixes]] (the spawn-hang incident + BLAS pinning) ·
-[[entities/audio-events]] · [[concepts/vram-budget]] (LM Studio PARALLEL=4 slots)
+[[entities/audio-events]] · [[concepts/vram-budget]] (LM Studio PARALLEL=4 slots) ·
+[[concepts/case-rap-battle-missed]] (why the prior-context block must survive #5)
