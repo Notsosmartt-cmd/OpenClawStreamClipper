@@ -4,7 +4,7 @@ type: concept
 tags: [research, multimodal, fusion, audio, vision, incongruity, evaluation, scoring, reference]
 sources: 0
 status: reference
-updated: 2026-07-02
+updated: 2026-07-08
 ---
 
 # Multimodal Fusion — converging the senses for inference (2026-07 evaluation)
@@ -64,10 +64,28 @@ One network ingests **raw audio waveforms + video frames + text in the same cont
 |---|---|---|---|
 | Qwen2.5-Omni | 7B | audio+video+image+text | ~6–7 GB 4-bit → fits the **16 GB CUDA lane** (transformers/vLLM, audio-in works) |
 | Qwen3-Omni | 30B-A3B MoE (~3B active) | audio+video+image+text | ~18 GB 4-bit → **needs the 28 GB LM Studio pool** — but LM Studio has no audio-in |
+| **Nemotron-3-Nano-Omni** | 30B-A3B MoE (~3B active) | audio+video+image+text (256K ctx) | **downloaded + tested 2026-07-08** — GGUF 26 GB loads on the pool (14.5 GB NVIDIA + ~11.5 GB AMD spill), but LM Studio API rejects audio (see harness result below) |
 | MiniCPM-o 2.6 / Phi-4-multimodal | ~6–8B | audio(+video)+image+text | 16 GB CUDA lane |
 | GPT-4o / Gemini | cloud | everything | violates local-only design |
 
 **The dual-GPU catch-22 (today):** the server that can reach the 28 GB pool (LM Studio) **can't hear** (no audio/video content parts in its OpenAI-compat API), and the servers that can hear (transformers/vLLM) **can't reach the pool** (CUDA-only → 16 GB → only 7B-class omni fits → markedly weaker reasoner than the 35B text MoE). Additional blockers: token explosion (audio ≈ 25 tok/s, frames = hundreds of tokens each → a 45 s window ≈ 10–20k tokens — fine per-candidate, ruinous per-VOD) and unproven comedy judgment at 7B scale. llama.cpp's multimodal layer gained audio support in 2025, so the tooling gap is closing — **re-check LM Studio audio-in status when revisiting**.
+
+> [!warning] Harness result 2026-07-08 — the catch-22 is STILL live on the API (verified)
+> Loaded `nvidia/nemotron-3-nano-omni` (a genuine omni: audio+video+image+text, 256K ctx) in
+> LM Studio and probed the OpenAI-compat `/v1/chat/completions` endpoint with real content parts:
+> - **`image_url` → HTTP 200** (vision works through the API).
+> - **`input_audio` → HTTP 400**: `"'content' objects must have a 'type' field that is either 'text' or 'image_url'."`
+>
+> So the model *can* hear, and it reaches the 28 GB pool (26 GB GGUF loaded: 14.5 GB on the NVIDIA
+> card + ~11.5 GB spilled to the AMD card — dual-GPU pool confirmed), but **LM Studio's API exposes
+> only text+image content types** — the audio door is shut at the server layer, exactly as predicted.
+> The whitelist is explicit, so no alternate audio field name helps. The pipeline talks to this API
+> (not the chat UI), so **option 5 remains blocked for the pipeline regardless of whether the LM
+> Studio chat UI can accept an audio attachment**. Consistent with the still-open LM Studio audio-API
+> feature request (`/v1/audio/*`). Re-test when LM Studio ships audio content parts (or `/v1/audio`)
+> in the OpenAI-compat server; the model is already on disk, so it's a 10-minute re-probe.
+> Fallback harness if pursuing sooner: serve the GGUF via `llama.cpp`'s own server (also Vulkan →
+> still reaches both GPUs) and check whether its multimodal endpoint takes audio.
 **Realistic endgame:** hybrid — option 1 proposes cheaply across the whole VOD; an omni model *verifies* the top-N 30–60 s windows with true perception, as/alongside the Stage 5.5 judge.
 
 ## Recommended sequence (when the owner green-lights implementation)
