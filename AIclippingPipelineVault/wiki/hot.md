@@ -2,7 +2,7 @@
 title: "Hot — current state & recent activity"
 type: overview
 tags: [hot, hub, status]
-updated: 2026-06-21
+updated: 2026-07-08
 ---
 
 # Hot
@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-08] **Omni audio-in harness check → catch-22 STILL live (API)**: loaded `nvidia/nemotron-3-nano-omni` (real omni, 256K ctx) — 26 GB GGUF loads on the dual-GPU pool (14.5 GB NVIDIA + ~11.5 GB AMD spill, pool CONFIRMED live). Probed `/v1/chat/completions`: **`image_url`→200, `input_audio`→400** (explicit text/image-only whitelist). Model can hear + fits, but LM Studio's OpenAI API exposes no audio content type → fusion option 5 stays blocked for the pipeline (uses API, not chat UI). Unloaded after. Re-test when LM Studio ships `/v1/audio` — [[concepts/multimodal-fusion-2026-07]] — [[log]]
 - [2026-07-05] **Generalization guards** (owner: variety incoming): caption voice now CHANNEL-SCOPED (`applies_to`; unknown channels → neutral prompt) + ranker fit IDENTITY-ANCHORED (prior=hand-tuned score; noise labels → 0.998 concordance with baseline @ l2=25, signal still recovers; fixed penalty/n + lr·λ-divergence bugs) + doctrine filed (global structure / per-channel taste / per-item runtime) — [[concepts/plan-learning-activation-2026-07]] — [[log]]
 - [2026-07-08] **Reference page: [[concepts/label-paths-and-store-2026-07]]** — Path B (owner feedback, selected-only, +/-) vs Path C (viewer-clip transcript alignment, reaches miss class, needs source VOD → mostly inert here); labels=pointers, features live once in the trace, fetch-and-join at fit; file-map table
 - [2026-07-08] **Durable label store — trace pile safe to clean**: labels were pointers into gitignored traces; `label_store.py` freezes each labeled run's full candidate set + labels into committed `learning/frozen_runs/` (features only). `fit_ranker --frozen` trains/gates trace-independently (verified identical verdict). `prune_traces.py` safe-deletes junk traces (124/132 ~28 MB prunable, refuses to orphan a label). Survives disk wipe / fresh checkout — [[concepts/plan-learning-activation-2026-07]] — [[log]]
@@ -81,8 +82,6 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - [2026-07-02] **Multimodal-fusion evaluation filed + expanded** ([[concepts/multimodal-fusion-2026-07]]): joint prompts exist at 5.5/6 but sit behind a transcript-only proposal gate; 5 fusion options with per-option rig fit + the **dual-GPU catch-22** (28GB LM Studio pool can't hear; 16GB CUDA lane can't fit the big omni). Timeline fusion recommended. Wiki-only — [[log]]
 - [2026-06-21] **Dashboard Clip Forensics tab**: the offline decomposer is now usable from the GUI — tab switcher (Clipper | Clip Forensics), `forensics_routes.py` (`/api/forensics/clips|run|result`) + `forensics-panel.js` render the timeline + LLM style profile; clip dropdown + trim-end/OCR/LLM/GPU toggles. Verified end-to-end via test client — [[entities/dashboard]] — [[log]]
 - [2026-06-21] **Clip-forensics robustness (from ground truth)**: `--trim-end`/`CLIP_FORENSICS_TRIM_END` drops the ~3s TikTok download outro (logo+@handle) that was mis-logged as edits; music-bed false-negative fixed via per-label CLAP thresholds (music 0.18, suspense 0.20 — a bed under speech peaks ~0.27, under the 0.30 floor) + sustained-run gate + `added`=under-speech&(abrupt|mid-clip). Verified: ReemKnocks bed 6–14s added:true — [[entities/audio-sense-module]] — [[log]]
-- [2026-06-21] **Clip-forensics Phase 3+4b + watchdog**: `visual_sense.py` (cv2 motion + EasyOCR captions, `--ocr`) + LLM `style_profile` synthesis (`--no-llm`); every stage under a hard wall-clock watchdog (cap→abandon→partial; the durable fix for runaway tasks). Verified: motion 9, OCR 13.08 wps, LLM essence coherent. [[entities/visual-sense-module]] — [[log]]
-- [2026-06-21] **Clip-forensics Phase 2 shipped + models verified**: CLAP (1.2GB) + faster-whisper base (142MB) + PANNs (327MB, opt-in) installed & producing real output; censor + music-bed unit-verified; PANNs gated opt-in (torch≥2.9 stall), CPU default, librosa-onset→numpy. Install doc [[entities/audio-sense-module]] — [[log]]
 
 ## Landmines (top gotchas for the next agent)
 - `panns_inference` **deadlocks (uncatchable stall) on torch≥2.9** in `SoundEventDetection.__init__`, CUDA *and* CPU — it's opt-in (`CLIP_AUDIO_SENSE_PANNS=1`); CLAP is the default audio backend. Also: panns shells out to `wget` (absent on Windows) → pre-place its ckpt+CSV in `~/panns_data/` — [[entities/audio-sense-module]]
