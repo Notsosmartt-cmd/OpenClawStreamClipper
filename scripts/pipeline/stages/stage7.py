@@ -125,6 +125,12 @@ def _generate_manifest(ctx) -> list[dict]:
         title = "".join(c for c in title if c.isalnum() or c in " -")[:50].strip()
         if not title:
             title = f"Clip T{m['timestamp']}"
+        # Anomaly-lane provenance in the FILENAME (owner req 2026-07-08): clips the
+        # cross-modal anomaly lane proposed are prefixed ANOMALY_ so they're identifiable
+        # at a glance in the clips folder (and thus in effects_log, which keys by title).
+        # `src` survives from Stage 4 (hype_moments) through Stage 6 (preserved there).
+        if str(m.get("src", "")).upper() == "ANOMALY":
+            title = f"ANOMALY_{title}"
         clip_start = m.get("clip_start", max(0, m["timestamp"] - 15))
         clip_duration = m.get("clip_duration", 30)
         score = m["score"]

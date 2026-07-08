@@ -3,11 +3,20 @@ title: "Activation Wave — builds + flag activations converging on one validati
 type: concept
 tags: [plan, activation, anomaly-lane, p-tight, adaptive-count, near-miss, labels, judge]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-07-08
 ---
 
 # Activation Wave (2026-07) — turn the built machinery ON
+
+> [!note] Phase 0 builds SHIPPED 2026-07-08 (default-off) — the run (Phase 1) is next
+> **0.1 near-miss review** (`scripts/research/near_miss.py`, `--self-test` PASS) — live-verified
+> on frozen run `010127`: it surfaced the proven [[concepts/case-rap-battle-missed]] Mockingbird
+> miss (t=5305) in the rank-11–25 window, exactly as designed. **0.2 anomaly filename tag** —
+> Stage 7 prefixes `ANOMALY_` (owner req); required a Stage 6 fix (`_process_moment` rebuilds the
+> entry from scratch → `src` was being dropped; now preserved). **0.3 judge-timeline** — built
+> behind `CLIP_JUDGE_TIMELINE` (default off, activates in Run 2), failure-soft, render verified.
+> All flag-off / byte-identical. `py_compile` clean. Left: the Phase-1 flagged render + owner review.
 
 Owner directive (2026-07-08): evaluate five ready items and compile them into one
 implementation plan. Verdict: **they belong in ONE plan** because they converge on a

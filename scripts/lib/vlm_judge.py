@@ -152,6 +152,7 @@ def compare_pair(
     *,
     work_dir: Any = None,
     transcript_fn: Optional[Callable[[Dict[str, Any]], str]] = None,
+    timeline_fn: Optional[Callable[[Dict[str, Any]], str]] = None,
     cfg: Optional[Dict[str, Any]] = None,
     model: Optional[str] = None,
     url: Optional[str] = None,
@@ -166,10 +167,20 @@ def compare_pair(
 
     content: List[Dict[str, Any]] = [{"type": "text", "text": _INSTRUCTION}]
     content.append({"type": "text", "text": _clip_text_block("A", clip_a, ta)})
+    if timeline_fn:
+        _tla = timeline_fn(clip_a)
+        if _tla:
+            content.append({"type": "text", "text":
+                            f"A events (audio/motion/words on one timeline):\n{_tla}"})
     if work_dir:
         pa, _ = load_frame_parts(work_dir, clip_a.get("timestamp"), spec)
         content += pa
     content.append({"type": "text", "text": _clip_text_block("B", clip_b, tb)})
+    if timeline_fn:
+        _tlb = timeline_fn(clip_b)
+        if _tlb:
+            content.append({"type": "text", "text":
+                            f"B events (audio/motion/words on one timeline):\n{_tlb}"})
     if work_dir:
         pb, _ = load_frame_parts(work_dir, clip_b.get("timestamp"), spec)
         content += pb
