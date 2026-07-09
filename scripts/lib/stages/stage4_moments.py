@@ -1662,6 +1662,15 @@ try:
     _card_workers = int(os.environ.get("CLIP_PASSB_CARD_WORKERS", "1") or "1")
 except ValueError:
     _card_workers = 1
+try:
+    _moment_workers = int(os.environ.get("CLIP_PASSB_MOMENT_WORKERS", "1") or "1")
+except ValueError:
+    _moment_workers = 1
+if _moment_workers >= 2 and _card_workers < 2:
+    # Speed #5 CUT-OVER 2: moment-parallel REQUIRES precomputed cards — the eager
+    # summary (below) must come from the precompute dict, never an inline LLM call
+    # that would block the main thread and serialize the whole point away.
+    _card_workers = 4
 if _card_workers >= 2:
     _pre_texts, _seen_txt, _cs = [], set(), segments[0]["start"]
     while _cs < max_time:               # mirrors the loop's windowing (1649-1665)
@@ -1691,6 +1700,235 @@ if _card_workers >= 2:
             print(f"[PASS B] card precompute failed ({type(_pce).__name__}: {_pce}); "
                   f"falling back to inline cards", file=sys.stderr)
             _PASSB_PRECOMPUTED_CARDS = {}
+
+def _process_moment_response(response, chunk_count, chunk_start, chunk_end,
+                             seg_type, chunk_segs, chunk_text, prompt,
+                             eager_summary=False):
+    """Post-process one Pass-B moment call (Speed #5 CUT-OVER 2 extraction).
+    Body is the loop's original inline code, verbatim; the serial path calls it
+    with eager_summary=False = behavior-identical. In moment-parallel mode the
+    card/summary was already appended EAGERLY at submit time (two-phase
+    semantics), so eager_summary=True skips that section here. Mutates module
+    state: llm_moments, chunk_cards, chunk_summaries, _failed_chunks."""
+    if response:
+        chunk_moments = parse_llm_moments(response, int(chunk_start), int(chunk_end))
+
+        # Apply segment score boost for quieter segments (0-1 scale)
+        boost = SEGMENT_SCORE_BOOST.get(seg_type, 0.0)
+        for m in chunk_moments:
+            m["score"] = min(m["score"] + boost, 1.0)
+            m["segment_type"] = seg_type
+
+        # Null the "why" field on any moment whose summary fails the 2-tier
+        # grounding cascade (Tier 1 denylist + content-overlap → main-model
+        # LLM judge). Tier 1's hard-event check (zero-count Twitch event) is
+        # the structural safety net. The moment itself stays (Pass C still
+        # scores it); only the potentially-hallucinated "why" is stripped
+        # so it can't seed Stage 6's prompt.
+        if _grounding is not None:
+            # Phase 2.4d: pull this moment's ±8 s hard-event counts for the
+            # cascade's ground-truth check. If chat is unavailable we pass
+            # None and the cascade behaves identically to its Phase-1 form.
+            chunk_hard_events = None
+            chunk_event_map = None
+            if CHAT_FEATURES is not None:
+                try:
+                    import chat_features as _cf_mod
+                    chunk_event_map = _cf_mod.denylist_event_map()
+                except Exception:
+                    chunk_event_map = None
+            for m in chunk_moments:
+                why = (m.get("why") or "").strip()
+                if not why:
+                    continue
+                if CHAT_FEATURES is not None:
+                    mt = m.get("timestamp")
+                    if isinstance(mt, (int, float)):
+                        _cw = CHAT_FEATURES.window(mt - 8, mt + 8)
+                        chunk_hard_events = {
+                            "sub_count": _cw.get("sub_count", 0),
+                            "bit_count": _cw.get("bit_count", 0),
+                            "raid_count": _cw.get("raid_count", 0),
+                            "donation_count": _cw.get("donation_count", 0),
+                        }
+                # BUG 34: extract a tight ±90 s window around the moment so
+                # the LLM judge sees the relevant context, not 5 minutes of
+                # surrounding chatter. The whole chunk_text is kept as a
+                # second reference so any rare evidence outside the window
+                # can still pass tier 1's overlap check. (Originally tuned
+                # for MiniCheck NLI's truncation behavior; carries forward
+                # because the judge benefits from the same focus.)
+                mt_for_ref = m.get("timestamp")
+                tight_ref = ""
+                if isinstance(mt_for_ref, (int, float)):
+                    nearby = [
+                        s for s in chunk_segs
+                        if s.get("end", 0) > mt_for_ref - 90
+                        and s.get("start", 0) < mt_for_ref + 90
+                    ]
+                    if nearby:
+                        tight_ref = format_chunk(nearby)
+                refs_for_cascade = [r for r in (tight_ref, chunk_text) if r]
+                check = _grounding.cascade_check(
+                    why,
+                    refs_for_cascade,
+                    GROUNDING_DENYLIST,
+                    GROUNDING_CONFIG,
+                    min_overlap=0.15,
+                    hard_events=chunk_hard_events,
+                    event_map=chunk_event_map,
+                )
+                if not check["passed"]:
+                    hit_summary = ",".join(
+                        h["match"] for h in check.get("denylist_hits", [])
+                    ) or (
+                        f"judge={check.get('judge_weighted')}"
+                        if check.get("judge_weighted") is not None
+                        else f"overlap={check.get('overlap')}"
+                    )
+                    print(
+                        f"    [GROUND] Pass B null why T={m.get('timestamp')} "
+                        f"tier={check['tier']} reason={check['reason']} ({hit_summary})",
+                        file=sys.stderr,
+                    )
+                    m["why"] = ""
+                    m["grounding_fail"] = check["reason"]
+                    m["grounding_tier"] = check["tier"]
+
+        # Tier-2 M1: annotate each LLM moment with speaker context from its
+        # ±15 s payoff window so Pass C can boost multi-speaker moments and
+        # Stage 6 can mention "off-screen voice" / interjection in titles.
+        for m in chunk_moments:
+            mt = m.get("timestamp")
+            if not isinstance(mt, (int, float)):
+                continue
+            nearby = [
+                s for s in chunk_segs
+                if s.get("end", 0) > mt - 15 and s.get("start", 0) < mt + 15 and s.get("speaker")
+            ]
+            if not nearby:
+                continue
+            sp_dur = {}
+            for s in nearby:
+                sp = s.get("speaker")
+                sp_dur[sp] = sp_dur.get(sp, 0.0) + max(0.0, float(s.get("end", 0)) - float(s.get("start", 0)))
+            if not sp_dur:
+                continue
+            total_d = sum(sp_dur.values()) or 1.0
+            dom_sp, dom_d = max(sp_dur.items(), key=lambda kv: kv[1])
+            m["dominant_speaker"] = dom_sp
+            m["speaker_count"] = len(sp_dur)
+            m["dominant_speaker_share"] = round(dom_d / total_d, 3)
+
+        print(f"  Chunk {chunk_count}: found {len(chunk_moments)} moments", file=sys.stderr)
+        for m in chunk_moments:
+            print(f"    T={m['timestamp']}s [{m['primary_category']}] score={m['score']} — {m.get('why','')[:60]}", file=sys.stderr)
+        llm_moments.extend(chunk_moments)
+
+        if not eager_summary:
+            # Tier-3 A1+ arc-aware chunk card (2026-06-06, replaces the 15-word
+            # summary). One LLM call extracts structured arc-bait (claims /
+            # predictions / entities / open_loops) so the A1 global pass can match
+            # setup<->payoff on concrete verifiable anchors instead of a
+            # genericized "main topic" line. The card is stored in chunk_cards;
+            # a flattened one-liner still goes into chunk_summaries so the Tier-1
+            # Q1 prior-context block above keeps working unchanged. Quotes are
+            # substring-verified against the chunk to kill hallucinations. The same
+            # max_tokens=4000 budget (Gemma thinking headroom) is reused; the only
+            # added cost is ~2-4x output tokens vs the old 15-word summary.
+            # See concepts/arc-aware-extraction (research-backed plan).
+            summary_text = ""
+            card = None
+            try:
+                # Speed #5 card-parallel: use the precomputed card when present (built in
+                # parallel before the loop); fall back to the inline call on any miss so
+                # correctness never depends on the precompute — see the precompute block above.
+                if chunk_text in _PASSB_PRECOMPUTED_CARDS:
+                    card = _PASSB_PRECOMPUTED_CARDS[chunk_text]
+                else:
+                    card = _build_chunk_card(chunk_text)
+            except Exception as _card_err:
+                print(f"  Chunk {chunk_count}: card extraction errored ({_card_err}); continuing", file=sys.stderr)
+            if card:
+                chunk_cards[chunk_count] = card
+                summary_text = _card_to_oneliner(card)
+                print(
+                    f"  Chunk {chunk_count}: card — {len(card['claims'])} claim(s), "
+                    f"{len(card['predictions'])} prediction(s), "
+                    f"{len(card['entities'])} entity(s), "
+                    f"{len(card['open_loops'])} open-loop(s)",
+                    file=sys.stderr,
+                )
+            if not summary_text:
+                # Neutral fallback: first ~12 transcript words. Better than nothing —
+                # later chunks at least know what topic the prior chunk was on.
+                _fallback = " ".join(s["text"] for s in chunk_segs[:6]).split()[:14]
+                summary_text = " ".join(_fallback)[:160] or "(no summary)"
+            chunk_summaries.append((chunk_count, summary_text))
+    else:
+        # Gap #1: don't drop the chunk — queue it for one end-of-pass retry.
+        print(f"  Chunk {chunk_count}: LLM call failed — queued for end-of-pass retry", file=sys.stderr)
+        _failed_chunks.append({
+            "chunk_count": chunk_count,
+            "chunk_start": chunk_start,
+            "chunk_end": chunk_end,
+            "seg_type": seg_type,
+            "chunk_text": chunk_text,
+            "prompt": prompt,
+        })
+
+
+def _eager_card_summary(chunk_count, chunk_segs, chunk_text):
+    """Moment-parallel eager card/summary (two-phase Phase-A semantics): append chunk N's
+    prior-context summary at SUBMIT time so chunk N+1's prompt never waits on N's moment
+    result. Card comes from the precompute dict ONLY (chunk-local, built before the loop);
+    on a rare precompute miss we use the neutral words fallback instead of an inline LLM
+    call (which would block the main thread). Divergence vs serial: the summary is appended
+    even if N's moment call later FAILS (serial gates it on success) — with a 0.49% measured
+    failure rate and a 2-chunk prior window, negligible; the retry queue usually recovers
+    the chunk anyway. See plan-serving-stack/plan-speed56 + passb_driver reconciliation."""
+    summary_text = ""
+    card = _PASSB_PRECOMPUTED_CARDS.get(chunk_text)
+    if card:
+        chunk_cards[chunk_count] = card
+        summary_text = _card_to_oneliner(card)
+        print(
+            f"  Chunk {chunk_count}: card — {len(card['claims'])} claim(s), "
+            f"{len(card['predictions'])} prediction(s), "
+            f"{len(card['entities'])} entity(s), "
+            f"{len(card['open_loops'])} open-loop(s)",
+            file=sys.stderr,
+        )
+    if not summary_text:
+        _fallback = " ".join(s["text"] for s in chunk_segs[:6]).split()[:14]
+        summary_text = " ".join(_fallback)[:160] or "(no summary)"
+    chunk_summaries.append((chunk_count, summary_text))
+
+
+_MOMENT_POOL = None
+_MOMENT_INFLIGHT = []
+if _moment_workers >= 2:
+    from concurrent.futures import ThreadPoolExecutor as _MPTPE
+    _MOMENT_POOL = _MPTPE(max_workers=_moment_workers)
+    print(
+        f"[PASS B] moment-parallel: up to {_moment_workers} moment calls in flight "
+        f"(CLIP_PASSB_MOMENT_WORKERS; two-phase prior-context from precomputed cards; "
+        f"chunk logs may interleave with a 1-chunk lag)",
+        file=sys.stderr,
+    )
+
+
+def _drain_one_moment():
+    """Wait on the OLDEST in-flight moment call and run its (main-thread) post-processing —
+    grounding cascade, speaker annotation, failure queue. Bounded per-future wait."""
+    fut, meta = _MOMENT_INFLIGHT.pop(0)
+    try:
+        _resp = fut.result(timeout=900)
+    except Exception as _de:
+        print(f"  Chunk {meta[0]}: in-flight moment call errored ({_de})", file=sys.stderr)
+        _resp = None
+    _process_moment_response(_resp, *meta, eager_summary=True)
+
 
 while chunk_start < max_time:
     # Tier-1 Q4: pick the chunk window from the segment type at the +150s peek.
@@ -2017,172 +2255,24 @@ If nothing stands out at all, respond: {{"moments": []}}"""
         except Exception:
             pass
 
-    response = call_llm(prompt)  # uses call_llm default max_tokens (3000)
-    if response:
-        chunk_moments = parse_llm_moments(response, int(chunk_start), int(chunk_end))
-
-        # Apply segment score boost for quieter segments (0-1 scale)
-        boost = SEGMENT_SCORE_BOOST.get(seg_type, 0.0)
-        for m in chunk_moments:
-            m["score"] = min(m["score"] + boost, 1.0)
-            m["segment_type"] = seg_type
-
-        # Null the "why" field on any moment whose summary fails the 2-tier
-        # grounding cascade (Tier 1 denylist + content-overlap → main-model
-        # LLM judge). Tier 1's hard-event check (zero-count Twitch event) is
-        # the structural safety net. The moment itself stays (Pass C still
-        # scores it); only the potentially-hallucinated "why" is stripped
-        # so it can't seed Stage 6's prompt.
-        if _grounding is not None:
-            # Phase 2.4d: pull this moment's ±8 s hard-event counts for the
-            # cascade's ground-truth check. If chat is unavailable we pass
-            # None and the cascade behaves identically to its Phase-1 form.
-            chunk_hard_events = None
-            chunk_event_map = None
-            if CHAT_FEATURES is not None:
-                try:
-                    import chat_features as _cf_mod
-                    chunk_event_map = _cf_mod.denylist_event_map()
-                except Exception:
-                    chunk_event_map = None
-            for m in chunk_moments:
-                why = (m.get("why") or "").strip()
-                if not why:
-                    continue
-                if CHAT_FEATURES is not None:
-                    mt = m.get("timestamp")
-                    if isinstance(mt, (int, float)):
-                        _cw = CHAT_FEATURES.window(mt - 8, mt + 8)
-                        chunk_hard_events = {
-                            "sub_count": _cw.get("sub_count", 0),
-                            "bit_count": _cw.get("bit_count", 0),
-                            "raid_count": _cw.get("raid_count", 0),
-                            "donation_count": _cw.get("donation_count", 0),
-                        }
-                # BUG 34: extract a tight ±90 s window around the moment so
-                # the LLM judge sees the relevant context, not 5 minutes of
-                # surrounding chatter. The whole chunk_text is kept as a
-                # second reference so any rare evidence outside the window
-                # can still pass tier 1's overlap check. (Originally tuned
-                # for MiniCheck NLI's truncation behavior; carries forward
-                # because the judge benefits from the same focus.)
-                mt_for_ref = m.get("timestamp")
-                tight_ref = ""
-                if isinstance(mt_for_ref, (int, float)):
-                    nearby = [
-                        s for s in chunk_segs
-                        if s.get("end", 0) > mt_for_ref - 90
-                        and s.get("start", 0) < mt_for_ref + 90
-                    ]
-                    if nearby:
-                        tight_ref = format_chunk(nearby)
-                refs_for_cascade = [r for r in (tight_ref, chunk_text) if r]
-                check = _grounding.cascade_check(
-                    why,
-                    refs_for_cascade,
-                    GROUNDING_DENYLIST,
-                    GROUNDING_CONFIG,
-                    min_overlap=0.15,
-                    hard_events=chunk_hard_events,
-                    event_map=chunk_event_map,
-                )
-                if not check["passed"]:
-                    hit_summary = ",".join(
-                        h["match"] for h in check.get("denylist_hits", [])
-                    ) or (
-                        f"judge={check.get('judge_weighted')}"
-                        if check.get("judge_weighted") is not None
-                        else f"overlap={check.get('overlap')}"
-                    )
-                    print(
-                        f"    [GROUND] Pass B null why T={m.get('timestamp')} "
-                        f"tier={check['tier']} reason={check['reason']} ({hit_summary})",
-                        file=sys.stderr,
-                    )
-                    m["why"] = ""
-                    m["grounding_fail"] = check["reason"]
-                    m["grounding_tier"] = check["tier"]
-
-        # Tier-2 M1: annotate each LLM moment with speaker context from its
-        # ±15 s payoff window so Pass C can boost multi-speaker moments and
-        # Stage 6 can mention "off-screen voice" / interjection in titles.
-        for m in chunk_moments:
-            mt = m.get("timestamp")
-            if not isinstance(mt, (int, float)):
-                continue
-            nearby = [
-                s for s in chunk_segs
-                if s.get("end", 0) > mt - 15 and s.get("start", 0) < mt + 15 and s.get("speaker")
-            ]
-            if not nearby:
-                continue
-            sp_dur = {}
-            for s in nearby:
-                sp = s.get("speaker")
-                sp_dur[sp] = sp_dur.get(sp, 0.0) + max(0.0, float(s.get("end", 0)) - float(s.get("start", 0)))
-            if not sp_dur:
-                continue
-            total_d = sum(sp_dur.values()) or 1.0
-            dom_sp, dom_d = max(sp_dur.items(), key=lambda kv: kv[1])
-            m["dominant_speaker"] = dom_sp
-            m["speaker_count"] = len(sp_dur)
-            m["dominant_speaker_share"] = round(dom_d / total_d, 3)
-
-        print(f"  Chunk {chunk_count}: found {len(chunk_moments)} moments", file=sys.stderr)
-        for m in chunk_moments:
-            print(f"    T={m['timestamp']}s [{m['primary_category']}] score={m['score']} — {m.get('why','')[:60]}", file=sys.stderr)
-        llm_moments.extend(chunk_moments)
-
-        # Tier-3 A1+ arc-aware chunk card (2026-06-06, replaces the 15-word
-        # summary). One LLM call extracts structured arc-bait (claims /
-        # predictions / entities / open_loops) so the A1 global pass can match
-        # setup<->payoff on concrete verifiable anchors instead of a
-        # genericized "main topic" line. The card is stored in chunk_cards;
-        # a flattened one-liner still goes into chunk_summaries so the Tier-1
-        # Q1 prior-context block above keeps working unchanged. Quotes are
-        # substring-verified against the chunk to kill hallucinations. The same
-        # max_tokens=4000 budget (Gemma thinking headroom) is reused; the only
-        # added cost is ~2-4x output tokens vs the old 15-word summary.
-        # See concepts/arc-aware-extraction (research-backed plan).
-        summary_text = ""
-        card = None
-        try:
-            # Speed #5 card-parallel: use the precomputed card when present (built in
-            # parallel before the loop); fall back to the inline call on any miss so
-            # correctness never depends on the precompute — see the precompute block above.
-            if chunk_text in _PASSB_PRECOMPUTED_CARDS:
-                card = _PASSB_PRECOMPUTED_CARDS[chunk_text]
-            else:
-                card = _build_chunk_card(chunk_text)
-        except Exception as _card_err:
-            print(f"  Chunk {chunk_count}: card extraction errored ({_card_err}); continuing", file=sys.stderr)
-        if card:
-            chunk_cards[chunk_count] = card
-            summary_text = _card_to_oneliner(card)
-            print(
-                f"  Chunk {chunk_count}: card — {len(card['claims'])} claim(s), "
-                f"{len(card['predictions'])} prediction(s), "
-                f"{len(card['entities'])} entity(s), "
-                f"{len(card['open_loops'])} open-loop(s)",
-                file=sys.stderr,
-            )
-        if not summary_text:
-            # Neutral fallback: first ~12 transcript words. Better than nothing —
-            # later chunks at least know what topic the prior chunk was on.
-            _fallback = " ".join(s["text"] for s in chunk_segs[:6]).split()[:14]
-            summary_text = " ".join(_fallback)[:160] or "(no summary)"
-        chunk_summaries.append((chunk_count, summary_text))
+    if _MOMENT_POOL is not None:
+        # Speed #5 CUT-OVER 2 (moment-parallel): submit and process with a 1-chunk lag so
+        # up to _moment_workers moment calls are in flight — while card B of the GPU split
+        # works one request's back half, card A starts the next one's front half. NOT
+        # byte-reproducible (LM Studio co-batches concurrent requests → different draw);
+        # gated by the variance yardstick, not byte-identity — see
+        # pipeline-speed-findings §3-reframe.
+        _eager_card_summary(chunk_count, chunk_segs, chunk_text)
+        _MOMENT_INFLIGHT.append((
+            _MOMENT_POOL.submit(call_llm, prompt),
+            (chunk_count, chunk_start, chunk_end, seg_type, chunk_segs, chunk_text, prompt),
+        ))
+        while len(_MOMENT_INFLIGHT) >= _moment_workers:
+            _drain_one_moment()
     else:
-        # Gap #1: don't drop the chunk — queue it for one end-of-pass retry.
-        print(f"  Chunk {chunk_count}: LLM call failed — queued for end-of-pass retry", file=sys.stderr)
-        _failed_chunks.append({
-            "chunk_count": chunk_count,
-            "chunk_start": chunk_start,
-            "chunk_end": chunk_end,
-            "seg_type": seg_type,
-            "chunk_text": chunk_text,
-            "prompt": prompt,
-        })
+        response = call_llm(prompt)  # uses call_llm default max_tokens (3000)
+        _process_moment_response(response, chunk_count, chunk_start, chunk_end,
+                                 seg_type, chunk_segs, chunk_text, prompt)
 
     # BUG 31: short-circuit Pass B when LM Studio has been unreachable for
     # 3 consecutive chunks. Without this, a Docker-Desktop bridge failure or
@@ -2197,6 +2287,14 @@ If nothing stands out at all, respond: {{"moments": []}}"""
         break
 
     chunk_start += cur_chunk_dur
+
+# Speed #5 CUT-OVER 2: drain any still-in-flight moment calls (incl. after an outage
+# break) before the retry pass, so their moments/failures are fully accounted for.
+if _MOMENT_POOL is not None:
+    while _MOMENT_INFLIGHT:
+        _drain_one_moment()
+    _MOMENT_POOL.shutdown(wait=True)
+
 
 # Gap #1 (2026-06-06): re-queue chunks whose LLM call failed mid-loop. call_llm
 # already retried 3x in-line, but a transient LM Studio stall / restart can take
