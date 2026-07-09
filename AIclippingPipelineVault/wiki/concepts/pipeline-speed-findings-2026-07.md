@@ -193,18 +193,17 @@ single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a co
 
 Measured/verified on this machine while scoping [[concepts/plan-serving-stack-2026-07]]:
 
-> [!warning] 2026-07-09 IMPLEMENTATION UPDATE — the CLI flags EXIST but are REJECTED at runtime
-> The bullet below (flags are "fully scriptable") was falsified when actually run. `lms load
-> qwen/qwen3.6-35b-a3b --speculative-draft-simple --speculative-draft-model qwen/qwen3.5-2b`
-> fails: **"Load-time draft-model speculative decoding is only supported by the llama.cpp
-> engine protocol runtime. Use the existing prediction-time draft-model setting for native
-> llama.cpp or MLX models."** Our selected runtime is `llama.cpp-win-x86_64-vulkan-avx2@2.23.1`
-> (required for the dual-GPU pool), which is the *native* llama.cpp, not the "engine protocol"
-> variant → the load-time flag path is dead. The API path is also dead: a per-request
-> `draft_model` field returns HTTP 400, and a `speculative_decoding` object is silently ignored
-> (no draft stats, identical tok/s). **Speculative decoding on this stack is GUI-ONLY** (Power
-> User mode → load model → "Speculative Decoding" sidebar → pick draft), exactly the
-> UI-toggle class the owner warned about. See §9b for the empirical serving measurements.
+> [!danger] 2026-07-09 RESOLVED — speculative decoding is a MEASURED 8× REGRESSION (no-go)
+> Full arc: (1) the CLI flag `--speculative-draft-simple` is REJECTED by the native Vulkan
+> runtime ("only supported by the llama.cpp engine protocol runtime"); the API path is also
+> dead (`draft_model`=HTTP 400, `speculative_decoding` obj ignored). (2) The owner enabled
+> **Settings → "Use LM Studio Engine protocol"** → the CLI flag then LOADS fine. (3) But the
+> **benchmark killed it: 6.0 tok/s with the qwen3.5-2b draft vs 50 baseline (8× slower).**
+> Isolated: engine-protocol-with-**no**-draft = **51.7 tok/s** (the runtime switch is neutral;
+> the DRAFT is the regression). Root cause = §7: the cross-vendor Vulkan split is
+> coordination/bandwidth-bound, so the draft's extra per-step cross-GPU passes cost more than
+> they save. **S1 is RED — do not enable the draft.** The engine-protocol setting is safe
+> either way. Only revisit if the model runs on a SINGLE card. See [[concepts/plan-serving-stack-2026-07]] §3a.
 
 - **`lms load` exposes speculative-decoding CLI flags** (`--speculative-draft-simple
   --speculative-draft-model <m>`, `--speculative-draft-mtp`, plus max/min-tokens and
@@ -258,6 +257,14 @@ transcript windows), ~2700 tok each, `max_tokens=512`, temp 0.
 - **JSON-retry rate = 0.49%** across 409 chunk-calls / 12 runs (`retry_audit.py`); the 2
   events were network timeouts, **zero JSON-parse failures** → C6 (grammar-constrained
   decoding) CLOSED (no waste to recover; it would only alter the token distribution).
+- **Speculative decoding A/B** (engine protocol on, same prompts): no-draft **51.7 tok/s** vs
+  qwen3.5-2b-draft **6.0 tok/s** = **8× REGRESSION** → S1 RED (see §9 danger box). The draft
+  pays the cross-vendor coordination tax the §7 floor is made of.
+- **C1 prefetch audio-events = BYTE-IDENTICAL** through the isolated prefetch path vs the
+  normal Stage-2 scan (live gate). Transcript compare was confounded by a
+  `whisperx→faster-whisper` symlink-privilege fallback (env non-determinism, affects normal
+  Stage 2 identically) — not a C1 defect. C1 correctness proven; wall-clock benefit unproven
+  (the fallback made the prefetch 20.6 min > the ~5.6 min render window it hides behind).
 
 ## Bottom line
 

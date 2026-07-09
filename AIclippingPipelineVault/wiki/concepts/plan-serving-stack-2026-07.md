@@ -39,8 +39,8 @@ orchestration levers were never touched.
 | **C3 reload hygiene** | ✅ BUILT (behavior-preserving, default-on) | `stage2.py` skips the blanket unload on the cached-transcript path → no needless ~30-60 s Stage-3 reload on re-runs. Escape hatch `CLIP_STAGE2_ALWAYS_UNLOAD=1` |
 | **C4 segment cache** | ✅ **DEFAULT-ON** (promoted 2026-07-09) | `stage3.py`; self-test 15/15 + LIVE gate PASS: real Stage-3 miss 100 s → hit **3.7 s**, byte-identical restore, reload skipped, `--force` re-rolls. Kill switch `CLIP_SEGMENT_CACHE=0` |
 | **C2b static-first prompt** | ✅ BUILT (flag `CLIP_PROMPT_STATIC_FIRST=1`, default-off) | `stage4_moments.py`; C2a MEASURED the payoff (~48% prefix reuse, survives alternation); output-changing → variance-yardstick run pending (promote on pass, delete on fail — no default-off zombies) |
-| **C1 batch prefetch** | ✅ BUILT (flag `CLIP_BATCH_PREFETCH=1`, default-off) | `run_pipeline.py`; self-test 11/11 PASS; LIVE equivalence gate (real whisper+scan through the prefetch path vs existing caches) in progress — promote on pass |
-| **S1 speculative decoding** | ⛔ BLOCKED (programmatic) → owner GUI | CLI load flag REJECTED on Vulkan; API `draft_model`=400. GUI-only (see §3a recipe). Draft `qwen/qwen3.5-2b` (vocab 248320) downloaded + on disk. **Gain UNMEASURED** |
+| **C1 batch prefetch** | ✅ BUILT, correctness-proven; **benefit UNproven** (flag `CLIP_BATCH_PREFETCH=1`, default-off) | `run_pipeline.py`; self-test 11/11; live gate: **audio-events BYTE-IDENTICAL** through the prefetch path, originals restored. Transcript compare confounded (prefetch hit the `whisperx→faster-whisper` symlink-privilege fallback → 27758 vs cache 23581 words — a pre-existing env non-determinism, NOT a C1 defect; the prefetch calls the identical `speech.py`). **Blocker to default-on:** the prefetch took **20.6 min** (slow fallback) — longer than the ~5.6 min render window it's meant to hide behind, and whisper+NVENC share the 5060 Ti → needs a 2-fresh-VOD wall-clock A/B to prove net speedup before default-on |
+| **S1 speculative decoding** | 🔴 NO-GO (measured 8× REGRESSION) | Owner enabled "Use LM Studio Engine protocol" → the CLI draft flag now LOADS. But benched: **6.0 tok/s with draft vs 50 baseline** (8× slower). Isolated: engine-protocol-no-draft = **51.7 tok/s** (runtime is neutral; the DRAFT is the regression). Cross-vendor Vulkan split is coordination-bound (§7) → the draft pays the same cross-GPU tax → pure overhead. Not integrable on this hardware. Engine-protocol setting safe to leave on |
 | **P evalBatchSize** | ⏸ owner GUI action | no CLI/config key on disk; set once in GUI, then bench with `bench_serving.py --mode prefill` |
 
 **Net so far:** the byte-safe wins that need no owner action are **C3** (live now) + **C4**
@@ -140,26 +140,30 @@ Draft+verify preserves the target distribution by construction (greedy: exact ar
 sampling: rejection scheme) — categorically different from the §3 co-batching landmine.
 JSON-heavy Pass-B output → high expected acceptance. Published typical: 1.5–2.5× decode.
 
-### 3a. ⛔ BLOCKED programmatically — GUI-only on this stack (measured 2026-07-09)
-The load_model() CLI-flag integration this section originally planned **does not work**: the
-Vulkan runtime rejects `--speculative-draft-simple` at load time, and the API rejects a
-per-request `draft_model` (see [[concepts/pipeline-speed-findings-2026-07]] §9 + §9b). The
-only enablement is the GUI — the same UI-toggle class as the thinking setting.
+### 3a. 🔴 NO-GO — measured 8× regression (resolved 2026-07-09)
+Full arc: (1) load-time CLI flag rejected on the native Vulkan runtime; (2) owner enabled
+**Settings → "Use LM Studio Engine protocol"** → the flag then LOADS
+(`lms load qwen/qwen3.6-35b-a3b -c 16384 --speculative-draft-simple --speculative-draft-model
+qwen/qwen3.5-2b -y` succeeds); (3) but the **benchmark killed it**:
 
-**Owner recipe to enable + measure (one time):**
-1. LM Studio → Settings → set mode to **Power User** (or Developer).
-2. Load `qwen/qwen3.6-35b-a3b` (or let it JIT-load), open the chat sidebar → **Speculative
-   Decoding** section → set **Draft Model = `qwen/qwen3.5-2b`** (already on disk, vocab 248320).
-3. Measure: `python scripts/research/bench_serving.py --mode decode --label draft-on` and
-   compare **decode tok/s** vs the recorded baseline **50 tok/s**. `bench_serving.py`
-   auto-captures any draft/acceptance `stats`. Expect 1.5–2.5× if it engages.
-4. **Verify persistence + pipeline pickup**: after setting it, run
-   `python scripts/research/bench_serving.py --mode decode` again in a FRESH shell (forces a
-   JIT/`lms` load) — if tok/s stays high, the draft setting persisted to a config every load
-   reads (then it benefits the pipeline for free, no code change). If it reverts, the setting
-   is session-only and the pipeline can't use it → S1 stays a manual-session-only lever.
-5. Only if it both helps AND persists: it's effectively default-on (GREEN) with zero code.
-   Otherwise archive S1 as "GUI-session-only, not pipeline-integrable on Vulkan" (RED).
+| Config (same prompts, `bench_serving.py --mode decode`) | Decode tok/s |
+|---|---|
+| Baseline (native Vulkan, no draft) | 50.0 |
+| Engine protocol ON, **no draft** | **51.7** (runtime neutral) |
+| Engine protocol ON, **+ qwen3.5-2b draft** | **6.0 (8× SLOWER)** |
+
+**Root cause** (consistent with [[concepts/pipeline-speed-findings-2026-07]] §7): the floor on
+this rig is cross-vendor Vulkan **coordination/bandwidth**, not compute. Speculative decoding
+only wins when the draft is nearly free and target-verify is the bottleneck. Here the 2B draft
+is itself spread/coordinated across the NVIDIA+AMD pool and pays the same per-step cross-GPU
+tax → its K draft passes + the verify pass add far more coordination than they save. Even
+prefill regressed (cold ttft 6.5→9-18 s). **Not integrable on this hardware.**
+
+**Disposition:** S1 RED. Draft `qwen/qwen3.5-2b` kept on disk (harmless, 1.9 GB) for a future
+single-GPU/CUDA-only experiment where the draft would be cheap. The "Use LM Studio Engine
+protocol" setting is **neutral** (51.7 vs 50) — safe to leave on or off. Do NOT wire the draft
+flags into `load_model()`. (They now would work syntactically — but the measurement forbids it.)
+Only revisit speculative decoding if the model ever runs on a SINGLE card (no cross-vendor hop).
 
 | Step | Action | Gate |
 |---|---|---|
