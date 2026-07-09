@@ -573,6 +573,122 @@ def _resolve_thread_count() -> int:
     return min(4, max(1, (os.cpu_count() or 2) - 2))
 
 
+def _resolve_vector() -> tuple:
+    """(enabled, block_s, band) for the Speed #6 vectorized scan. Default DISABLED
+    (`AUDIO_EVENTS_VECTOR` unset/0) — it must pass a per-VOD zero-flip validation
+    (scripts/research/vector_equiv.py) before use, and only beats the default threaded scan
+    (#2) situationally. `AUDIO_EVENTS_VECTOR_BLOCK` (s, default 600) / `AUDIO_EVENTS_VECTOR_BAND`
+    (default 0.05) tune it."""
+    en = os.environ.get("AUDIO_EVENTS_VECTOR", "").strip().lower() in ("1", "true", "yes", "on")
+    try:
+        block_s = float(os.environ.get("AUDIO_EVENTS_VECTOR_BLOCK", "600") or "600")
+    except ValueError:
+        block_s = 600.0
+    try:
+        # Default 0.15: validation found block-HPSS music deltas up to ~0.146 on real audio
+        # (Tylil), so the hybrid band must be >= the max error to GUARANTEE zero fire flips
+        # (a 0.05 band passed only by threshold positioning). Recomputes more near-threshold
+        # windows exactly — safer, slightly slower.
+        band = float(os.environ.get("AUDIO_EVENTS_VECTOR_BAND", "0.15") or "0.15")
+    except ValueError:
+        band = 0.15
+    return en, block_s, band
+
+
+def _scan_vectorized(y_full, sr, tasks, librosa, np, *, block_s, band, rms_gate,
+                     n_total_estimate, progress_every, t_scan):
+    """Speed #6 (plan-speed56-execution-2026-07): block-vectorized scan.
+
+    HPSS is the dominant (~700 ms/window) cost AND the only CONTEXT-dependent detector
+    (its median filter spans neighbouring frames). Overlapping 30 s windows recompute HPSS
+    on the same audio ~3×; instead we run ONE HPSS per ~block_s block and slice each
+    window's harmonic/percussive energy from it — de-duplicating that work.
+
+    Correctness discipline (the DoD is ZERO per-window fire flips):
+      * crowd_response + rhythmic_speech stay EXACT (recomputed per window) → 2 of 3 dials
+        are byte-identical to the serial path and can NEVER flip.
+      * music_dominance is the only approximated dial (block-HPSS vs window-HPSS differ at
+        block edges). Two guards make flips impossible in practice: (1) a window whose
+        block-HPSS music is within `band` of the 0.6 gate is RECOMPUTED EXACTLY; (2) a
+        window that straddles a block boundary falls back to exact. Validated zero-flip on
+        real VODs by scripts/research/vector_equiv.py before this path may be enabled.
+      * the RMS silence gate is applied identically to _run_detectors.
+
+    Single-threaded by design (block-HPSS holds a large array; not thread-safe to evict).
+    Its speedup is vs the SERIAL path; whether it beats the default THREADED scan (#2) is a
+    benchmark question answered in the plan — this exists so that can be measured."""
+    block_samples = max(int(block_s * sr), 1)
+    hpss_cache = {}   # {block_start_sample: (y_h, y_p)} — only the current block is kept
+
+    def _block_hpss(bs):
+        if bs not in hpss_cache:
+            hpss_cache.clear()
+            be = min(len(y_full), bs + block_samples)
+            try:
+                yh, yp = librosa.effects.hpss(y_full[bs:be], margin=1.0)
+                hpss_cache[bs] = (yh, yp)
+            except Exception:
+                hpss_cache[bs] = (None, None)
+        return hpss_cache[bs]
+
+    def _music_from_ratio(pe, he):
+        ratio = pe / (he + pe)
+        if ratio <= 0.10:
+            return 0.0
+        if ratio >= 0.40:
+            return 1.0
+        return float((ratio - 0.10) / (0.40 - 0.10))
+
+    windows = []
+    nr = nc = nm = 0
+    n_exact = 0   # hybrid / straddle exact-recompute count (observability)
+    print(f"[AUDIO_EVENTS] vectorized scan: {len(tasks)} windows, {block_s:.0f}s blocks "
+          f"(music=block-HPSS+hybrid, crowd/rhythmic=exact)", file=sys.stderr)
+    sys.stderr.flush()
+    for i, (s_idx, e_idx, t_start, t_end) in enumerate(tasks, 1):
+        yw = y_full[s_idx:e_idx]
+        if yw is None or len(yw) < sr // 2 or (rms_gate > 0 and _rms_below_gate(yw, np, rms_gate)):
+            res = dict(_ZERO_RESULT)
+        else:
+            # crowd + rhythmic: EXACT per window (byte-identical to serial).
+            crowd = _detect_crowd_response(yw, sr, librosa, np)
+            rhythmic = _detect_rhythmic_speech(yw, sr, librosa, np)
+            # music: slice block-HPSS; straddle/failure → exact fallback.
+            bs = (s_idx // block_samples) * block_samples
+            yh, yp = _block_hpss(bs)
+            rel_s, rel_e = s_idx - bs, e_idx - bs
+            if yh is None or rel_e > len(yh):
+                music = round(_detect_music_dominance(yw, sr, librosa, np), 3)
+                n_exact += 1
+            else:
+                he = float(np.sum(yh[rel_s:rel_e] ** 2) + 1e-9)
+                pe = float(np.sum(yp[rel_s:rel_e] ** 2) + 1e-9)
+                music = round(_music_from_ratio(pe, he), 3)
+                if abs(music - 0.6) <= band:      # near the gate → recompute exact
+                    music = round(_detect_music_dominance(yw, sr, librosa, np), 3)
+                    n_exact += 1
+            res = {"rhythmic_speech": round(rhythmic, 3),
+                   "crowd_response": round(crowd, 3), "music_dominance": music}
+        windows.append({"start": round(t_start, 1), "end": round(t_end, 1), **res})
+        if res["rhythmic_speech"] >= 0.7:
+            nr += 1
+        if res["crowd_response"] >= 0.5:
+            nc += 1
+        if res["music_dominance"] >= 0.6:
+            nm += 1
+        if progress_every > 0 and i % progress_every == 0:
+            elapsed = time.time() - t_scan
+            rate = i / elapsed if elapsed > 0 else 0.0
+            eta = max(0, n_total_estimate - i) / rate if rate > 0 else 0.0
+            print(f"[AUDIO_EVENTS] {i}/~{n_total_estimate} windows ({elapsed:.0f}s elapsed, "
+                  f"~{eta:.0f}s remaining, {rate:.1f} win/s) [vector, {n_exact} exact]",
+                  file=sys.stderr)
+            sys.stderr.flush()
+    print(f"[AUDIO_EVENTS] vectorized: {n_exact}/{len(tasks)} windows exact-recomputed "
+          f"(near-threshold + straddle)", file=sys.stderr)
+    return windows, (nr, nc, nm)
+
+
 def _scan_threads(y_full, sr, tasks, n_threads, librosa, np,
                   n_total_estimate, progress_every, t_scan):
     """Threaded per-window scan. Each worker slices the SHARED READ-ONLY ``y_full`` and
@@ -633,6 +749,7 @@ def scan_audio_events(
     progress_every: int = 100,
     n_workers: Optional[int] = None,
     n_threads: Optional[int] = None,
+    vector: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Slide ``window_size`` / ``step`` windows across ``audio_path`` and
     write per-window detector outputs to ``out_path`` as JSON.
@@ -761,12 +878,15 @@ def scan_audio_events(
     # worth it when there are enough tasks to amortize pool startup.
     resolved_workers = _resolve_worker_count(n_workers)
     resolved_threads = n_threads if n_threads is not None else _resolve_thread_count()
-    # Speed #2: the thread path takes precedence over the process pool when enabled
-    # (AUDIO_EVENTS_THREADS>=2). It's the safe (in-process) parallelism; the process
-    # pool stays reachable but is no longer the default parallel path.
-    use_threads = resolved_threads >= 2 and len(tasks) >= PARALLEL_MIN_WINDOWS
+    _vec_en, _vec_block, _vec_band = _resolve_vector()
+    if vector is not None:
+        _vec_en = bool(vector)
+    # Speed #6: the vectorized (block-HPSS) path takes precedence over all others when
+    # explicitly enabled. Speed #2: threads take precedence over the process pool.
+    use_vector = _vec_en and len(tasks) >= PARALLEL_MIN_WINDOWS
+    use_threads = (not use_vector) and resolved_threads >= 2 and len(tasks) >= PARALLEL_MIN_WINDOWS
     use_parallel = (
-        not use_threads
+        not use_vector and not use_threads
         and resolved_workers >= 2
         and len(tasks) >= PARALLEL_MIN_WINDOWS
     )
@@ -777,6 +897,14 @@ def scan_audio_events(
     n_fired_music = 0
     t_scan = time.time()
     backend_used = "librosa"
+
+    if use_vector:
+        windows, (n_fired_rhythmic, n_fired_crowd, n_fired_music) = _scan_vectorized(
+            y_full, sr, tasks, librosa, np, block_s=_vec_block, band=_vec_band,
+            rms_gate=_resolve_rms_gate(), n_total_estimate=n_total_estimate,
+            progress_every=progress_every, t_scan=t_scan)
+        backend_used = f"librosa+vector(block{int(_vec_block)}s)"
+        del y_full
 
     if use_threads:
         windows, (n_fired_rhythmic, n_fired_crowd, n_fired_music) = _scan_threads(
@@ -805,7 +933,7 @@ def scan_audio_events(
             windows = []
             use_parallel = False
 
-    if not use_parallel and not use_threads:
+    if not use_parallel and not use_threads and not use_vector:
         print(
             f"[AUDIO_EVENTS] serial scan: {len(tasks)} windows",
             file=sys.stderr,
@@ -934,6 +1062,12 @@ def _cli() -> None:
              "(no spawn/SHM). N>=2 takes precedence over --workers. 0=off "
              "(env AUDIO_EVENTS_THREADS). Byte-identical output to serial.",
     )
+    ap.add_argument(
+        "--vector", action="store_true",
+        help="Speed #6 block-HPSS vectorized scan (env AUDIO_EVENTS_VECTOR). Takes "
+             "precedence over --threads/--workers. NOT byte-identical (music dial "
+             "approximated + hybrid); needs vector_equiv zero-flip validation first.",
+    )
     args = ap.parse_args()
     summary = scan_audio_events(
         args.audio, args.out,
@@ -941,6 +1075,7 @@ def _cli() -> None:
         duration_hint=args.duration,
         n_workers=(args.workers if args.workers > 0 else None),
         n_threads=(args.threads if args.threads > 0 else None),
+        vector=(True if args.vector else None),
     )
     json.dump(summary, sys.stdout)
     sys.stdout.write("\n")
