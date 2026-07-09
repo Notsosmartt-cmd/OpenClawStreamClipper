@@ -3675,6 +3675,12 @@ for m in final:
         # None for normal moments; present when the lanes are on + matched.
         "src": m.get("src"),
         "known_format": m.get("known_format"),
+        # BUG 66 (complete fix 2026-07-09): the ACTUAL source gap. primary_pattern lived only
+        # in the trace, never in hype_moments → Stage 6 preserved None → Stage 7 P-TIGHT saw ""
+        # → the rap/freestyle exemption NEVER fired (a rap_battle_freestyle clip, T=9832, was
+        # still trimmed after the first fix). Emit it here so it flows Stage 4→6→7.
+        # (segment_type already emitted above.)
+        "primary_pattern": m.get("primary_pattern"),
     }
     output.append(entry)
 
