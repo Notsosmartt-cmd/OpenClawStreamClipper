@@ -165,6 +165,37 @@ fallback. Nothing here touches pipeline code — rollback for every step is
 
 ---
 
+## 6a. Second sweep — remaining quality-neutral candidates (researched 2026-07-09)
+
+Owner asked for any further non-quality-degrading paths before execution. Probed live:
+
+**Closed by probes (already optimal — don't re-investigate):**
+- **Disk**: G: = NVMe Samsung 990 EVO Plus (C: = NVMe SN770) → model load + VOD I/O fine.
+- **ReBAR**: ON (BAR1 = full 16384 MiB on the 5060 Ti).
+- **PCIe width**: 5060 Ti shows x8 — that is the card's native electrical max (RTX 5060 Ti is
+  a PCIe 5.0 ×8 design), not a slot misconfig. Gen reads 1 at idle (normal power saving);
+  one under-load `nvidia-smi -q` check during the next bench confirms it ramps to Gen 5.
+  AMD 6700 XT link unverified (chipset-slot risk) — optional one-off HWiNFO check.
+- **Server logs carry no prefill-reuse stats** — prefix-cache behavior must be measured via
+  repeated-prefix TTFT (folded into `bench_serving.py`).
+
+**New candidates (ranked, all measure-first):**
+| # | Candidate | Mechanism | Win | Risk class |
+|---|---|---|---|---|
+| C1 | **Cross-VOD overlap in batch runs** | run VOD i+1's CPU stages (scan/whisper/S3) during VOD i's LLM stages (4–7); orchestrator change in `run_pipeline.py --all` | ~7–10 min × (N−1) per fresh batch | byte-identical per VOD (no LLM concurrency — §3 landmine not triggered); caveat: whisper-CUDA VRAM window vs resident 35B (~1.5 GB free) → serialize just the whisper span with a lock |
+| C2 | **KV/prefix-cache exploitation (S4 + judge)** | today the ~1–2k-token static catalog sits AFTER variable content (`seg_type` in sentence 1, prior-context above catalog) → near-zero prefix reuse. (a) measure reuse via TTFT repeat; (b) static-first prompt reorder (+ optional `--parallel 2` LCP slot routing to survive moment/card alternation) | cuts prefill share of ~48 calls | (a) free/diagnostic; (b) reorder changes token order → outputs change → **variance-yardstick-gated** (same class as card-parallel, within-noise defensible) |
+| C3 | **Model-residency pin (TTL)** | ensure 35B never TTL-evicts mid-run/between runs; `--ttl 0` in the pre-run load step this plan already adds; verify via call-1-vs-call-2 timing in bench | avoids ~30–60 s JIT reloads | zero |
+| C4 | **Stage-3 segment cache** | cache segments keyed by transcript-hash + detection-config-hash (mirrors #1 audio-events cache) | ~165 s on re-runs | byte-identical on hit |
+| C5 | **GPU HPSS for fresh scans** | torch/CUDA HPSS for music_dominance; `vector_equiv.py` zero-flip harness already exists | ~1–2 min fresh-only | needs zero-flip pass (FP differs from librosa) |
+| C6 | **JSON-retry audit** | measure Stage-4/6 parse-retry rate from diagnostics; if >0, grammar-constrained decoding becomes a candidate | unknown until measured | constrained decoding alters token distribution → only pursued if retries are material |
+
+**Excluded on the quality rubric** (decided): KV-cache quantization (approximation, not
+distribution-preserving), dropping rationale/why output fields (reasoning-by-writing effect),
+fewer/smaller judge images, faster NVENC presets, model swaps/distils.
+
+Priority stays: **S1 spec decode first** (biggest expected win), C3 rides along free, C2(a)
+measured by the same bench, then C1 (batch-only), C4 (trivial), C2(b)/C5/C6 opportunistic.
+
 ## 6. No-go lanes (decided, don't re-litigate)
 
 - **GPU split-mode tuning** — Vulkan dual-GPU UI offers only "split evenly"; no CLI flag, no
