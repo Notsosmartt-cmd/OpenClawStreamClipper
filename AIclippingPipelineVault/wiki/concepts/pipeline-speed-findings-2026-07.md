@@ -158,6 +158,30 @@ two SEPARATE single-request engines — which needs a model small enough to fit 
   its logging), and `--force` temp-0 runs exceed 60 min — both triggered false stall/timeout
   alarms. Set the phase_runner watchdog `--timeout` ≥ 5400 s and `--stall` ≥ 900 s for full runs.
 
+## 7. The LLM floor (why runs are ~50 min and will stay there on this stack)
+
+Observed live during Stage 4: **GPU util ~16%** while the 35B is fully loaded (13.8 GB
+NVIDIA + 11.6 GB AMD) — the cross-vendor Vulkan tensor-split is **bandwidth/coordination-
+bound, not compute-bound**; the hardware mostly *waits*. A run makes ~**48 sequential LLM
+calls in Stage 4 alone** (24 chunks × moment call + card call) plus ≤30 judge comparisons
+(~8 images each) + 10 vision calls. Dense IRL/gaming chunks at temp-0 paced **~200 s/chunk**
+(vs ~80 s typical). With LLM-call parallelism ruled out for byte-safety (§3), marginal in
+practice (card-parallel = ~4% — cards are cheap vs moment calls), and vision concurrency
+inconclusive (§2c), **software levers on the LLM portion are exhausted. The remaining big
+speed lever is a model-tier or serving-hardware change** (smaller/faster model, or a
+single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a code fix.
+
+## 8. Validation-coverage caveat + final #5/#6 disposition
+
+- **Single-VOD caveat:** every FULL-pipeline validation run this session used 2xRaKai
+  (deliberate — controlled A/B needs the VOD held constant). #6's scan validation used 2
+  VODs (scan only). Broad generalization of the speed/quality findings rests on 1–2 VODs;
+  spread future validation runs across VODs.
+- **Final disposition:** #5 card-parallel built + default-off (**~4%, marginal — cards are
+  cheap; the real Stage-4 lever is moment-parallel, which stays HELD** on the §3
+  reproducibility tradeoff, enable-by-owner-review only). #6 built + zero-flip-validated +
+  default-off (**dominated by #2**). Production speed gains come from **#1 + #2 only**.
+
 ## Bottom line
 
 The quality-safe speed gains are the non-LLM ones (**#1 cache, #2 threaded scan, #7 metrics** —
