@@ -2,7 +2,7 @@
 title: "Hot — current state & recent activity"
 type: overview
 tags: [hot, hub, status]
-updated: 2026-07-08
+updated: 2026-07-09
 ---
 
 # Hot
@@ -25,7 +25,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | Stage 7 encode | h264_nvenc by default (libx264 fallback) | 2026-06-06 | [[concepts/clip-rendering]] |
 | Audio-events scan | threaded default (min(4,cores-2), byte-identical 3.3×) + per-VOD cache (re-runs skip) | 2026-07-08 | [[concepts/pipeline-speed-findings-2026-07]] |
 | Speed scorecard | GREEN #1/#2/#7 live; RED #3/#5/#6 archived (default-off = not integrated) | 2026-07-09 | [[concepts/plan-pipeline-speed-2026-07]] |
-| Run timing | median 0.26× realtime; LLM stages are the floor (16% GPU util, model/hw is the lever) | 2026-07-09 | [[concepts/pipeline-speed-findings-2026-07]] §7 |
+| Run timing | median 0.26× realtime; LLM stages are the floor (16% GPU util); remaining levers = serving stack (spec decode) or model/hw | 2026-07-09 | [[concepts/pipeline-speed-findings-2026-07]] §7+§9 |
 | Latest bug | BUG 66 (Stage-6 rebuild dropped primary_pattern → P-TIGHT rap exemption never fired, fixed) | 2026-07-08 | [[concepts/bugs-and-fixes#BUG 66]] |
 | Docker | legacy, superseded by bare-metal | 2026-06-04 | [[concepts/bare-metal-windows]] |
 
@@ -44,6 +44,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-09] **Serving-stack plan filed (planned)**: spec decode = pure `lms load` CLI flags; MTP dead on current GGUF (live-tested, no bundled head); Lane S1 = qwen3.5-2b draft (vocab 248320 matches, target weights untouched) → bench → variance-yardstick gate; flash-attn ALREADY ON; GPU split NOT tunable on Vulkan (no-go); per-model JSON = where UI toggles persist (explains old thinking-toggle mystery) — [[concepts/plan-serving-stack-2026-07]] — [[log]]
 - [2026-07-09] **Wiki reorganized to the strict speed scorecard (owner rubric: default-off = RED)**: speed plan → shipped w/ FINAL SCORECARD (GREEN #1/#2/#7 live + #4 pre-existing; RED #3/#5/#6 archived); #5/#6 exec plan → retired w/ archive pointers; hot state table gained audio-scan-defaults + scorecard + LLM-floor rows — [[concepts/plan-pipeline-speed-2026-07]] — [[log]]
 - [2026-07-09] **bug66-confirm KILLED (owner call) → fix verified by executable code inspection**: 4-hop chain proven (S4 emit → S6 preserve → S7 row → `_exempt`; dict-flow sim w/ JSON round-trips: rap=exempt ✓, control ✗, pre-fix shape ✗). Next-run check: rap clips show NO `[p-tight]` line. Findings closed: **§7 LLM floor** (16% GPU util — Vulkan split bandwidth-bound, ~48 LLM calls/run, software levers exhausted → model/hardware is the lever) + **§8** single-VOD caveat + final #5/#6 disposition (prod speed = #1+#2 only). Kill clean: 0 procs, VRAM 852 MiB — [[concepts/pipeline-speed-findings-2026-07]] — [[log]]
 - [2026-07-09] **BUG 66 first-fix was INCOMPLETE → complete fix (confirm run in flight)**: combined-review run showed `scored_moments` primary_pattern=None 10/10 + a rap clip (T=9832) trimmed AGAIN. Real gap: Stage-4 `hype_moments` entry never emitted primary_pattern (only the trace had it) → Stage 6 preserved None. Fix: emit it in the hype_moments entry (4→6→7). temp-0 `bug66-confirm` run launched to verify (first fix passed synthetic but failed live). Also: card-parallel Stage-4 only ~4% faster (cards cheap; real lever is moment-parallel, held) — [[concepts/bugs-and-fixes#BUG 66]] — [[log]]
@@ -83,8 +84,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - [2026-07-02] **Master proposal roadmap filed** ([[concepts/master-proposal-2026-07]]): all workstreams A-E sequenced (Phase 0 audits → 0.5 originality levers → 1 anomaly lane → …), claim-by-claim evaluation of the fusion/reference analysis (chat-data dependency + live LM-Studio-audio-in check flagged), 4 deep-research prompts ready. Wiki-only — [[log]]
 - [2026-07-02] **Reference-humor evaluation filed** ([[concepts/reference-humor-2026-07]]): externally-referenced jokes (George Bush meme) — detect via reaction proxies (no reference needed), name via chat mining + a `known_format` probe, cover post-cutoff formats with a meme library. Additive lane; wiki-only — [[log]]
 - [2026-07-02] **Multimodal-fusion evaluation filed + expanded** ([[concepts/multimodal-fusion-2026-07]]): joint prompts exist at 5.5/6 but sit behind a transcript-only proposal gate; 5 fusion options with per-option rig fit + the **dual-GPU catch-22** (28GB LM Studio pool can't hear; 16GB CUDA lane can't fit the big omni). Timeline fusion recommended. Wiki-only — [[log]]
-- [2026-06-21] **Dashboard Clip Forensics tab**: the offline decomposer is now usable from the GUI — tab switcher (Clipper | Clip Forensics), `forensics_routes.py` (`/api/forensics/clips|run|result`) + `forensics-panel.js` render the timeline + LLM style profile; clip dropdown + trim-end/OCR/LLM/GPU toggles. Verified end-to-end via test client — [[entities/dashboard]] — [[log]]
-- [2026-06-21] **Clip-forensics robustness (from ground truth)**: `--trim-end`/`CLIP_FORENSICS_TRIM_END` drops the ~3s TikTok download outro (logo+@handle) that was mis-logged as edits; music-bed false-negative fixed via per-label CLAP thresholds (music 0.18, suspense 0.20 — a bed under speech peaks ~0.27, under the 0.30 floor) + sustained-run gate + `added`=under-speech&(abrupt|mid-clip). Verified: ReemKnocks bed 6–14s added:true — [[entities/audio-sense-module]] — [[log]]
+- [2026-06-21] Clip-forensics dashboard tab + robustness fixes (trim-end outro, per-label CLAP thresholds) — details in [[log]] / [[entities/dashboard]] / [[entities/audio-sense-module]]
 
 ## Landmines (top gotchas for the next agent)
 - **LLM-call parallelization is NOT byte-reproducible even at temp 0** — concurrent requests hit LM Studio's batched inference (FP-reduction reorder) → different tokens → different clip set (proven: 7/10 shared). No LLM-parallel speedup can be hash-validated; only owner quality review. Byte-safe speed wins are non-LLM only (threaded DSP scan, caching) — [[concepts/pipeline-speed-findings-2026-07]]
