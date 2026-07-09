@@ -30,6 +30,27 @@ orchestration levers were never touched.
 
 ---
 
+## 0. IMPLEMENTATION STATUS (2026-07-09 — built + benched this session)
+
+| Item | State | Detail |
+|---|---|---|
+| **P0 instrumentation** | ✅ BUILT + RUN | `bench_serving.py` (decode/ttft/prefill, `/api/v0` stats), `retry_audit.py`, `CLIP_PASSB_DUMP_PROMPTS` hook |
+| **C6 JSON-retry audit** | ✅ CLOSED | 0.49% rate, 0 parse-failures / 409 calls → grammar-constrained decoding not justified |
+| **C3 reload hygiene** | ✅ BUILT (behavior-preserving, default-on) | `stage2.py` skips the blanket unload on the cached-transcript path → no needless ~30-60 s Stage-3 reload on re-runs. Escape hatch `CLIP_STAGE2_ALWAYS_UNLOAD=1` |
+| **C4 segment cache** | ✅ BUILT (flag `CLIP_SEGMENT_CACHE=1`, default-off) | `stage3.py`, keyed by transcript+full config; self-test 15/15 PASS; freezes a stochastic draw → owner semantics gate |
+| **C2b static-first prompt** | ✅ BUILT (flag `CLIP_PROMPT_STATIC_FIRST=1`, default-off) | `stage4_moments.py`; C2a MEASURED the payoff (~48% prefix reuse, survives alternation); output-changing → variance gate |
+| **C1 batch prefetch** | ✅ BUILT (flag `CLIP_BATCH_PREFETCH=1`, default-off) | `run_pipeline.py`; isolated (cache + temp wav only); self-test 11/11 PASS |
+| **S1 speculative decoding** | ⛔ BLOCKED (programmatic) → owner GUI | CLI load flag REJECTED on Vulkan; API `draft_model`=400. GUI-only (see §3a recipe). Draft `qwen/qwen3.5-2b` (vocab 248320) downloaded + on disk. **Gain UNMEASURED** |
+| **P evalBatchSize** | ⏸ owner GUI action | no CLI/config key on disk; set once in GUI, then bench with `bench_serving.py --mode prefill` |
+
+**Net so far:** the byte-safe wins that need no owner action are **C3** (live now) + **C4**
+(one flag). C1/C2b are built and validated in logic but need a full-VOD variance run + owner
+review before default-on (owner rubric: default-off = RED). The headline lever S1 is
+GUI-gated — the biggest expected win is one owner toggle away, but its value is unmeasured
+until enabled. See §3a.
+
+---
+
 ## 1. Grounding facts (verified live 2026-07-09 — do not re-derive)
 
 **Serving controllability** (details in [[concepts/pipeline-speed-findings-2026-07]] §9):
@@ -118,6 +139,27 @@ this page; TTFT reuse verdict recorded; retry rate recorded.
 Draft+verify preserves the target distribution by construction (greedy: exact argmax match;
 sampling: rejection scheme) — categorically different from the §3 co-batching landmine.
 JSON-heavy Pass-B output → high expected acceptance. Published typical: 1.5–2.5× decode.
+
+### 3a. ⛔ BLOCKED programmatically — GUI-only on this stack (measured 2026-07-09)
+The load_model() CLI-flag integration this section originally planned **does not work**: the
+Vulkan runtime rejects `--speculative-draft-simple` at load time, and the API rejects a
+per-request `draft_model` (see [[concepts/pipeline-speed-findings-2026-07]] §9 + §9b). The
+only enablement is the GUI — the same UI-toggle class as the thinking setting.
+
+**Owner recipe to enable + measure (one time):**
+1. LM Studio → Settings → set mode to **Power User** (or Developer).
+2. Load `qwen/qwen3.6-35b-a3b` (or let it JIT-load), open the chat sidebar → **Speculative
+   Decoding** section → set **Draft Model = `qwen/qwen3.5-2b`** (already on disk, vocab 248320).
+3. Measure: `python scripts/research/bench_serving.py --mode decode --label draft-on` and
+   compare **decode tok/s** vs the recorded baseline **50 tok/s**. `bench_serving.py`
+   auto-captures any draft/acceptance `stats`. Expect 1.5–2.5× if it engages.
+4. **Verify persistence + pipeline pickup**: after setting it, run
+   `python scripts/research/bench_serving.py --mode decode` again in a FRESH shell (forces a
+   JIT/`lms` load) — if tok/s stays high, the draft setting persisted to a config every load
+   reads (then it benefits the pipeline for free, no code change). If it reverts, the setting
+   is session-only and the pipeline can't use it → S1 stays a manual-session-only lever.
+5. Only if it both helps AND persists: it's effectively default-on (GREEN) with zero code.
+   Otherwise archive S1 as "GUI-session-only, not pipeline-integrable on Vulkan" (RED).
 
 | Step | Action | Gate |
 |---|---|---|

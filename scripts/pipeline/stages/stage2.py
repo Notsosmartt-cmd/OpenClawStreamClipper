@@ -31,11 +31,6 @@ def run(ctx) -> None:
     common.set_stage(log, "Stage 2/8 — Audio Transcription")
     log.log("=== Stage 2/8 — Audio Transcription ===")
 
-    # Free VRAM: unload every LM Studio model before Whisper needs the GPU.
-    for m in dict.fromkeys([ctx.text_model, ctx.vision_model,
-                            ctx.text_model_passb, ctx.vision_model_stage6]):
-        common.unload_model(log, ctx.llm_url, m)
-
     audio = p.work("audio.wav")
     p.transcriptions_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(ctx.vod_basename).stem
@@ -56,6 +51,27 @@ def run(ctx) -> None:
     _reuse_transcript = os.environ.get("CLIP_REUSE_TRANSCRIPT", "").strip().lower() in (
         "1", "true", "yes", "on")
     _cache_ok = cached_json.exists() and cached_srt.exists()
+    _will_transcribe = not (_cache_ok and (not ctx.force or _reuse_transcript))
+
+    # C3 (Speed Wave 2, plan-serving-stack-2026-07): only free VRAM when Whisper
+    # will actually run. On the cached-transcript path Whisper is skipped and the
+    # remaining Stage-2 work (ffmpeg audio extract + the CPU audio-events scan) needs
+    # no GPU — so evicting every LM Studio model just forces Stage 3 to reload the
+    # 35B (~30-60 s) for nothing. Keeping it resident on cached re-runs makes Stage 3's
+    # load_model() a no-op (it already skips when the model is loaded). Behavior on the
+    # fresh path is unchanged: Whisper still gets a fully free GPU. Escape hatch:
+    # CLIP_STAGE2_ALWAYS_UNLOAD=1 restores the old unconditional eviction.
+    _always_unload = os.environ.get("CLIP_STAGE2_ALWAYS_UNLOAD", "").strip().lower() in (
+        "1", "true", "yes", "on")
+    if _will_transcribe or _always_unload:
+        log.log("Freeing VRAM: unloading LM Studio models before Whisper needs the GPU.")
+        for m in dict.fromkeys([ctx.text_model, ctx.vision_model,
+                                ctx.text_model_passb, ctx.vision_model_stage6]):
+            common.unload_model(log, ctx.llm_url, m)
+    else:
+        log.log("Cached transcript path — keeping LM Studio model resident "
+                "(no Whisper this run; skips a needless ~30-60 s reload in Stage 3).")
+
     if _cache_ok and (not ctx.force or _reuse_transcript):
         if ctx.force and _reuse_transcript:
             log.log(f"CLIP_REUSE_TRANSCRIPT: reusing cached transcription for "
