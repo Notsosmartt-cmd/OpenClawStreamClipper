@@ -4,10 +4,39 @@ type: concept
 tags: [plan, performance, pass-b, stage-4, audio-events, vectorization, validation, concurrency]
 sources: 0
 status: in-progress
-updated: 2026-07-08
+updated: 2026-07-09
 ---
 
 # Execution Plan: Speed #5 & #6 — iteration-by-iteration, validation-gated
+
+> [!warning] KEY NEGATIVE RESULT 2026-07-09 — LLM-call parallelization is NOT byte-reproducible; #5 changes the clip set
+> The card-parallel validation run FALSIFIED the plan's core premise. Setup: baseline
+> (`CLIP_PASSB_DETERMINISTIC=1`, inline SEQUENTIAL cards) fp `8e0316624c64089a`; card-parallel
+> (same temp-0, cards 4-concurrent) fp `78594f460395861e`. **Byte-identity FAILED, 23/25 chunks
+> differ — but diagnostically clean:** chunk 1 (no prior-context) matches EXACTLY; every diff is
+> in the prior-context summaries only; the ONLY changed variable was card concurrency. **Root
+> cause:** concurrent temp-0 generation ≠ sequential — LM Studio's batched inference reorders FP
+> reductions, so cards differ even at temperature 0. This is inherent to ANY LLM-call
+> parallelization, not a bug. **Consequence:** different cards → different summaries → different
+> prompts → **a different selected-clip set: 7/10 shared (±20s), 3 swapped** (base dropped
+> 3269/9299/10529, added 2048/7749/10481).
+>
+> **Implications (reshape BOTH cut-overs):**
+> 1. The prompt-hash byte-identity gate is UNACHIEVABLE for any LLM-parallel path (cards or
+>    moments). Byte-equivalence was never possible on a batched-inference server.
+> 2. #5 parallelization is therefore NOT provably quality-neutral — it produces a
+>    different-but-plausibly-comparable clip set, within the same variance temp 0.3 already has
+>    run-to-run. "Comparable" can only be judged by OWNER REVIEW, not proven by a gate.
+> 3. Given the owner's hard "don't sacrifice quality" line (they rejected even a 1-clip count
+>    trim), an *unprovable* clip-set change traded for speed is a poor deal. **Recommendation:
+>    keep #5 DEFAULT-OFF** (it is); enable only if the owner reviews card-parallel output and
+>    accepts it. Cut-over 2 (moment-parallel) has the SAME wall + a bigger blast radius → also
+>    hold. The passb_equiv LOGIC proof stands (it assumed a deterministic call_llm); the real
+>    server just isn't deterministic under concurrency.
+> 4. The honest speed win that DOESN'T touch LLM determinism is what already shipped: #1 cache,
+>    #2 threaded audio scan (pure DSP, byte-identical), #7 metrics. Stage-4 LLM parallelism is
+>    the remaining lever and it costs reproducibility — a genuine quality/speed tradeoff, now
+>    surfaced with data for the owner to decide.
 
 > [!note] Execution status 2026-07-08 — #5 engine PROVEN (logic); #6 harness done + ROI re-called
 > **#5 — equivalence engine SHIPPED + PROVEN in pure logic (the hard part):**
