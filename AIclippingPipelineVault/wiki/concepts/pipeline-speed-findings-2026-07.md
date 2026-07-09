@@ -196,13 +196,17 @@ prior-context from precomputed cards) and the gated A/B ran on 2xRaKai
   speculative decoding (§9b) and made card-parallel ~4%. The theoretical
   2-stage-pipeline 2× never materializes because the bottleneck isn't idle compute,
   it's the per-pass sync.
-- **Disposition:** code REVERTED same day (owner rubric: no default-off zombies); the
-  behavior-identical serial run (1107 s ≈ the 1156 s historical median) also confirms
-  the A/B instrument. Gate driver + verdict JSON kept as forensics.
-- **Consequence:** §7's conclusion is now UNCONDITIONAL. Every software lever on Stage-4
-  LLM time has been measured: parallelism ~1.15×, spec-decode 0.12×, prefix-cache ~1 min,
-  cards ~4%. **The only remaining Stage-4 speed levers are hardware (a single card that
-  fits the model) or a model-tier change (quality tradeoff).** Stop looking.
+- **Disposition (UPDATED 2026-07-09):** first reverted on a 1.4× bar, then **RE-INSTATED**
+  when the owner lowered the speed bar to **1.1×** (the 1.15× measured clears it) and
+  reclassified overlap as advisory — "15% is worth it on long VODs." Now flag-gated
+  (`CLIP_PASSB_MOMENT_WORKERS`, default off) **pending an owner spot-check** of the parallel
+  run's clips (6 of 10 differ from serial); promote to default-on on OK. The behavior-
+  identical serial arm (1107 s ≈ the 1156 s historical median) also confirms the instrument.
+- **Consequence:** §7's ceiling still holds — parallelism only buys ~1.15× because serving
+  co-batching barely amortizes the cross-vendor per-pass sync (spec-decode 0.12×, cards ~4%
+  are the same floor). The 15% is real but modest and concentrated on LONG VODs (Lacy-class
+  Stage-4 ~3 h → ~30 min; typical 2-3 h VOD → ~3 min). Beyond it, the only Stage-4 levers
+  remain hardware (single card that fits the model) or a model-tier change.
 
 ## 8. Validation-coverage caveat + final #5/#6 disposition
 
