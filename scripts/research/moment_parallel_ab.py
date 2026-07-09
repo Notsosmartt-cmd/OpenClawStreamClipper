@@ -72,8 +72,8 @@ def main(argv):
     ap.add_argument("--vod", default="20260424_2xRaKai_2756365448.mp4")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--arm-timeout", type=int, default=7200)
-    ap.add_argument("--speedup-gate", type=float, default=1.4)
-    ap.add_argument("--overlap-gate", type=int, default=5)
+    ap.add_argument("--speedup-gate", type=float, default=1.1)  # owner-lowered 1.4->1.1 (2026-07-09)
+    ap.add_argument("--overlap-gate", type=int, default=5)      # advisory only (spot-check gate)
     args = ap.parse_args(argv)
 
     S = run_arm(args.vod, "serial", {}, args.arm_timeout)
@@ -96,8 +96,18 @@ def main(argv):
             "overlap_gate": f">={args.overlap_gate}/{n} (+-20s) -> "
                             f"{'PASS' if ov >= args.overlap_gate else 'FAIL'}",
         })
-        ok = sp >= args.speedup_gate and ov >= args.overlap_gate
-        verdict["verdict"] = "PROMOTE (both gates pass)" if ok else "REJECT (a gate failed)"
+        # Speed is the hard gate. Overlap is ADVISORY (2026-07-09 owner decision): clip
+        # selection is non-deterministic at temp 0.3 and a different-but-good draw is fine —
+        # so overlap can't auto-reject; instead the owner SPOT-CHECKS the parallel clips.
+        speed_ok = sp >= args.speedup_gate
+        ok = speed_ok
+        if speed_ok:
+            verdict["verdict"] = (
+                f"PROMOTE-PENDING-SPOTCHECK (speed {sp:.2f}x >= {args.speedup_gate}x; "
+                f"overlap {ov}/{n} is ADVISORY — owner reviews the parallel clips before "
+                f"default-on)")
+        else:
+            verdict["verdict"] = f"REJECT (speed {sp:.2f}x < {args.speedup_gate}x)"
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     out = DIAG / f"moment_ab_{stamp}.json"
