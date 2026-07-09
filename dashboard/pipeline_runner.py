@@ -468,13 +468,94 @@ def kill_pipeline(proc) -> None:
         pass
 
 
+def _pid_alive(pid: int) -> bool:
+    """True if a process with ``pid`` is currently running (Windows + POSIX)."""
+    if not pid or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        STILL_ACTIVE = 259
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not k.GetExitCodeProcess(h, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            k.CloseHandle(h)
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _marker_pid() -> int | None:
+    """BUG 67: PID of a LIVE bare-metal pipeline from the on-disk `pipeline.pid`
+    marker, else None. This is the CROSS-PROCESS signal that the in-memory
+    ``_state.pipeline_process`` misses — it catches a pipeline that THIS dashboard
+    instance didn't launch (a second dashboard, or one restarted to change a setting,
+    whose in-memory handle is None). A `pipeline.done` marker at/after the pid marker
+    means it already finished. Docker mode uses its own detached poll, not this."""
+    if use_docker_exec():
+        return None
+    try:
+        pidf = _state.PIPELINE_PID_PATH
+        donef = _state.PIPELINE_DONE_PATH
+        if not os.path.exists(pidf):
+            return None
+        if os.path.exists(donef) and os.path.getmtime(donef) >= os.path.getmtime(pidf):
+            return None  # finished cleanly
+        pid = None
+        with open(pidf, encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("pid="):
+                    pid = int(line.split("=", 1)[1].strip())
+                    break
+        if pid and _pid_alive(pid):
+            return pid
+    except Exception:
+        pass
+    return None
+
+
 def is_pipeline_running() -> bool:
-    """Check if a pipeline process is currently running."""
+    """Running if THIS dashboard's handle is alive OR the on-disk pid marker points to a
+    live pipeline. The marker check is what prevents the double-launch (BUG 67): start →
+    stop → restart-dashboard → play would otherwise miss the still-running first process."""
     if _state.pipeline_process is not None:
         if _state.pipeline_process.poll() is None:
             return True
         _state.pipeline_process = None
-    return False
+    return _marker_pid() is not None
+
+
+def stop_running_pipeline() -> bool:
+    """Stop whichever pipeline is running — this dashboard's handle AND/OR the one named
+    by the on-disk marker (cross-process, survives a dashboard restart). Returns True if
+    anything was stopped."""
+    stopped = False
+    if _state.pipeline_process is not None:
+        kill_pipeline(_state.pipeline_process)
+        _state.pipeline_process = None
+        stopped = True
+    pid = _marker_pid()
+    if pid:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                               capture_output=True, timeout=15)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            stopped = True
+        except Exception:
+            pass
+    return stopped
 
 
 def read_persistent_log_path() -> str | None:

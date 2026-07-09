@@ -20,6 +20,7 @@ from ..pipeline_runner import (
     kill_pipeline,
     read_persistent_log_path,
     spawn_pipeline,
+    stop_running_pipeline,
     use_docker_exec,
 )
 
@@ -252,7 +253,9 @@ def api_stop():
     if not is_pipeline_running():
         return jsonify({"error": "No pipeline running"}), 404
 
-    kill_pipeline(_state.pipeline_process)
+    # Cross-process stop: kills our own handle AND/OR the pid-marker process (so a
+    # dashboard restarted to change a setting can still stop the run it didn't launch).
+    stop_running_pipeline()
     _state.pipeline_process = None
     _state.pipeline_vod_name = None
     return jsonify({"status": "stopped"})
