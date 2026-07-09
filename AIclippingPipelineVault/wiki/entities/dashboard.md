@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub, forensics, tabs]
 sources: 3
-updated: 2026-06-21
+updated: 2026-07-09
 ---
 
 # Web Dashboard
@@ -75,6 +75,9 @@ python dashboard/app.py
 # Open http://localhost:5001   (default; DASHBOARD_PORT/PORT override, auto-rolls forward if taken)
 ```
 Natively it runs the pipeline directly as a subprocess (`scripts/run_pipeline.py`) — no Docker. The `INSIDE_DOCKER` check selects the bridge mode; when unset and no container is detected it uses the native path.
+
+> [!note] The dashboard inherits ALL pipeline speed defaults automatically
+> `pipeline_env()` builds the child env as `os.environ.copy()` + model/caption/originality vars only — it sets **no** speed flags, so every code-level default applies to dashboard runs exactly as to a bare CLI run: audio-events cache, threaded scan, **C3** reload hygiene, **C4** segment cache, and **C1** cross-VOD prefetch are all on. **C1** only helps *batch* runs ("process all" → `--all`, or multi-select → `--vods a,b`); a single-VOD dashboard run is a harmless C1 no-op. The **Docker** path (`CLIP_USE_DOCKER=1`) runs the legacy bash `clip-pipeline.sh` and gets NONE of these. Verified 2026-07-09 — see [[concepts/plan-serving-stack-2026-07]] §0a, [[concepts/pipeline-speed-findings-2026-07]].
 
 **Legacy — Windows host with Docker:** if a `stream-clipper` container is running, the host dashboard detects it and executes the pipeline inside it via `docker exec`.
 

@@ -258,21 +258,49 @@ transcript windows), ~2700 tok each, `max_tokens=512`, temp 0.
   events were network timeouts, **zero JSON-parse failures** → C6 (grammar-constrained
   decoding) CLOSED (no waste to recover; it would only alter the token distribution).
 - **Speculative decoding A/B** (engine protocol on, same prompts): no-draft **51.7 tok/s** vs
-  qwen3.5-2b-draft **6.0 tok/s** = **8× REGRESSION** → S1 RED (see §9 danger box). The draft
-  pays the cross-vendor coordination tax the §7 floor is made of.
-- **C1 prefetch audio-events = BYTE-IDENTICAL** through the isolated prefetch path vs the
-  normal Stage-2 scan (live gate). Transcript compare was confounded by a
-  `whisperx→faster-whisper` symlink-privilege fallback (env non-determinism, affects normal
-  Stage 2 identically) — not a C1 defect. C1 correctness proven; wall-clock benefit unproven
-  (the fallback made the prefetch 20.6 min > the ~5.6 min render window it hides behind).
+  qwen3.5-2b-draft **6.0 tok/s** = **8× REGRESSION** → S1 RED (see §9 danger box).
+  - **WHY (the economics inversion):** speculative decoding wins only when
+    `draft_cost ≪ target_cost` — normally a 2B drafts ~15-20× faster than a 35B, so you draft
+    K tokens cheaply and the big model verifies all K in one pass. On this rig per-pass time is
+    set by the **fixed cross-GPU coordination** (PCIe activation shuffle + NVIDIA↔AMD sync),
+    not by matmul size (that's the §7 floor / 16% util). So a 2B forward pass costs almost as
+    much wall-time as a 35B pass → **`draft_cost ≈ target_cost`**, the core assumption is
+    violated. Speculative decoding then just multiplies passes (K draft + 1 verify + redo on
+    rejects) with no compute savings → ~8× the work per emitted token. Numbers fit: baseline
+    ~20 ms/tok (1 pass) → draft ~167 ms/tok (~8 near-full-cost passes). Plus the draft shares
+    the pool's VRAM bandwidth.
+  - **Catch-22 (why it's unfixable on THIS hardware):** the only fix is to make the draft
+    genuinely cheap = run it on a SINGLE fast GPU (no cross-vendor hop). But the 35B doesn't
+    fit on the 16 GB NVIDIA card alone — which is the entire reason for the cross-vendor split.
+    So the condition that makes the draft cheap is the same condition the split exists to avoid.
+    Revisit only if the target model ever fits one card.
+- **C1 prefetch = validated + DEFAULT-ON.** Audio-events **BYTE-IDENTICAL** through the isolated
+  prefetch path vs the normal Stage-2 scan (live gate); the transcript compare was confounded by
+  a `whisperx→faster-whisper` symlink-privilege fallback (env non-determinism, affects normal
+  Stage 2 identically — not a C1 defect). **Contention A/B settled the benefit:** NVENC render
+  median **16.9 s alone vs 16.9 s during a concurrent whisper job at 88% GPU util = +0.1%** —
+  the NVENC encoder ASIC and whisper's CUDA cores are different silicon, so the prefetch
+  overlaps the ~5.6 min render window essentially free. Saves ~5.6 min per VOD transition in a
+  batch → promoted default-on (`CLIP_BATCH_PREFETCH`). Chose the micro-bench over a ~2.5 h full
+  batch because C1 is byte-safe, so contention was its only failure mode.
 
 ## Bottom line
 
-The quality-safe speed gains are the non-LLM ones (**#1 cache, #2 threaded scan, #7 metrics** —
-shipped, byte-identical). Every LLM-parallel lever (Stage-4 cards/moments, #6 is a red herring
-since the scan is already fast) trades reproducibility for speed and changes the clip set within
-temp-variance — a real tradeoff for the owner, surfaced with data, not a silent regression.
+The quality-safe speed gains are the ones that DON'T touch LLM generation:
+- **Wave 1 (shipped):** #1 audio-events cache, #2 threaded scan, #7 metrics — byte-identical.
+- **Wave 2 (shipped 2026-07-09):** **C3** reload hygiene, **C4** segment cache, **C1** cross-VOD
+  batch prefetch — all default-on, all byte-safe (caches replay deterministic work; C1's overlap
+  measured contention-free). Reach production automatically via the dashboard's bare-metal path
+  ([[concepts/plan-serving-stack-2026-07]] §0a).
 
-Related: [[concepts/plan-pipeline-speed-2026-07]] · [[concepts/plan-speed56-execution-2026-07]] ·
+Everything that touches LLM *generation* is either a reproducibility tradeoff (Stage-4
+cards/moments parallelism — changes the clip set within temp-variance) or a measured **loss**:
+**speculative decoding = 8× slower** on the cross-vendor split (§9b — the coordination floor
+inverts the draft economics). The floor itself (§7) is a hardware property; no software lever
+moves it. Net: batches are faster from caching + overlap, not from making the model generate
+faster — that would need different serving hardware (single-card fit) or a smaller model.
+
+Related: [[concepts/plan-serving-stack-2026-07]] (Wave 2 + serving stack) ·
+[[concepts/plan-pipeline-speed-2026-07]] · [[concepts/plan-speed56-execution-2026-07]] ·
 [[concepts/vram-budget]] · [[concepts/multimodal-fusion-2026-07]] (the omni/LM-Studio serving
 constraints) · [[concepts/bugs-and-fixes]]

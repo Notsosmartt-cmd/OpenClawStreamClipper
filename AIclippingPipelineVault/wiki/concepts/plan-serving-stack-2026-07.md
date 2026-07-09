@@ -43,11 +43,32 @@ orchestration levers were never touched.
 | **S1 speculative decoding** | 🔴 NO-GO (measured 8× REGRESSION) | Owner enabled "Use LM Studio Engine protocol" → the CLI draft flag now LOADS. But benched: **6.0 tok/s with draft vs 50 baseline** (8× slower). Isolated: engine-protocol-no-draft = **51.7 tok/s** (runtime is neutral; the DRAFT is the regression). Cross-vendor Vulkan split is coordination-bound (§7) → the draft pays the same cross-GPU tax → pure overhead. Not integrable on this hardware. Engine-protocol setting safe to leave on |
 | **P evalBatchSize** | ⏸ owner GUI action | no CLI/config key on disk; set once in GUI, then bench with `bench_serving.py --mode prefill` |
 
-**Net so far:** the byte-safe wins that need no owner action are **C3** (live now) + **C4**
-(one flag). C1/C2b are built and validated in logic but need a full-VOD variance run + owner
-review before default-on (owner rubric: default-off = RED). The headline lever S1 is
-GUI-gated — the biggest expected win is one owner toggle away, but its value is unmeasured
-until enabled. See §3a.
+**FINAL (2026-07-09):** three levers default-on (**C3 + C4 + C1**), one deleted (**C2b**),
+two killed by measurement (**S1** 8× regression, **C6** zero retries). C2b/S1 didn't die from
+caution — they died from data. Net production effect: fresh multi-VOD batches now cache
+segments (C4), skip needless model reloads (C3), and overlap the next VOD's transcription with
+the current VOD's render (C1); re-runs additionally reuse the segment + transcript + audio-event
+caches.
+
+### 0a. How the defaults reach production (dashboard vs CLI — verified 2026-07-09)
+All Wave-2 wins are **code-level defaults**, so they apply to ANY `run_pipeline.py` invocation —
+the dashboard is not special. Verified by tracing the launch path:
+- The dashboard's **bare-metal path** (the Windows default; `CLIP_USE_DOCKER` unset) runs
+  `python scripts/run_pipeline.py` (`dashboard/_state.py:38` `PIPELINE_SCRIPT`) via
+  `spawn_pipeline()` with `env = os.environ.copy()` + model/caption/originality vars only
+  (`dashboard/pipeline_runner.py:pipeline_env`). It sets **none** of `CLIP_SEGMENT_CACHE` /
+  `CLIP_BATCH_PREFETCH` / `CLIP_STAGE2_ALWAYS_UNLOAD` (grep-confirmed absent) → the code
+  defaults win → **C3/C4/C1 all on automatically.**
+- **C1 caveat:** it only fires on a *batch* — the dashboard "process all"
+  (`run_pipeline.py --all`) and multi-select (`--vods v1,v2`) modes launch ONE process that
+  runs the batch loop, so C1 overlaps there. A single-VOD dashboard run has no next VOD → C1 is
+  a harmless no-op.
+> [!warning] Docker path bypasses ALL Python-pipeline optimizations
+> If `CLIP_USE_DOCKER=1` is ever set, the dashboard runs the legacy bash `clip-pipeline.sh`
+> (`DOCKER_PIPELINE_SCRIPT`), NOT `run_pipeline.py` — so none of Wave 1/Wave 2 (or the
+> bare-metal Python pipeline at all) applies, and its multi-VOD mode runs each VOD as a
+> SEPARATE invocation (C1's cross-VOD loop can't span them). Bare-metal is the default and
+> the only path that gets these wins. Docker is [[concepts/bare-metal-windows]]-superseded.
 
 ---
 
