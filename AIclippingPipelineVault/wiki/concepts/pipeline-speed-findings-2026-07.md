@@ -178,6 +178,32 @@ single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a co
 > categorically different from the §3 co-batching landmine). Controllability was researched
 > live 2026-07-09 (§9); the plan is [[concepts/plan-serving-stack-2026-07]].
 
+## 7b. Moment-parallel A/B (2026-07-09) — the LLM floor is now FULLY closed
+
+Owner approved wiring Speed #5 cut-over 2 (moment calls with 2 in flight, two-phase
+prior-context from precomputed cards) and the gated A/B ran on 2xRaKai
+(`moment_parallel_ab.py`, verdict `moment_ab_20260709_141429.json`):
+
+| Arm | Stage 4 | Selected clips |
+|---|---|---|
+| serial (refactored path — validated live) | 1107 s | 10 |
+| workers=2 | 959 s | 10 |
+
+- **Speedup 1.15×** (gate ≥1.4× → FAIL). **Overlap 4/10 ±20 s** (gate ≥5/10 → FAIL).
+- **Why so little:** LM Studio co-batches the 2 concurrent requests into shared forward
+  passes, and on the cross-vendor Vulkan split each pass is dominated by fixed
+  coordination costs that batching barely amortizes — the same floor that killed
+  speculative decoding (§9b) and made card-parallel ~4%. The theoretical
+  2-stage-pipeline 2× never materializes because the bottleneck isn't idle compute,
+  it's the per-pass sync.
+- **Disposition:** code REVERTED same day (owner rubric: no default-off zombies); the
+  behavior-identical serial run (1107 s ≈ the 1156 s historical median) also confirms
+  the A/B instrument. Gate driver + verdict JSON kept as forensics.
+- **Consequence:** §7's conclusion is now UNCONDITIONAL. Every software lever on Stage-4
+  LLM time has been measured: parallelism ~1.15×, spec-decode 0.12×, prefix-cache ~1 min,
+  cards ~4%. **The only remaining Stage-4 speed levers are hardware (a single card that
+  fits the model) or a model-tier change (quality tradeoff).** Stop looking.
+
 ## 8. Validation-coverage caveat + final #5/#6 disposition
 
 - **Single-VOD caveat:** every FULL-pipeline validation run this session used 2xRaKai
