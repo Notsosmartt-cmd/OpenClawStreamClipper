@@ -74,6 +74,21 @@ card-parallel cut-over (`CLIP_PASSB_CARD_WORKERS`).
 3. Stage-4 LLM parallelism (the ~2× lever) is therefore a genuine **speed-vs-reproducibility
    tradeoff**, not a free win. Kept DEFAULT-OFF; enabling is an owner call, not a gate.
 
+**⟶ 2026-07-09 REFRAME — the yardstick measurement (changes implication 3):**
+Two SERIAL production-temp (0.3) runs of the SAME rakai VOD (frozen runs
+`20260705_010127` vs `20260705_074956`, same selection config) overlap only
+**5/10 clips (±20 s)** — the pipeline's NORMAL run-to-run sampling variance. The
+card-parallel concurrency effect measured **7/10 at temp 0** — i.e. **concurrency-induced
+variance is SMALLER than the sampling variance every production run already has.** At
+production temp the sampling noise dominates and card-parallel changes outputs by *less
+than a plain re-run does*. So the "changes the clip set" caveat is not a NEW quality risk —
+it's within (in fact under) existing noise. Caveats: n=1 per comparison; the two serial
+runs' render flags differed (selection-irrelevant). Residual risk is only "different draw,
+same distribution" — exactly what a re-run produces today. This makes enabling
+`CLIP_PASSB_CARD_WORKERS` defensible with a one-batch owner spot-check, and the same
+A/B-variance method (serial-vs-serial yardstick, then concurrent-vs-serial) is the correct
+gate for any future moment-parallel work.
+
 ## 4. Whisper is already batched — transcription is ~200 s, not 781 s
 
 The 781 s "Stage 2" bucket is dominated by the audio-events scan, not Whisper. Measured on a
