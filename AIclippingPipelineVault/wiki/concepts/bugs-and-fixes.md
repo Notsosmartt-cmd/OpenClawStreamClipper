@@ -1720,6 +1720,22 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
+## BUG 67 — 8-hour wedged batch: gemma-4-26b (thinking model) fails EVERY Stage-4 chunk + a double-launch amplified it
+
+> [!warning] Two independent root causes, both live 2026-07-09. Config reverted; no code fix yet for the concurrency half.
+
+**Symptom (owner report):** a dashboard 3-VOD batch (Lacy, Jynxzi, 2xRaKai, `--force`) looked "stuck on Stage 4/8" for hours even though ~20 clips existed; the PC eventually hard-crashed after ~8 h. Post-crash: no `run_metrics.jsonl` row (never exited cleanly), stale work-dir markers (dead pid, stale stage, no done marker) left the dashboard showing a phantom run.
+
+**Root cause A — `google/gemma-4-26b-a4b-qat` is a NO-GO for this pipeline (the important one).** The owner had switched `config/models.json` `text_model`/`vision_model` to gemma-4-26b (an uncommitted local experiment — the "Lever 2 / fit-more-on-the-fast-card" idea). gemma-4-26b is a **reasoning model that ignores the pipeline's `/no_think` directive**: it emits a `<think>` block that consumes the ENTIRE token budget and never produces the JSON answer. Log signature, **379 times** in one run: `LLM returned empty content: finish=length, reasoning_tokens=7997, total_tokens=8000`. Every chunk → empty content → 3 retries (~6 min each) → `LLM call failed — queued for end-of-pass retry` (71×). So Stage 4 grinds forever producing nothing. (VOD 1 Lacy still squeaked out 20 clips — likely early chunks + transcript-score fallback — but VOD 2 Jynxzi was 100% failure.)
+- **Fix:** `git checkout config/models.json` → back to `qwen/qwen3.6-35b-a3b` (honors `/no_think`, known-good). **Do not use gemma-4-26b (or any thinking model) as `text_model` unless the Stage-4 prompt is reworked** to allocate a separate reasoning budget / strip the think block, or `enableThinking:false` is forced for it. This answers the Lever-2 question: gemma-4-26b is not viable as a drop-in — not on speed, on **output format**.
+
+**Root cause B — two concurrent pipeline processes (double-launch).** Two identical `run_pipeline.py --vods … --force` were running, one under `.venv\python`, one under `C:\Program Files\Python312\python` → **two separate dashboard instances** (different interpreters), each with its OWN in-memory `pipeline_lock`/`_state.pipeline_process`, so neither guarded against the other. They shared one **work dir** (clobbered `pipeline_stage.txt`/`.pid`/`.done` → dashboard shows garbage/never-done) and one **LM Studio server** (mutual Stage-4 contention, compounding A). C1 batch-prefetch being default-on adds two prefetch evictions to the fight (amplifier, not cause).
+- **No code fix yet.** Mitigations: run ONE dashboard instance; a defensive guard (refuse `run_pipeline.py` startup if a live `pipeline.pid` already owns the work dir; and/or a cross-process file lock) would prevent recurrence — **TODO**.
+
+**Cleanup done:** model reverted, stale markers removed, leftover `clipper_prefetch_*.wav` cleaned. **Not a crash-data-loss event:** all git commits intact, BUG 66 present, repo verified.
+
+---
+
 ## BUG 66 — Stage 6 rebuild drops per-moment metadata → P-TIGHT's rap exemption never fired
 
 > [!warning] First fix (2026-07-08) was INCOMPLETE — complete fix 2026-07-09 (confirmation run pending)
