@@ -3,11 +3,21 @@ title: "Execution Plan — Speed #5 (two-phase Pass B) & #6 (vectorized scan) wi
 type: concept
 tags: [plan, performance, pass-b, stage-4, audio-events, vectorization, validation, concurrency]
 sources: 0
-status: in-progress
+status: retired
 updated: 2026-07-09
 ---
 
 # Execution Plan: Speed #5 & #6 — iteration-by-iteration, validation-gated
+
+> [!note] RETIRED 2026-07-09 — both items dispositioned RED under the owner's rubric (default-off = not integrated)
+> Outcome: **#5** card-parallel built (default-off, measured ~4% — cards are cheap vs moment
+> calls) and moment-parallel never wired (LLM-concurrency non-determinism + marginal ROI);
+> **#6** built + zero-flip-validated but dominated by the #2 threaded scan (1.9× < 3.3×).
+> No further work planned. All code/harnesses/baselines remain in the repo as ARCHIVE /
+> forensics for any future implementation (`passb_driver.py`, `passb_equiv.py`,
+> `vector_equiv.py`, `_scan_vectorized`, `learning/passb_baseline/`). The transferable
+> knowledge (LLM floor, non-determinism landmine, variance yardstick, validation methods)
+> lives in [[concepts/pipeline-speed-findings-2026-07]] — read THAT first, this page second.
 
 > [!warning] KEY NEGATIVE RESULT 2026-07-09 — LLM-call parallelization is NOT byte-reproducible; #5 changes the clip set
 > The card-parallel validation run FALSIFIED the plan's core premise. Setup: baseline

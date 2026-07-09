@@ -3,11 +3,34 @@ title: "Pipeline Speed Plan — 7 quality-neutral optimizations (detailed implem
 type: concept
 tags: [plan, performance, speed, stage-2, stage-4, stage-6, stage-7, vision-judge, concurrency, audio-events, metrics]
 sources: 0
-status: in-progress
-updated: 2026-07-08
+status: shipped
+updated: 2026-07-09
 ---
 
 # Pipeline Speed Plan (2026-07) — detailed implementation per proposal
+
+> [!success] FINAL SCORECARD (2026-07-09, owner rubric: default-off = RED / not integrated)
+> **GREEN — live in every run, no flag needed (3 delivered + 1 pre-existing):**
+> - **#1 audio-events cache** — automatic; re-runs skip the ~10-16 min scan entirely.
+> - **#2 threaded audio scan** — DEFAULT-ON (min(4,cores-2) threads, BLAS-pinned), byte-identical, 3.3×.
+> - **#7 run-metrics** — automatic append per run + backfilled history (`run_metrics.jsonl`).
+> - *(#4 parallel renders — found ALREADY implemented pre-plan: ThreadPool audio extraction +
+>   up to 4 concurrent ffmpegs in stage7; active by default; not a plan deliverable.)*
+>
+> **RED — not integrated (3); code kept as archive/forensics for a future implementation:**
+> - **#3 vision-worker raise (2→4)** — bench contradicted on sign (noise-dominated) → no change;
+>   `bench_vision_slots.py` kept as the forensics tool.
+> - **#5 Pass-B LLM parallelism** — card-parallel built but default-off (~4%, marginal — cards
+>   are cheap); moment-parallel (the ~2× lever) never wired (LLM-concurrency non-determinism —
+>   [[concepts/pipeline-speed-findings-2026-07]] §3/§7). Archive: `passb_driver.py`,
+>   `passb_equiv.py`, `CLIP_PASSB_CARD_WORKERS`, `learning/passb_baseline/`.
+> - **#6 vectorized scan** — built + zero-flip-validated but default-off: 1.9× vs serial is
+>   DOMINATED by #2's 3.3× (enabling would slow the scan). Archive: `_scan_vectorized`,
+>   `AUDIO_EVENTS_VECTOR`, `vector_equiv.py`.
+>
+> **Net production effect:** re-runs ~74 → ~40-45 min on a 3.2 h VOD (all from #1+#2). The LLM
+> portion (~50 min) is the floor on this stack — findings §7 (16% GPU util; model/hardware is
+> the only remaining lever). Measured facts: [[concepts/pipeline-speed-findings-2026-07]].
 
 Owner directive: make the pipeline faster for BOTH fresh and pre-processed VODs
 **without sacrificing quality** and without the Windows-spawn hazard (the 58-min zombie:
