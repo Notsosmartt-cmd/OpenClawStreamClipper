@@ -21,6 +21,10 @@ def run(ctx) -> None:
         common.unload_model(log, ctx.llm_url, ctx.text_model)
         common.load_model(log, ctx.llm_url, ctx.text_model_passb, ctx.context_length)
 
+    # BUG 67 fail-fast guard: one tiny probe of the (now-loaded) Pass-B model. Aborts in
+    # ~1 s if the model ignores no-think (permanent reasoning -> would fail every chunk).
+    common.preflight_thinking(log, ctx.llm_url, ctx.text_model_passb)
+
     common.run_module(log, "stages/stage4_moments.py", [], env=env, check=True)
 
     moments = json.loads(p.hype_moments.read_text(encoding="utf-8")) if p.hype_moments.exists() else []

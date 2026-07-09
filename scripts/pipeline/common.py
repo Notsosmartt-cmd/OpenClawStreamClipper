@@ -37,6 +37,9 @@ PATHS = _paths_mod.PATHS
 # per-stage durations (observability — see logtool `axes` / stage_timings.json).
 _STAGE_MARKS: list = []
 
+# BUG 67 fail-fast guard: set once we've probed the Pass-B model's no-think compliance.
+_THINKING_PREFLIGHTED = False
+
 
 class PipelineExit(Exception):
     """Raised by a stage to end the run early but still run cleanup.
@@ -326,6 +329,62 @@ def load_model(log: Logger, llm_url: str, model: str, ctx: int) -> None:
     else:
         log.log(f"  pre-load: HTTP {code} — continuing (JIT will load if needed)")
     time.sleep(2)
+
+
+def preflight_thinking(log: Logger, llm_url: str, model: str) -> None:
+    """Fail-fast reasoning-model guard (BUG 67). Runs once per process, right before
+    Stage 4's chunk loop when ``model`` is already loaded. Sends ONE tiny no-think probe
+    and reads ``reasoning_tokens``: a model that reasons on a trivial prompt while thinking
+    is OFF (e.g. gemma-4-26b — ~200 tokens) will overflow the Stage-4 budget and fail every
+    chunk. Abort in ~1 s with a clear message instead of grinding the loop for hours.
+
+    Skipped when thinking is intentionally on (``CLIP_ENABLE_THINKING``) or when the owner
+    opts to run a reasoning model anyway (``CLIP_ALLOW_THINKING_MODEL=1``). Failure-soft: a
+    network/probe error never blocks the run (only a CONFIRMED high reasoning count aborts)."""
+    global _THINKING_PREFLIGHTED
+    if _THINKING_PREFLIGHTED:
+        return
+    _truthy = ("1", "true", "yes", "on")
+    if os.environ.get("CLIP_ENABLE_THINKING", "").strip().lower() in _truthy:
+        return  # thinking intentionally on — reasoning is expected, no guard
+    if os.environ.get("CLIP_ALLOW_THINKING_MODEL", "").strip().lower() in _truthy:
+        _THINKING_PREFLIGHTED = True
+        log.log("Thinking preflight: bypassed (CLIP_ALLOW_THINKING_MODEL=1).")
+        return
+    _THINKING_PREFLIGHTED = True
+    # A tiny DECISION task (not a trivial echo): a permanent-reasoning model reasons even
+    # here (gemma-4-26b ~200 tokens) while a compliant model answers directly (qwen = 0).
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content":
+            "/no_think\nClassify in ONE word (gaming/irl/food): "
+            "'yo chat what's up, just eating lunch outside'. Reply with ONLY the word."}],
+        "stream": False, "temperature": 0, "max_tokens": 128,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            f"{llm_url.rstrip('/')}/v1/chat/completions",
+            data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read().decode())
+        rt = int(result.get("usage", {}).get(
+            "completion_tokens_details", {}).get("reasoning_tokens", 0) or 0)
+    except Exception as e:  # noqa: BLE001 — probe failure must never block a run
+        log.warn(f"Thinking preflight: probe failed ({e}) — skipping guard, continuing.")
+        return
+    if rt > 50:
+        log.err(
+            f"Model '{model}' IGNORES no-think: reasoning_tokens={rt} on a trivial probe. "
+            f"It is a permanent-reasoning model that WILL overflow the Stage-4 token budget "
+            f"(every chunk -> finish=length, empty answer; see BUG 67). Aborting now instead "
+            f"of wedging for hours. FIX: use qwen/qwen3.6-35b-a3b, OR disable thinking in this "
+            f"model's LM Studio chat template, OR set CLIP_ALLOW_THINKING_MODEL=1 to run anyway "
+            f"(expect Stage-4 failures).")
+        raise PipelineExit(2, json.dumps({
+            "status": "thinking_model_rejected", "model": model,
+            "reasoning_tokens": rt, "clips": 0}))
+    log.log(f"Thinking preflight OK: '{model}' honors no-think (reasoning_tokens={rt}).")
 
 
 def verify_models(log: Logger, llm_url: str, models: Iterable[str]) -> None:

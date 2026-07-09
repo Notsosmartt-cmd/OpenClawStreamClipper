@@ -19,6 +19,8 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
+import thinking
+
 DEFAULT_URL = os.environ.get("CLIP_LLM_URL", "http://host.docker.internal:1234")
 
 
@@ -96,7 +98,7 @@ def chat(
         "stream": False,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": thinking.template_kwargs(),
     }
     # response_format intentionally omitted — see docstring.
     _ = response_json  # kept for back-compat; documented as no-op.

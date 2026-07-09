@@ -21,6 +21,8 @@ import os
 import re
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+
+import thinking
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -84,7 +86,7 @@ def vision_call(
         "stream": False,
         "temperature": 0.2,
         "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": thinking.template_kwargs(),
     }).encode()
     try:
         req = urllib.request.Request(

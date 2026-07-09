@@ -16,6 +16,7 @@ try:
     import urllib.request
 except:
     pass
+import thinking
 
 LLM_URL = os.environ["LLM_URL"]
 TEXT_MODEL = os.environ["TEXT_MODEL"]
@@ -986,7 +987,7 @@ def call_llm(prompt, model=TEXT_MODEL_PASSB, max_retries=2, timeout=240, max_tok
             # stochastic run-to-run). VALIDATION-ONLY; never the production default.
             "temperature": 0.0 if _PASSB_DETERMINISTIC else 0.3,
             "max_tokens": max_tokens,
-            "chat_template_kwargs": {"enable_thinking": False},
+            "chat_template_kwargs": thinking.template_kwargs(),
         }).encode()
 
         try:

@@ -121,7 +121,8 @@ def query_lm_studio_models() -> list[dict]:
 
 def pipeline_env(captions: bool = True, speed: str = "1.0",
                  hook_caption: bool = True, originality: dict | None = None,
-                 passb_dead_gate: str | None = None) -> dict:
+                 passb_dead_gate: str | None = None,
+                 enable_thinking: bool = False) -> dict:
     """Build environment dict for direct pipeline subprocess (inside Docker).
 
     ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
@@ -148,6 +149,10 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     env["CLIP_HOOK_CAPTION"] = "true" if hook_caption else "false"
     if passb_dead_gate and passb_dead_gate in ("off", "multi", "sample", "strict"):
         env["CLIP_PASSB_DEAD_GATE"] = passb_dead_gate
+    # Thinking toggle (default OFF = the pipeline's no-think default). Reliably controls the
+    # request-level lever on compliant models (qwen); non-compliant models (gemma-4) are caught
+    # by the Stage-4 fail-fast guard instead. See BUG 67.
+    env["CLIP_ENABLE_THINKING"] = "1" if enable_thinking else "0"
     for k, v in originality_to_env(originality or load_originality_config()).items():
         env[k] = v
     return env
@@ -325,7 +330,7 @@ def _poll_container_stages(container: str, proc) -> None:
 
 def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                    hook_caption: bool = True, originality: dict | None = None,
-                   passb_dead_gate: str | None = None):
+                   passb_dead_gate: str | None = None, enable_thinking: bool = False):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.
@@ -371,6 +376,7 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
             env_flags += ["-e", f"CLIP_VISION_MODEL_STAGE6={config['vision_model_stage6']}"]
         if passb_dead_gate and passb_dead_gate in ("off", "multi", "sample", "strict"):
             env_flags += ["-e", f"CLIP_PASSB_DEAD_GATE={passb_dead_gate}"]
+        env_flags += ["-e", f"CLIP_ENABLE_THINKING={'1' if enable_thinking else '0'}"]
         for k, v in orig_env.items():
             env_flags += ["-e", f"{k}={v}"]
 
@@ -418,7 +424,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
         stderr=subprocess.DEVNULL,
         env=pipeline_env(captions=captions, speed=speed,
                          hook_caption=hook_caption, originality=originality,
-                         passb_dead_gate=passb_dead_gate),
+                         passb_dead_gate=passb_dead_gate,
+                         enable_thinking=enable_thinking),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP

@@ -7,6 +7,7 @@ Reads bash-interpolated config from environment variables:
     LLM_URL, TEXT_MODEL, STREAM_TYPE_HINT
 """
 import json, os, re, sys, time
+import thinking
 try:
     import urllib.request
 except:
@@ -123,7 +124,7 @@ Respond with ONLY the single type name. Nothing else."""
         # just_chatting on Qwen, which is the original symptom of this
         # token-starvation pattern.
         "max_tokens": 6000,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": thinking.template_kwargs(),
     }).encode()
 
     try:
