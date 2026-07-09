@@ -81,13 +81,22 @@ updated: 2026-07-09
 > identical prompts). **Remaining:** confirm the hash match → CUT-OVER 2 (parallel MOMENT
 > calls via a sequential grounding post-pass — the bigger win; needs output-level validation
 > since the hash gate can't see grounding) → outage drill → soak → enable.
-> **#6 — harness SHIPPED (`scripts/research/vector_equiv.py`, I6.0 old-vs-old PASS: 0
-> deltas/0 flips), full vectorization NOT built — ROI reassessed:** #2 (threaded scan, now
-> DEFAULT 4, 3.3×) + #1 (cache, skips re-run scans) already collapsed the scan cost #6
-> targeted. #6 would take a FRESH scan from ~5 min (threaded) to ~2 min — a ~3 min gain on
-> fresh VODs only — for a large, quality-surfaced DSP refactor of `_run_detectors`.
-> **Recommendation: DEFER #6 indefinitely.** The harness stays as the ready gate if the
-> fresh-scan cost ever becomes the bottleneck again.
+> **#6 — BUILT + VALIDATED 2026-07-09, but DEFAULT-OFF (dominated by #2):** `_scan_vectorized`
+> in `audio_events.py` (`AUDIO_EVENTS_VECTOR`, default off) — one block-HPSS per ~600 s block
+> sliced per window for music_dominance (the ~700 ms/window dominant + only context-dependent
+> detector); crowd + rhythmic stay EXACT per-window (byte-identical → can't flip); a
+> near-threshold hybrid (`band`) recomputes music exactly; straddle windows fall back.
+> **I6.0/6.1/6.2 gates cleared:** harness `vector_equiv.py`; synthetic + **2 real VODs
+> (2xRaKai + Tylil, 30-min) → ZERO fire flips**. Finding: block-HPSS music deltas reach
+> **0.146** on real audio (Tylil) — bigger than the initial 0.05 band, so the band was
+> raised to **0.15** (≥ observed max error) to make zero-flip robust, not luck (rakai max
+> delta 0.015). **I6.3 benchmark = the verdict:** vectorized SINGLE-THREAD is **~1.9× over
+> serial (2.1 vs 1.1 win/s) — SLOWER than the shipped DEFAULT threaded scan (#2, ~3.3×).**
+> So #6 is correct and validated but **dominated by #2**; enabling it would make the scan
+> slower than the default. **Stays default-off.** It'd only win combined with threading
+> (block-parallel) — not worth building since the threaded scan is already fast (~5 min) and
+> #1 skips it entirely on re-runs. The build stands as a proven, validated option; the
+> honest call is leave it off.
 
 Owner directive: a detailed structured implementation plan for the two staged speed items,
 with the validation testing built into each iteration (not bolted on at the end). Designs

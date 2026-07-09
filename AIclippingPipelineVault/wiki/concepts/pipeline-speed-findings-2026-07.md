@@ -83,6 +83,25 @@ So "enable batched Whisper" = ~0 gain; a distil swap = ~0–10% (turbo already r
 distil-class speed, doesn't touch the separate wav2vec align step, and loses accuracy on
 slang). Verdict: not worth it; the scan (§2) was the real Stage-2 cost and is already handled.
 
+## 4b. #6 vectorized scan — BUILT + VALIDATED, but dominated by the threaded scan
+
+`_scan_vectorized` (`AUDIO_EVENTS_VECTOR`, default off): one block-HPSS per ~600 s block
+sliced per window for music_dominance (the ~700 ms/window dominant + only context-dependent
+detector); crowd + rhythmic recomputed EXACT per-window (byte-identical → can't flip);
+near-threshold music windows recomputed exactly (hybrid `band`); straddle windows fall back.
+
+- **Zero-flip validated** on 2 real VODs (2xRaKai + Tylil, 30-min segments, `vector_equiv.py`):
+  crowd/rhythmic max-delta 0.000; music max-delta **0.015 (rakai) / 0.146 (Tylil)**.
+- The 0.146 delta forced a design fix: the hybrid **band was raised 0.05 → 0.15** (must be ≥
+  the max block-HPSS error, else zero-flip is luck not a guarantee). The large-delta windows
+  that remain are far from the 0.6 gate → harmless.
+- **Benchmark = the verdict:** vectorized single-thread **~1.9× over serial (2.1 vs 1.1 win/s)
+  — SLOWER than the shipped DEFAULT threaded scan (§2, ~3.3×).** Vectorizing only de-dups the
+  overlapping HPSS work (~3× on HPSS) but leaves crowd/rhythmic per-window; threading beats it.
+- **Verdict: correct + validated, but default-off — dominated by #2.** Would only win combined
+  with threading (block-parallel), not worth building since the threaded scan is already ~5 min
+  and #1 (cache) skips it entirely on re-runs. Kept as a proven option, not enabled.
+
 ## 5. Dual-GPU reality (clarifies a common confusion)
 
 LM Studio (llama.cpp/Vulkan) **pools both cards into one ~28 GB space and tensor-splits ONE
