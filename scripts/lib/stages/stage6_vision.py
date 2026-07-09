@@ -28,6 +28,7 @@ TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 # Stage 4 heredoc uses; the cascade config + denylist are bind-mounted from
 # ./config into /root/.openclaw inside the container.
 sys.path.insert(0, "/root/scripts/lib")
+import thinking
 try:
     import grounding as _grounding
     GROUNDING_DENYLIST = _grounding.load_denylist()
@@ -697,7 +698,7 @@ Respond ONLY with JSON: {{
                     # would interpret backticks as command substitution
                     # (BUG 39 / BUG 46 redux).
                     "max_tokens": 8000,
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "chat_template_kwargs": thinking.template_kwargs(),
                 }).encode()
 
                 global _VISION_NET_FAIL_STREAK

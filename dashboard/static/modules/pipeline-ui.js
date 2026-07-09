@@ -214,6 +214,7 @@ export async function startClip() {
     const force = document.getElementById("chk-force").checked;
     const captions = document.getElementById("chk-captions").checked;
     const hook_caption = document.getElementById("chk-hook-caption").checked;
+    const enable_thinking = document.getElementById("chk-enable-thinking")?.checked || false;
     const speed = document.getElementById("sel-speed").value;
     // Pass B dead-chunk gate mode — controls how aggressively the pipeline
     // skips LLM calls on chunks with low Pass A signal. Default "off"
@@ -224,7 +225,7 @@ export async function startClip() {
     // One or many — the batch endpoint runs them sequentially in selection order.
     const { ok, data } = await apiPost("/api/clip-batch", {
         vods, style, type, force, captions, hook_caption, speed,
-        passb_dead_gate,
+        passb_dead_gate, enable_thinking,
         ...originality,
     });
     if (ok) {
@@ -245,12 +246,13 @@ export async function startClipAll() {
     const force = document.getElementById("chk-force").checked;
     const captions = document.getElementById("chk-captions").checked;
     const hook_caption = document.getElementById("chk-hook-caption").checked;
+    const enable_thinking = document.getElementById("chk-enable-thinking")?.checked || false;
     const speed = document.getElementById("sel-speed").value;
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     const originality = collectOriginality();
 
     const { ok, data } = await apiPost("/api/clip-all", {
-        style, force, captions, hook_caption, speed, passb_dead_gate, ...originality,
+        style, force, captions, hook_caption, speed, passb_dead_gate, enable_thinking, ...originality,
     });
     if (ok) {
         state.pipelineRunning = true;

@@ -37,6 +37,8 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+
+import thinking
 from typing import Any, Dict, List, Optional, Sequence
 
 LLM_URL = os.environ.get("LLM_URL", "http://host.docker.internal:1234")
@@ -220,7 +222,7 @@ def _call_llm(prompt: str, *, timeout: int) -> Optional[str]:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 1000,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": thinking.template_kwargs(),
     }
     # response_format intentionally omitted — Gemma-4 26B rejects it with HTTP 400
     # (BUG 33 cascade). _parse_response below handles freeform JSON via
