@@ -1641,6 +1641,52 @@ print(
 )
 
 
+# Speed #5 CUT-OVER 1 (card-parallel, plan-speed56-execution-2026-07): the arc-card call
+# (_build_chunk_card) is chunk-LOCAL — it depends ONLY on chunk_text — so all cards can be
+# built in parallel up front instead of one-at-a-time inside the loop, removing them from
+# the sequential critical path (~35% of Stage 4). Gated by CLIP_PASSB_CARD_WORKERS
+# (default 1 = OFF = the original inline call, byte-identical). SAFETY BY CONSTRUCTION: the
+# loop looks its card up BY chunk_text and FALLS BACK to the inline call on any miss, so
+# even if this windowing walk ever drifts from the loop's, output is unchanged — only the
+# parallelization is best-effort. Prompts / moment calls / grounding / summary-gating are
+# ALL untouched (gate = prompt-hash manifest must equal the golden baseline). At temp 0 the
+# precomputed card == the inline card (deterministic) → byte-identical; at production temp
+# 0.3 it's a different-but-valid card draw (same statistical-equivalence as any temp>0 run).
+_PASSB_PRECOMPUTED_CARDS = {}
+try:
+    _card_workers = int(os.environ.get("CLIP_PASSB_CARD_WORKERS", "1") or "1")
+except ValueError:
+    _card_workers = 1
+if _card_workers >= 2:
+    _pre_texts, _seen_txt, _cs = [], set(), segments[0]["start"]
+    while _cs < max_time:               # mirrors the loop's windowing (1649-1665)
+        _cd, _co, _ = _chunk_window_for(_cs)
+        _ce, _os = _cs + _cd, max(0, _cs - _co)
+        _segs = [s for s in segments if s["start"] < _ce + _co and s["end"] > _os]
+        if _segs:
+            _txt = format_chunk(_segs)
+            if sum(len(s["text"].split()) for s in _segs) >= 15 and _txt not in _seen_txt:
+                _seen_txt.add(_txt)
+                _pre_texts.append(_txt)
+        _cs += _cd
+    if _pre_texts:
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        print(f"[PASS B] card-parallel precompute: {len(_pre_texts)} cards across "
+              f"{_card_workers} threads", file=sys.stderr)
+        def _precompute_card(_t):
+            try:
+                return _t, _build_chunk_card(_t)
+            except Exception:
+                return _t, None
+        try:
+            with _TPE(max_workers=_card_workers) as _ex:
+                for _t, _card in _ex.map(_precompute_card, _pre_texts):
+                    _PASSB_PRECOMPUTED_CARDS[_t] = _card   # store even None (card-failure)
+        except Exception as _pce:
+            print(f"[PASS B] card precompute failed ({type(_pce).__name__}: {_pce}); "
+                  f"falling back to inline cards", file=sys.stderr)
+            _PASSB_PRECOMPUTED_CARDS = {}
+
 while chunk_start < max_time:
     # Tier-1 Q4: pick the chunk window from the segment type at the +150s peek.
     # cur_chunk_dur/cur_chunk_overlap stand in for the old CHUNK_DURATION/
@@ -2083,7 +2129,13 @@ If nothing stands out at all, respond: {{"moments": []}}"""
         summary_text = ""
         card = None
         try:
-            card = _build_chunk_card(chunk_text)
+            # Speed #5 card-parallel: use the precomputed card when present (built in
+            # parallel before the loop); fall back to the inline call on any miss so
+            # correctness never depends on the precompute — see the precompute block above.
+            if chunk_text in _PASSB_PRECOMPUTED_CARDS:
+                card = _PASSB_PRECOMPUTED_CARDS[chunk_text]
+            else:
+                card = _build_chunk_card(chunk_text)
         except Exception as _card_err:
             print(f"  Chunk {chunk_count}: card extraction errored ({_card_err}); continuing", file=sys.stderr)
         if card:
