@@ -38,9 +38,20 @@ updated: 2026-07-08
 > per-chunk signals — ALL before the prompt/moments/card work the driver models. So the
 > cut-over must extract a SEQUENTIAL cheap pre-pass (gate + shape + signals → the alive-chunk
 > list) and hand only alive chunks to the driver's two-phase. This is exactly why it's
-> incremental-with-a-live-gate, NOT a one-shot rewrite. **Remaining:** I5.1 pre-pass extraction
-> (gate: hashes == baseline) → I5.2 driver cut-over (gate: hashes == baseline) → I5.4 workers=3
-> live → I5.5 outage drill → I5.6 soak.
+> incremental-with-a-live-gate, NOT a one-shot rewrite.
+> **CUT-OVER 1 (card-parallel) SHIPPED 2026-07-08:** instead of the full risky two-phase
+> (whose prompt-hash gate would NOT cover the grounding/scoring code — a false-confidence
+> trap I caught before shipping), the first cut-over parallelizes only the chunk-LOCAL
+> arc-card calls (`CLIP_PASSB_CARD_WORKERS`, default 1=off): all cards precomputed in
+> parallel before the loop, looked up by chunk_text with an INLINE FALLBACK (correctness
+> guaranteed even if the windowing walk drifts). Prompts / moment calls / grounding /
+> summary-gating are UNTOUCHED, so this removes the ~24 card calls from the sequential
+> critical path (~35% of Stage 4) with no exposure on the risky code. Validation run in
+> flight (temp-0, `CLIP_PASSB_CARD_WORKERS=4`): the prompt-hash manifest must equal the
+> golden baseline `8e0316624c64089a` (cards deterministic at temp-0 → identical summaries →
+> identical prompts). **Remaining:** confirm the hash match → CUT-OVER 2 (parallel MOMENT
+> calls via a sequential grounding post-pass — the bigger win; needs output-level validation
+> since the hash gate can't see grounding) → outage drill → soak → enable.
 > **#6 — harness SHIPPED (`scripts/research/vector_equiv.py`, I6.0 old-vs-old PASS: 0
 > deltas/0 flips), full vectorization NOT built — ROI reassessed:** #2 (threaded scan, now
 > DEFAULT 4, 3.3×) + #1 (cache, skips re-run scans) already collapsed the scan cost #6
