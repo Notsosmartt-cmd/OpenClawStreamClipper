@@ -171,6 +171,13 @@ inconclusive (§2c), **software levers on the LLM portion are exhausted. The rem
 speed lever is a model-tier or serving-hardware change** (smaller/faster model, or a
 single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a code fix.
 
+> [!warning] 2026-07-09 CORRECTION — "exhausted" was over-broad
+> The claim above is true of **pipeline-code** levers. The **LM Studio serving configuration**
+> under the 35B was never tuned and holds at least one untested quality-neutral-by-construction
+> lever: **speculative decoding** (draft+verify preserves the target's output distribution —
+> categorically different from the §3 co-batching landmine). Controllability was researched
+> live 2026-07-09 (§9); the plan is [[concepts/plan-serving-stack-2026-07]].
+
 ## 8. Validation-coverage caveat + final #5/#6 disposition
 
 - **Single-VOD caveat:** every FULL-pipeline validation run this session used 2xRaKai
@@ -181,6 +188,35 @@ single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a co
   cheap; the real Stage-4 lever is moment-parallel, which stays HELD** on the §3
   reproducibility tradeoff, enable-by-owner-review only). #6 built + zero-flip-validated +
   default-off (**dominated by #2**). Production speed gains come from **#1 + #2 only**.
+
+## 9. Serving-stack controllability facts (researched live 2026-07-09)
+
+Measured/verified on this machine while scoping [[concepts/plan-serving-stack-2026-07]]:
+
+- **`lms load` exposes speculative decoding as plain CLI flags** (`--speculative-draft-simple
+  --speculative-draft-model <m>`, `--speculative-draft-mtp`, plus max/min-tokens and
+  min-continue-probability; CLI commit 6041ae0) — fully scriptable, no UI dependency.
+- **MTP is DEAD for the current GGUF**: metadata cache says `supportsMtp=false` for
+  `Qwen3.6-35B-A3B-Q4_K_M.gguf`, and a live `--speculative-draft-mtp` load fails fast at 0%
+  with `Error: MTP speculative decoding requires a GGUF model with a bundled supported MTP
+  head.` (unsloth publishes MTP repacks of the same model — but that's a weights change.)
+- **Draft vocab compatibility** (from LM Studio's gguf metadata cache): qwen3.6-35b-a3b and
+  qwen3.5-9b share speculation vocab **248320** → the qwen3.5/3.6 family inter-drafts.
+  qwen3-8b (151936), gemma (262144), nemotron (131072), gpt-oss (201088) are incompatible.
+  Qwen3.5 ships 0.8B/2B/4B smalls — proper draft sizes, none on disk yet.
+- **Per-model GUI toggles persist to a plain JSON**:
+  `<LMS home>\.internal\user-concrete-model-default-config\qwen\qwen3.6-35b-a3b.json`
+  (LMS home = `C:\Users\user\.cache\lm-studio`, pointer `~\.lmstudio-home-pointer`; GGUFs on
+  `G:\lm-studio`). For the 35B it holds **`flashAttention: true` (already on — no gain
+  available there)**, `contextLength: 16384`, and `enableThinking: false` — which retroactively
+  explains the old "thinking only controllable via UI" finding: the UI writes this file and
+  every load (CLI/JIT) reads it, so editing the file ≡ the UI toggle.
+- **GPU split is NOT tunable in LM Studio on Vulkan dual-GPU**: UI offers only "split evenly";
+  no CLI flag; no config key found on disk (`hardware-config.json` holds only
+  `gpuStrictVramCap`). Row-split / per-card tensor ratios aren't exposed at all.
+- **Prefill batch (`evalBatchSize`)** has no CLI flag and no on-disk instance (never set) —
+  controllable via GUI advanced load settings; the file key must be confirmed by
+  set-once-and-diff before scripting it.
 
 ## Bottom line
 
