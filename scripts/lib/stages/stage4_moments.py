@@ -1595,16 +1595,6 @@ _PASSB_PROMPT_HASHES = {}           # chunk_count -> sha1(prompt)[:12]
 # rebuild is impossible — one instrumented run yields the replay set). Default off, failure-soft.
 _PASSB_DUMP_PROMPTS = os.environ.get("CLIP_PASSB_DUMP_PROMPTS", "").strip().lower() in (
     "1", "true", "yes", "on")
-# Speed Wave 2 C2b (plan-serving-stack-2026-07): with CLIP_PROMPT_STATIC_FIRST=1, assemble the
-# moment prompt STATIC-FIRST (catalog + all fixed instructions + JSON spec, then the per-chunk
-# segment/transcript) so consecutive chunks share a cacheable KV prefix. C2a measured that
-# llama.cpp DOES reuse a shared prefix (~48% prefill saving) and it SURVIVES moment/card
-# alternation (PARALLEL=4 slot routing). Content-preserving reorder, but it changes the token
-# ORDER -> outputs change -> OUTPUT-CHANGING, variance-yardstick + owner-gated. Default OFF.
-_PROMPT_STATIC_FIRST = os.environ.get("CLIP_PROMPT_STATIC_FIRST", "").strip().lower() in (
-    "1", "true", "yes", "on")
-
-
 def _passb_resolve_gate_mode():
     """Decide which dead-chunk gate mode to apply this run.
 
@@ -1914,52 +1904,7 @@ while chunk_start < max_time:
     # interaction shapes) instead of the legacy 6-rule keyword-style prompt.
     # When the catalog is unavailable (config missing) the legacy prompt is
     # preserved as a fallback below.
-    if PATTERN_CATALOG_PROMPT and _PROMPT_STATIC_FIRST:
-        # C2b: static-first assembly. Everything above the "=== SEGMENT ===" marker is
-        # byte-identical across chunks (the cacheable KV prefix); per-chunk content follows.
-        # Content-preserving vs the default branch below (seg_type moved into the segment
-        # section; "signals above" -> "signals in the SEGMENT section below").
-        prompt = f"""/no_think
-You are a stream clip scout. Find 0-3 clip-worthy moments in the SEGMENT below by matching against the PATTERN CATALOG — do NOT score on keywords alone.
-
-PATTERN CATALOG (evaluate against these — pick the best fit):
-{PATTERN_CATALOG_PROMPT}
-
-How to use the catalog:
-- For each candidate moment, identify which pattern's signature is satisfied. Set "primary_pattern" to that pattern's id.
-- If a second pattern also fits, list it under "secondary_patterns".
-- If NO pattern's signature is satisfied, do not emit the moment. Don't invent patterns.
-- Use the conversation_shape signals in the SEGMENT section below as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
-- "why" must name the pattern signature being satisfied AND cite specific transcript+shape evidence. Example: "Pattern setup_external_contradiction: streamer claims X at 14:02, off-screen voice contradicts at 14:28, streamer concedes at 14:33."
-
-Skip these:
-- Routine gameplay or "oh my god" reactions that don't fit any pattern's signature.
-- Generic hype with no setup, no payoff, no social dynamic.
-
-When in doubt, lean toward INCLUDING with a lower score (3-5) over skipping — the scoring system handles the rest. List EVERY distinct qualifying moment in this chunk — do NOT stop at a tidy 2-3. A busy chunk can legitimately have 5+ separate moments; a quiet one may have 0. Under-reporting a real moment is worse than including a weak one (downstream scoring + grounding filter the weak ones for free).
-
-Respond with ONLY a single JSON object: {{"moments": [ ... ]}}. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "primary_pattern": "<pattern_id>", "secondary_patterns": ["<pattern_id>", ...], "why": "one sentence naming WHICH pattern signature is satisfied and HOW the transcript+shape evidence it"}}
-
-IMPORTANT — start_time and end_time define the CLIP BOUNDARIES:
-- start_time: where the moment BEGINS (include setup/context). For storytimes, this is where the story starts.
-- end_time: where the moment ENDS (after the payoff/reaction lands). Don't trail into dead air.
-- Minimum clip: 15 seconds. Maximum: 150 seconds for storytime/emotional, 90 seconds for everything else.
-- One-liner reactions: 15-25 s
-- Standard funny/hype/hot_take: 25-50 s
-- Storytime/emotional with narrative arc: 60-120 s (default 90)
-- Setup-payoff callbacks with multi-minute setup: up to 150 s (cite the setup line in 'why')
-
-=== SEGMENT TO ANALYZE ===
-This is a {seg_type.upper()} segment.
-{seg_instructions}
-
-STYLE: {style_hint}
-{prior_context_block}{convo_shape_block}
-Transcript (timestamps MM:SS from stream start):
-{chunk_text}
-
-If nothing stands out at all, respond: {{"moments": []}}"""
-    elif PATTERN_CATALOG_PROMPT:
+    if PATTERN_CATALOG_PROMPT:
         prompt = f"""/no_think
 You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-3 clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
 
