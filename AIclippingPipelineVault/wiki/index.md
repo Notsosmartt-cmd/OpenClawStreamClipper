@@ -66,6 +66,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/plan-activation-wave-2026-07]] — ONE plan to turn the built machinery on: near-miss tool + anomaly filename tag + judge-timeline builds → one flagged run → one review → labels → promotions (**planned 2026-07-08**)
 - [[concepts/plan-pipeline-speed-2026-07]] — 7 quality-neutral speed optimizations w/ detailed per-proposal implementation (cache events, thread scan, slot bench, parallel renders, two-phase Pass B, vectorize, metrics) (**#1/#2/#7 shipped 2026-07-08**)
 - [[concepts/plan-speed56-execution-2026-07]] — Iteration-by-iteration execution plan for #5 two-phase Pass B + #6 vectorized scan, validation gate per step (mock-harness equivalence, temp-0 hash runs, fire-equality hybrid) (**planned 2026-07-08**)
+- [[concepts/pipeline-speed-findings-2026-07]] — **REFERENCE (measured facts)**: 21-run timing baseline, byte-identical wins (#1/#2/#7), the LLM-concurrency non-determinism LANDMINE, whisper-already-batched, dual-GPU reality, validation-method learnings
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
