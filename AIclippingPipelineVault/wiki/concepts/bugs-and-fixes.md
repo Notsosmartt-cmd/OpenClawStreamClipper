@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-07-08
+updated: 2026-07-09
 ---
 
 # Bugs and Fixes
@@ -1722,7 +1722,19 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ## BUG 66 — Stage 6 rebuild drops per-moment metadata → P-TIGHT's rap exemption never fired
 
-> [!success] Resolved 2026-07-08 (found by owner clip review)
+> [!warning] First fix (2026-07-08) was INCOMPLETE — complete fix 2026-07-09 (confirmation run pending)
+> The 2026-07-08 fix preserved `primary_pattern` through Stage 6 and forwarded it at Stage 7,
+> but a `combined-review` run (2026-07-09) proved it STILL didn't fire: `scored_moments` had
+> `primary_pattern=None` for 10/10 clips, and a `rap_battle_freestyle` clip (T=9832) was
+> trimmed again. The real source gap was UPSTREAM of Stage 6: **Stage 4's `hype_moments.json`
+> output entry never included `primary_pattern`** (it lived only in the trace / pass_c_candidates)
+> — so Stage 6 faithfully preserved `None`. Complete fix: emit `primary_pattern` in the
+> Stage-4 `hype_moments` entry (stage4_moments.py ~L3676) so it flows Stage 4→6→7. Lesson
+> reinforced: when a field must reach Stage 7, trace the WHOLE chain (Stage-4 output entry →
+> Stage-6 rebuild → Stage-7 row), not just the nearest hop — the trace record ≠ the moments
+> output. Being confirmed on a temp-0 `bug66-confirm` run (rap clip must show exempt/untrimmed).
+
+> [!success] Resolved 2026-07-08 (found by owner clip review) — see the INCOMPLETE-fix note above (completed 2026-07-09)
 
 **Symptom**: on the Activation-Wave Run 1 (2xRaKai, `CLIP_TIGHT_PUNCHLINE=1`), P-TIGHT trimmed
 `T=9567` from 20 s → 11.7 s even though its `primary_pattern` is `rap_battle_freestyle` —
