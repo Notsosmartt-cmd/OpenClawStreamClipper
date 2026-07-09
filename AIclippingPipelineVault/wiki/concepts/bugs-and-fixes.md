@@ -1732,7 +1732,15 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 > Stage-4 `hype_moments` entry (stage4_moments.py ~L3676) so it flows Stage 4→6→7. Lesson
 > reinforced: when a field must reach Stage 7, trace the WHOLE chain (Stage-4 output entry →
 > Stage-6 rebuild → Stage-7 row), not just the nearest hop — the trace record ≠ the moments
-> output. Being confirmed on a temp-0 `bug66-confirm` run (rap clip must show exempt/untrimmed).
+> output.
+> **Verification (2026-07-09): code-inspection + executable dict-flow proof** (owner killed
+> the confirmation run mid-Stage-4 to stop burning the slow LLM path on a boundary check).
+> All 4 hops verified in code (S4 emit L3676→ S6 preserve stage6_vision:450 → S7 row:150 +
+> tighten dict:187 → clip_tighten._exempt:179), then a pure-Python simulation replicated each
+> hop's exact transformation incl. both JSON round-trips and called the REAL `_exempt`:
+> rap_battle_freestyle → **exempt=True**; social_callout control → False; pre-fix ""-shape →
+> False (reproduces the old bug). **Live self-confirmation check for the NEXT production run:**
+> rap/freestyle clips must show NO `[p-tight]` trim line (exempt clips log nothing).
 
 > [!success] Resolved 2026-07-08 (found by owner clip review) — see the INCOMPLETE-fix note above (completed 2026-07-09)
 
