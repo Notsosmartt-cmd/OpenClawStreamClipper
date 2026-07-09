@@ -46,6 +46,18 @@ Timing is now persisted per run to `clips/.diagnostics/run_metrics.jsonl` (survi
 These touch NO LLM inference, so they are genuinely reproducible. That is the dividing line
 (§3).
 
+## 2c. #3 vision-slot bench — INCONCLUSIVE (effect is noise-dominated → no change)
+
+`scripts/research/bench_vision_slots.py` fires the same 4-image judge-shaped request at
+concurrency 1–4 against qwen3.6-35B on the pooled GPUs. Two runs CONTRADICTED each other on
+the sign: run 1 (reps=4) had conc=2 at **0.67×** conc=1 (slower); run 2 (reps=6) had conc=2
+at **1.57×** (faster). At n=4–6 with a JIT-loaded 35B on a shared Vulkan pool the concurrency
+effect is buried in variance. **Verdict: not actionable — the current `STAGE6_WORKERS` /
+`JUDGE_WORKERS`=2 default stays** (don't change a config on noise; if the effect were real
+and large it wouldn't flip sign). The "raise workers 2→4" lever from the speed plan is thus
+retired as marginal. A rigorous answer would need many reps + controlled warmup, but the
+noise itself shows the gain is small — not worth chasing vs the shipped wins (§2).
+
 ## 3. ⚠️ LANDMINE: LLM-call parallelization is NOT byte-reproducible (even at temp 0)
 
 **The central negative result of the speed work.** Discovered validating the Stage-4
