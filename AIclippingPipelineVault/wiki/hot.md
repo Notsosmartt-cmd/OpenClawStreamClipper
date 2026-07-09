@@ -25,7 +25,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | Stage 7 encode | h264_nvenc by default (libx264 fallback) | 2026-06-06 | [[concepts/clip-rendering]] |
 | Audio-events scan | threaded default (min(4,cores-2), byte-identical 3.3×) + per-VOD cache (re-runs skip) | 2026-07-08 | [[concepts/pipeline-speed-findings-2026-07]] |
 | Speed scorecard (Wave 1) | GREEN #1/#2/#7 live; RED #3/#5/#6 archived (default-off = not integrated) | 2026-07-09 | [[concepts/plan-pipeline-speed-2026-07]] |
-| Speed scorecard (Wave 2) | C3 live (reload hygiene); C4/C2b/C1 built default-off (need full-VOD validation); S1 spec-decode GUI-only/blocked; C6 closed | 2026-07-09 | [[concepts/plan-serving-stack-2026-07]] §0 |
+| Speed scorecard (Wave 2) | C3 + C4 DEFAULT-ON (C4 live gate: hit 3.7s vs miss 100s, byte-identical); C1/C2b gates running (promote or delete); S1 GUI-only (owner); C6 closed | 2026-07-09 | [[concepts/plan-serving-stack-2026-07]] §0 |
 | Serving bench facts | decode 50 tok/s; prefill ~42%/call; KV prefix-reuse ON + survives alternation (PARALLEL=4) | 2026-07-09 | [[concepts/pipeline-speed-findings-2026-07]] §9b |
 | Run timing | median 0.26× realtime; LLM stages are the floor (16% GPU util); remaining levers = serving stack (spec decode) or model/hw | 2026-07-09 | [[concepts/pipeline-speed-findings-2026-07]] §7+§9 |
 | Latest bug | BUG 66 (Stage-6 rebuild dropped primary_pattern → P-TIGHT rap exemption never fired, fixed) | 2026-07-08 | [[concepts/bugs-and-fixes#BUG 66]] |

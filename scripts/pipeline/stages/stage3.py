@@ -60,11 +60,12 @@ def run(ctx) -> None:
     segments_out = p.work("segments.json")
     profile_out = p.work("stream_profile.json")
 
-    # C4: optional segment cache (default OFF). Stage 3 is LLM-VOTED, so a fresh run
-    # re-rolls segments while a cache hit REPLAYS the prior draw (byte-identical to that
-    # run, and usually desirable — it holds segments constant across A/B re-runs). Because
-    # it freezes a stochastic output, it ships flag-gated pending an owner OK on semantics.
-    _cache_on = _truthy(os.environ.get("CLIP_SEGMENT_CACHE", "0"))
+    # C4: segment cache — DEFAULT ON (promoted 2026-07-09 after live validation: real
+    # Stage-3 miss 100 s -> hit 3.7 s, byte-identical restore, model reload skipped,
+    # --force bypasses). Stage 3 is LLM-VOTED, so a fresh run re-rolls segments while a
+    # cache hit REPLAYS the prior draw — same semantics as the transcript cache, and
+    # --force (every --all batch) always re-rolls. Kill switch: CLIP_SEGMENT_CACHE=0.
+    _cache_on = _truthy(os.environ.get("CLIP_SEGMENT_CACHE", "1"))
     key = _seg_config_key(ctx) if _cache_on else ""
     cache_file = _segcache_path(ctx, key) if key else None
 
