@@ -20,7 +20,10 @@ import json
 import os
 import shutil
 import signal
+import subprocess
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -175,9 +178,82 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
-def _execute_stages(ctx, log) -> int:
+def _prefetch_stage2(next_vod_name: str, p, ctx, log):
+    """C1 (Speed Wave 2, plan-serving-stack-2026-07): transcribe + audio-scan the NEXT
+    batch VOD into the shared cache while the CURRENT VOD renders (Stage 7/8 use no LLM).
+    Fully isolated from the shared work dir — writes only to `transcriptions_dir` and a temp
+    wav — so it never clobbers the current VOD's audio.wav. Returns a started daemon thread,
+    or None when there is nothing to prefetch (caches already warm / VOD missing / no work).
+    Failure-soft: any error just means the next VOD transcribes inline as usual."""
+    stem = Path(next_vod_name).stem
+    tdir = p.transcriptions_dir
+    cached_json = tdir / f"{stem}.transcript.json"
+    cached_srt = tdir / f"{stem}.transcript.srt"
+    cached_events = tdir / f"{stem}.audio_events.json"
+    vod_path = p.vods_dir / next_vod_name
+
+    def _valid_events(pth) -> bool:
+        try:
+            d = json.loads(Path(pth).read_text(encoding="utf-8"))
+            return isinstance(d.get("windows"), list) and len(d["windows"]) > 0 \
+                and not d.get("skipped_reason")
+        except Exception:
+            return False
+
+    need_tx = not (cached_json.exists() and cached_srt.exists())
+    need_ev = not (cached_events.exists() and _valid_events(cached_events))
+    if not vod_path.exists() or (not need_tx and not need_ev):
+        return None  # nothing to do — do NOT evict the model needlessly
+
+    # There IS prefetch work: free the GPU so Whisper can run alongside the render
+    # (Stage 7 = NVENC + CPU filters; the LLM is done after Stage 6).
+    tdir.mkdir(parents=True, exist_ok=True)
+    for m in dict.fromkeys([ctx.text_model, ctx.vision_model,
+                            ctx.text_model_passb, ctx.vision_model_stage6]):
+        common.unload_model(log, ctx.llm_url, m)
+
+    prep_log = p.persistent_log_dir / f"prefetch_{stem}.log"
+
+    def _work():
+        try:
+            p.persistent_log_dir.mkdir(parents=True, exist_ok=True)
+            with open(prep_log, "w", encoding="utf-8") as lf:
+                tmpwav = Path(tempfile.gettempdir()) / f"clipper_prefetch_{stem}.wav"
+                subprocess.run(["ffmpeg", "-y", "-i", str(vod_path), "-vn", "-acodec",
+                                "pcm_s16le", "-ar", "16000", "-ac", "1", str(tmpwav)],
+                               stdout=lf, stderr=subprocess.STDOUT, timeout=1800)
+                env = ctx.child_env()
+                env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
+                env["VOD_BASENAME"] = next_vod_name
+                if need_tx:
+                    subprocess.run([sys.executable, str(p.lib_dir / "speech.py"),
+                                    "--audio", str(tmpwav), "--out-json", str(cached_json),
+                                    "--out-srt", str(cached_srt), "--vod", next_vod_name],
+                                   cwd=str(p.repo_root), env=env, stdout=lf,
+                                   stderr=subprocess.STDOUT, timeout=2400)
+                if need_ev:
+                    subprocess.run([sys.executable, str(p.lib_dir / "audio_events.py"),
+                                    "--audio", str(tmpwav), "--out", str(cached_events)],
+                                   cwd=str(p.repo_root), env=env, stdout=lf,
+                                   stderr=subprocess.STDOUT, timeout=1800)
+                tmpwav.unlink(missing_ok=True)
+        except Exception as e:  # noqa: BLE001
+            try:
+                log.warn(f"C1 prefetch of '{stem}' failed ({e}) — next VOD transcribes inline")
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_work, name=f"prefetch-{stem}", daemon=True)
+    t.start()
+    log.log(f"C1: prefetching Stage 2 for next VOD '{next_vod_name}' during render "
+            f"(isolated; prep log {prep_log.name}).")
+    return t
+
+
+def _execute_stages(ctx, log, after_stage6=None) -> int:
     """Run model verification + the 8 stages for one VOD. Returns an exit code.
-    Catches PipelineExit (an intentional early stop) and returns its code."""
+    Catches PipelineExit (an intentional early stop) and returns its code.
+    ``after_stage6`` (C1) fires once, right after Stage 6, while the LLM is idle."""
     import importlib
     t0 = time.time()
     try:
@@ -185,6 +261,11 @@ def _execute_stages(ctx, log) -> int:
             common.verify_models(log, ctx.llm_url, ctx.configured_models())
         for i in range(1, 9):
             importlib.import_module(f"pipeline.stages.stage{i}").run(ctx)
+            if i == 6 and after_stage6 is not None:
+                try:
+                    after_stage6()
+                except Exception as e:  # noqa: BLE001 - never let prefetch break the run
+                    log.warn(f"C1 after-stage-6 hook failed: {e}")
         return 0
     except PipelineExit as pe:
         if pe.summary:
@@ -285,15 +366,29 @@ def main(argv: list[str]) -> int:
                 batch_force = True
             if not targets:
                 log.log("No VODs to process.")
+            # C1: optional cross-VOD prefetch (default OFF). Overlaps the next VOD's
+            # Stage 2 (transcription+scan) with the current VOD's render window.
+            prefetch_on = os.environ.get("CLIP_BATCH_PREFETCH", "").strip().lower() in (
+                "1", "true", "yes", "on")
+            _pf = [None]  # holder for the in-flight prefetch thread (list -> closure-writable)
             for i, vod_name in enumerate(targets):
                 if i > 0:
+                    if _pf[0] is not None:
+                        # Bounded: guarantee the next VOD's cache is populated before it runs.
+                        _pf[0].join(timeout=1800)
+                        _pf[0] = None
                     _reset_work_artifacts(p)
                 log.line(f"=== Clipping {vod_name} ({i + 1}/{len(targets)}) ===")
                 vctx = Ctx(argparse.Namespace(
                     style=args.style, vod=vod_name, type=args.type,
                     list=False, force=batch_force, all=False))
                 vctx.log = log
-                rc = _execute_stages(vctx, log)
+                hook = None
+                if prefetch_on and i + 1 < len(targets):
+                    _next = targets[i + 1]
+                    def hook(_nv=_next, _vc=vctx):
+                        _pf[0] = _prefetch_stage2(_nv, p, _vc, log)
+                rc = _execute_stages(vctx, log, after_stage6=hook)
                 exit_code = rc or exit_code
         else:
             exit_code = _execute_stages(ctx, log)

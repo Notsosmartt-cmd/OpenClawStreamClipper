@@ -193,9 +193,23 @@ single-GPU CUDA setup that fits the model) — a quality/cost tradeoff, not a co
 
 Measured/verified on this machine while scoping [[concepts/plan-serving-stack-2026-07]]:
 
-- **`lms load` exposes speculative decoding as plain CLI flags** (`--speculative-draft-simple
+> [!warning] 2026-07-09 IMPLEMENTATION UPDATE — the CLI flags EXIST but are REJECTED at runtime
+> The bullet below (flags are "fully scriptable") was falsified when actually run. `lms load
+> qwen/qwen3.6-35b-a3b --speculative-draft-simple --speculative-draft-model qwen/qwen3.5-2b`
+> fails: **"Load-time draft-model speculative decoding is only supported by the llama.cpp
+> engine protocol runtime. Use the existing prediction-time draft-model setting for native
+> llama.cpp or MLX models."** Our selected runtime is `llama.cpp-win-x86_64-vulkan-avx2@2.23.1`
+> (required for the dual-GPU pool), which is the *native* llama.cpp, not the "engine protocol"
+> variant → the load-time flag path is dead. The API path is also dead: a per-request
+> `draft_model` field returns HTTP 400, and a `speculative_decoding` object is silently ignored
+> (no draft stats, identical tok/s). **Speculative decoding on this stack is GUI-ONLY** (Power
+> User mode → load model → "Speculative Decoding" sidebar → pick draft), exactly the
+> UI-toggle class the owner warned about. See §9b for the empirical serving measurements.
+
+- **`lms load` exposes speculative-decoding CLI flags** (`--speculative-draft-simple
   --speculative-draft-model <m>`, `--speculative-draft-mtp`, plus max/min-tokens and
-  min-continue-probability; CLI commit 6041ae0) — fully scriptable, no UI dependency.
+  min-continue-probability; CLI commit 6041ae0) — but see the warning above: the flags parse
+  yet the Vulkan runtime refuses them at load time. NOT scriptable on this stack.
 - **MTP is DEAD for the current GGUF**: metadata cache says `supportsMtp=false` for
   `Qwen3.6-35B-A3B-Q4_K_M.gguf`, and a live `--speculative-draft-mtp` load fails fast at 0%
   with `Error: MTP speculative decoding requires a GGUF model with a bundled supported MTP
@@ -217,6 +231,33 @@ Measured/verified on this machine while scoping [[concepts/plan-serving-stack-20
 - **Prefill batch (`evalBatchSize`)** has no CLI flag and no on-disk instance (never set) —
   controllable via GUI advanced load settings; the file key must be confirmed by
   set-once-and-diff before scripting it.
+
+## 9b. Serving BENCHMARKS (measured 2026-07-09, `scripts/research/bench_serving.py`)
+
+Serial requests to the loaded 35B (`-c 16384`, Vulkan dual-GPU), native `/api/v0` `stats`.
+Prompts = synthetic-realistic (real `config/patterns.json` catalog ~740 tok + real
+transcript windows), ~2700 tok each, `max_tokens=512`, temp 0.
+
+- **Decode throughput = 50 tok/s** (steady, 8 calls). Healthier than the 16%-util reading
+  implied — the 3B-active MoE decodes fine; the "floor" is mostly the fixed per-call cost.
+- **Prefill is ~42% of a COLD call** (~6.7 s to prefill ~2700 tok ≈ **~520 tok/s prefill**;
+  large-prompt check: ~15 k tok cold-prefill = 29 s ≈ 523 tok/s). Decode of ~370 out-tokens
+  ≈ 7.4 s. So a cold Pass-B call ≈ 6.7 s prefill + 7.4 s decode ≈ 14 s — prefill and decode
+  are comparable, so BOTH S1 (decode) and C2/P (prefill) target real shares.
+- **KV prefix-cache IS ALREADY ON and effective:**
+  - Identical prompt re-sent → prefill **6.7 s → 0.1 s (98% cached)**.
+  - Different tail, SAME static prefix → prefill **6.7 s → 3.5 s (~48% saved)** vs a
+    changed-prefix control at 6.7 s. **Reuse fires across different requests.**
+  - **Survives alternation:** a foreign (card-shaped) prompt between two shared-prefix calls
+    did NOT evict the prefix (still 3.5 s after) — because the model loads with **PARALLEL=4**
+    and llama.cpp routes to the longest-common-prefix slot. This is what makes C2b viable.
+  - Production caveat: today the Stage-4 prompt puts the static catalog LAST, so consecutive
+    chunks share ~nothing → the cold 6.7 s prefill is paid every call. C2b (static-first)
+    exposes the ~catalog+template (~1000-1200 tok) as a shared prefix → ~40% of prefill
+    reusable after call 1 ≈ ~2.7 s/call ≈ ~1 min/run across ~24 moment calls. Modest, real.
+- **JSON-retry rate = 0.49%** across 409 chunk-calls / 12 runs (`retry_audit.py`); the 2
+  events were network timeouts, **zero JSON-parse failures** → C6 (grammar-constrained
+  decoding) CLOSED (no waste to recover; it would only alter the token distribution).
 
 ## Bottom line
 
