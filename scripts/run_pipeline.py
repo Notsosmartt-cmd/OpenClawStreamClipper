@@ -366,10 +366,15 @@ def main(argv: list[str]) -> int:
                 batch_force = True
             if not targets:
                 log.log("No VODs to process.")
-            # C1: optional cross-VOD prefetch (default OFF). Overlaps the next VOD's
-            # Stage 2 (transcription+scan) with the current VOD's render window.
-            prefetch_on = os.environ.get("CLIP_BATCH_PREFETCH", "").strip().lower() in (
-                "1", "true", "yes", "on")
+            # C1: cross-VOD prefetch — DEFAULT ON (promoted 2026-07-09). Overlaps the next
+            # VOD's Stage 2 (transcription+scan) with the current VOD's render window. Byte-safe
+            # (prefetch audio-events proven byte-identical; isolated to cache + temp wav) and
+            # contention-free: measured NVENC render 16.9 s alone vs 16.9 s during a concurrent
+            # whisper job at 88% GPU util (+0.1%) — the NVENC encoder block and whisper's CUDA
+            # compute don't contend. Saves ~5.6 min per VOD transition in a batch. Kill switch:
+            # CLIP_BATCH_PREFETCH=0.
+            prefetch_on = os.environ.get("CLIP_BATCH_PREFETCH", "1").strip().lower() not in (
+                "0", "false", "no", "off", "")
             _pf = [None]  # holder for the in-flight prefetch thread (list -> closure-writable)
             for i, vod_name in enumerate(targets):
                 if i > 0:
