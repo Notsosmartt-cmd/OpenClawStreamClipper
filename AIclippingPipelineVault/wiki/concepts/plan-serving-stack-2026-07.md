@@ -37,9 +37,9 @@ orchestration levers were never touched.
 | **P0 instrumentation** | ✅ BUILT + RUN | `bench_serving.py` (decode/ttft/prefill, `/api/v0` stats), `retry_audit.py`, `CLIP_PASSB_DUMP_PROMPTS` hook |
 | **C6 JSON-retry audit** | ✅ CLOSED | 0.49% rate, 0 parse-failures / 409 calls → grammar-constrained decoding not justified |
 | **C3 reload hygiene** | ✅ BUILT (behavior-preserving, default-on) | `stage2.py` skips the blanket unload on the cached-transcript path → no needless ~30-60 s Stage-3 reload on re-runs. Escape hatch `CLIP_STAGE2_ALWAYS_UNLOAD=1` |
-| **C4 segment cache** | ✅ BUILT (flag `CLIP_SEGMENT_CACHE=1`, default-off) | `stage3.py`, keyed by transcript+full config; self-test 15/15 PASS; freezes a stochastic draw → owner semantics gate |
-| **C2b static-first prompt** | ✅ BUILT (flag `CLIP_PROMPT_STATIC_FIRST=1`, default-off) | `stage4_moments.py`; C2a MEASURED the payoff (~48% prefix reuse, survives alternation); output-changing → variance gate |
-| **C1 batch prefetch** | ✅ BUILT (flag `CLIP_BATCH_PREFETCH=1`, default-off) | `run_pipeline.py`; isolated (cache + temp wav only); self-test 11/11 PASS |
+| **C4 segment cache** | ✅ **DEFAULT-ON** (promoted 2026-07-09) | `stage3.py`; self-test 15/15 + LIVE gate PASS: real Stage-3 miss 100 s → hit **3.7 s**, byte-identical restore, reload skipped, `--force` re-rolls. Kill switch `CLIP_SEGMENT_CACHE=0` |
+| **C2b static-first prompt** | ✅ BUILT (flag `CLIP_PROMPT_STATIC_FIRST=1`, default-off) | `stage4_moments.py`; C2a MEASURED the payoff (~48% prefix reuse, survives alternation); output-changing → variance-yardstick run pending (promote on pass, delete on fail — no default-off zombies) |
+| **C1 batch prefetch** | ✅ BUILT (flag `CLIP_BATCH_PREFETCH=1`, default-off) | `run_pipeline.py`; self-test 11/11 PASS; LIVE equivalence gate (real whisper+scan through the prefetch path vs existing caches) in progress — promote on pass |
 | **S1 speculative decoding** | ⛔ BLOCKED (programmatic) → owner GUI | CLI load flag REJECTED on Vulkan; API `draft_model`=400. GUI-only (see §3a recipe). Draft `qwen/qwen3.5-2b` (vocab 248320) downloaded + on disk. **Gain UNMEASURED** |
 | **P evalBatchSize** | ⏸ owner GUI action | no CLI/config key on disk; set once in GUI, then bench with `bench_serving.py --mode prefill` |
 
