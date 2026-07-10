@@ -199,6 +199,29 @@ and BEFORE `_maybe_cold_open`.
 
 ---
 
+## A/B variant clips + platform post kit (`CLIP_AB_VARIANTS`, `CLIP_POST_KIT`, default off — 2026-07-10)
+
+Owner req (trial-reel A/B testing across platforms). Two additive Stage-7 outputs, both default off,
+gated behind their env flags / dashboard checkboxes. Full plan: [[concepts/plan-captions-and-ab-variants-2026-07]].
+
+- **A/B variant B** (`stage7.py:_maybe_ab_variant`, after the primary render): a **full INDEPENDENT
+  profile render** — NOT a sub-cut — of an eligible clip, using the alternate-angle hook that Stage 6
+  generated (`hook_variants`, P2.1) AND a **perturbed seed** (`profile_render.py --seed-offset 1`,
+  `CLIP_VARIANT_SEED_OFFSET`). The perturbed seed makes B's SFX pick + profile/fingerprint draws
+  differ from A while beat PLACEMENT stays anchored on the real timestamp — so A and B differ in
+  hook + sound + visual effects (owner's explicit choice: varied AV per side, not caption-only).
+  Output `"<title> (B).mp4"`. Classic A/B = 2 variants (A is the primary). Gated to the top-N clips
+  (`CLIP_AB_VARIANTS_TOP_N`, default 5). **Requires profile mode** (`CLIP_STYLE_PROFILES`) for the AV
+  variety — a hook-only B is logged-skipped. Consequence: the "shared master + drawtext-only" cost
+  optimization is INVALID (a master can't carry per-variant AV), so B is a full NVENC render.
+- **Platform post kit** (`stage6_vision.py:_generate_post_kit` → `stage7.py:_maybe_write_post_kit`):
+  a `"<title>.post.json"` sidecar with ready-to-paste copy for TikTok / Instagram / YouTube Shorts —
+  **no hashtags** (owner decision). Generated in Stage 6 (model resident) because Stage 7 runs with
+  the model UNLOADED; Stage 7 just writes the file. Includes both A/B hooks + a `trial_reel` marker.
+- **Safety:** both ADDITIVE + failure-soft; a failed variant/kit never touches the primary clip.
+
+---
+
 ## Related
 - [[entities/ffmpeg]] — does the rendering
 - [[entities/faster-whisper]] — generates word-level SRT subtitles

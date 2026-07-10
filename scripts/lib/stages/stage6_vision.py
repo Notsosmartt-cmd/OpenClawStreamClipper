@@ -29,6 +29,19 @@ TEMP_DIR = os.environ.get("CLIP_WORK_DIR", "/tmp/clipper")
 # ./config into /root/.openclaw inside the container.
 sys.path.insert(0, "/root/scripts/lib")
 import thinking
+
+# Part 1 (P1.2/P1.4) — creative-caption quality gate. `title`/`hook` are the
+# owner-VISIBLE fields and historically ran Tier-1 only (no fidelity/voice
+# check). CLIP_CAPTION_JUDGE (LLM fidelity+voice) and CLIP_CAPTION_LINT
+# (deterministic AI-tell linter) both default ON, both individually
+# toggleable, both failure-soft. See concepts/plan-captions-and-ab-variants-2026-07.
+_CAPTION_JUDGE = os.environ.get("CLIP_CAPTION_JUDGE", "1").strip().lower() not in ("0", "false", "no", "off")
+_CAPTION_LINT = os.environ.get("CLIP_CAPTION_LINT", "1").strip().lower() not in ("0", "false", "no", "off")
+try:
+    import caption_lint as _caption_lint
+except Exception:
+    _caption_lint = None
+
 try:
     import grounding as _grounding
     GROUNDING_DENYLIST = _grounding.load_denylist()
@@ -266,6 +279,30 @@ def _caption_style_fewshot():
             f"Example hook phrasings in this voice:\n{ex_lines}\n")
 
 
+# Part 1 (P1.3) — the voice CONTRACT. The recurring owner critique is that
+# titles/hooks "look too much like an AI wrote it" (Title Case Headlines,
+# scare-quotes around invented names, "The 'X' Y", clickbait adjectives). The
+# neutral prompt was letting the model default to headline-ese. This block bans
+# those patterns explicitly and shows a good/bad contrast. Default on; disable
+# with CLIP_CAPTION_VOICE=0. The deterministic caption_lint linter enforces the
+# same rules after generation (regenerate-once on drift).
+def _caption_voice_contract() -> str:
+    if os.environ.get("CLIP_CAPTION_VOICE", "1").strip().lower() in ("0", "false", "no", "off"):
+        return ""
+    return (
+        "\nCAPTION VOICE — the \"title\" and \"hook\" must sound like a real short-form "
+        "creator talking, NOT an AI headline:\n"
+        "- sentence case or all-lowercase; NEVER Title Case Every Word\n"
+        "- NO quotation marks around invented names (write: samurai slicer diss — NOT: the \"Samurai Slicer\" Diss)\n"
+        "- NO \"The X: Y\" or \"The 'X' Y\" headline shapes; NO em-dashes; NO hashtags\n"
+        "- NO clickbait words (epic, insane, hilarious, ensues, ultimate, unbelievable, iconic)\n"
+        "- say the ACTUAL payoff of THIS clip (what changes / what's funny), grounded in the transcript\n"
+        "- title <= 9 words; hook <= 8 words\n"
+        "Good: \"he really said bring the chop after school\" | \"grab your balls, twist, pop\"\n"
+        "Bad:  \"Streamer Threatens 'Bring the Chop'\" | \"The Ultimate Freestyle Challenge\"\n"
+    )
+
+
 def _load_hook_templates():
     """Load config/hook_templates.json with the standard env -> Linux -> repo
     fallback. Cached. Returns {} on any failure so the hook simply stays empty
@@ -334,7 +371,52 @@ def _hook_from_template(category, title, T):
 _CREATIVE_FIELDS = ("title", "hook")
 
 
-def _ground_field(field, claim, refs, hard_events):
+def _caption_gate(field, claim, refs, description, chk):
+    """Part 1 (P1.4 then P1.2) — the quality gate the creative fields lacked.
+    Mutates ``chk`` to failed when the caption reads AI-generated (deterministic
+    linter) or doesn't describe the clip (LLM fidelity judge). Only ever called
+    on an already-PASSING Tier-1 result, so a denylist/hard-event fail still
+    wins. Both checks are individually toggleable + failure-soft — an exception
+    or a down LM Studio leaves ``chk`` passing (prior behavior)."""
+    # Deterministic AI-tell linter first (free): Title Case, scare-quotes,
+    # "The 'X' Y", clickbait words, em-dash, hashtag.
+    if _CAPTION_LINT and _caption_lint is not None:
+        try:
+            if _caption_lint.is_ai_voice(claim, kind=field):
+                chk["passed"] = False
+                chk["reason"] = "caption_ai_voice"
+                chk["caption_detail"] = _caption_lint.summarize(claim, kind=field)
+                return
+        except Exception:
+            pass
+    # LLM fidelity judge (one short call): does the caption describe THIS clip?
+    if _CAPTION_JUDGE and _grounding is not None:
+        cj_cfg = GROUNDING_CONFIG.get("caption_judge", {}) or {}
+        if cj_cfg.get("enabled", True):
+            try:
+                window = "\n".join(r for r in refs if r)
+                cj = _grounding.caption_judge(
+                    field, claim, window, description or "",
+                    # Pin to the model already resident for Stage 6 (VISION_MODEL);
+                    # the default resolve chain would pick CLIP_TEXT_MODEL and force
+                    # a model swap mid-stage on split-model configs. Same unified
+                    # model here, so this is a no-op on this rig but swap-safe.
+                    lm_studio_model=VISION_MODEL,
+                    url=os.environ.get("CLIP_LLM_URL", LLM_URL),
+                    timeout=float(cj_cfg.get("timeout_s", 20)),
+                )
+                if cj is not None:
+                    chk["caption_fidelity"] = cj["fidelity"]
+                    chk["caption_human_voice"] = cj["human_voice"]
+                    if cj["fidelity"] < float(cj_cfg.get("fidelity_threshold", 6)):
+                        chk["passed"] = False
+                        chk["reason"] = "caption_low_fidelity"
+                        chk["caption_detail"] = f"fidelity {cj['fidelity']:.0f}/10: {cj['rationale']}"
+            except Exception:
+                pass
+
+
+def _ground_field(field, claim, refs, hard_events, description=""):
     """Field-aware grounding check. Returns the cascade/check_claim result dict
     (always carries `passed`, `reason`, `tier`)."""
     if _grounding is None:
@@ -347,6 +429,11 @@ def _ground_field(field, claim, refs, hard_events):
             event_map=CHAT_EVENT_MAP,
         )
         chk.setdefault("tier", 1)
+        # P1.2/P1.4: escalate a PASSING Tier-1 creative field through the
+        # caption linter + fidelity judge (the semantic check these fields
+        # never had). A Tier-1 FAIL is left as-is (denylist/hard-event wins).
+        if chk.get("passed"):
+            _caption_gate(field, claim, refs, description, chk)
         return chk
     return _grounding.cascade_check(
         claim, refs, GROUNDING_DENYLIST, GROUNDING_CONFIG,
@@ -354,6 +441,161 @@ def _ground_field(field, claim, refs, hard_events):
         hard_events=hard_events,
         event_map=CHAT_EVENT_MAP,
     )
+
+
+# ---------------------------------------------------------------------------
+# Part 2 (P2.1) — classic A/B caption variant. A = the entry's primary
+# (already-grounded) caption; B = ONE alternate-angle challenger, validated
+# through the SAME gate as A (denylist + linter + fidelity judge) so a variant
+# can never be lower-quality than the primary. Gated by CLIP_AB_VARIANTS>=2
+# (default off) — none of this runs on a normal run. See
+# concepts/plan-captions-and-ab-variants-2026-07 §P2.1.
+# ---------------------------------------------------------------------------
+_VARIANT_PROMPT = """/no_think
+You are writing Version B of a short-form clip caption for A/B testing. Version A already exists. Write ONE Version B that describes the SAME clip from a DIFFERENT angle, so the two feel distinct scrolling a feed.
+
+Version A title: {title_a}
+Version A hook: {hook_a}
+Transcript (what is actually said in the clip): {transcript}
+
+Choose the angle for B that contrasts MOST with A:
+- reaction-POV: the viewer's reaction ("the way he...", "bro really...")
+- context-tease: withhold the payoff so they watch ("watch what he does when...")
+- quote: the funniest verbatim line from the transcript
+
+VOICE (same rules as A): sentence case or lowercase, NO Title Case Every Word, NO scare-quotes around names, NO em-dash, NO hashtags, NO clickbait words (epic/insane/ensues/ultimate). Title <= 9 words, hook <= 8 words, grounded in the transcript.
+
+Respond with ONLY JSON: {{"title": "...", "hook": "...", "angle": "reaction-POV|context-tease|quote"}}"""
+
+
+def _variant_llm(prompt):
+    """One text call on the ALREADY-LOADED Stage-6 model (VISION_MODEL — no swap).
+    Returns the parsed JSON dict or None on any failure."""
+    try:
+        import lmstudio
+    except Exception:
+        return None
+    txt = lmstudio.chat(prompt, model=VISION_MODEL, url=LLM_URL,
+                        timeout=60, response_json=True, max_tokens=300)
+    if not txt:
+        return None
+    s, e = txt.find("{"), txt.rfind("}")
+    if s < 0 or e <= s:
+        return None
+    try:
+        obj = json.loads(txt[s:e + 1])
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _generate_variant_b(entry, local_transcript, hard_events):
+    """Return {label:'B', title, hook, angle} or None. B must pass the same
+    creative-field gate as A and differ from A (no near-duplicate). Up to one
+    regen on failure; give up (return None → only A ships) after that."""
+    try:
+        n = int(os.environ.get("CLIP_AB_VARIANTS", "0") or "0")
+    except ValueError:
+        n = 0
+    if n < 2:
+        return None
+    title_a = (entry.get("title") or "").strip()
+    hook_a = (entry.get("hook") or "").strip()
+    if not (title_a or hook_a) or not (local_transcript or "").strip():
+        return None
+    refs = [local_transcript, entry.get("description", "")]
+    prompt = _VARIANT_PROMPT.format(
+        title_a=title_a or "(none)", hook_a=hook_a or "(none)",
+        transcript=local_transcript[:3000])
+    for _attempt in range(2):
+        obj = _variant_llm(prompt)
+        if not obj:
+            return None
+        b_title = str(obj.get("title") or "").strip()
+        b_hook = str(obj.get("hook") or "").strip()
+        angle = str(obj.get("angle") or "").strip()[:20]
+        if not (b_title or b_hook):
+            return None
+        # Must be a genuine alternate — a near-duplicate hook is no A/B test.
+        if b_hook and hook_a and b_hook.lower() == hook_a.lower():
+            prompt += "\n\n[Version B was identical to A. Use a genuinely different angle.]"
+            continue
+        ok, detail = True, ""
+        for _f, _c in (("hook", b_hook), ("title", b_title)):
+            if not _c:
+                continue
+            chk = _ground_field(_f, _c, refs, hard_events,
+                                description=entry.get("description", ""))
+            if not chk.get("passed"):
+                ok = False
+                detail = chk.get("caption_detail") or chk.get("reason", "")
+                break
+        if ok:
+            return {"label": "B", "title": b_title or title_a,
+                    "hook": b_hook or hook_a, "angle": angle or "alt"}
+        prompt += f"\n\n[Version B failed: {detail}. Fix it and keep the voice rules.]"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Part 2 (P2.3) — per-platform post kit. The 9:16 file already fits
+# TikTok/Reels/Shorts; only the POST TEXT differs per platform. One text call
+# on the already-loaded Stage-6 model (Stage 7 runs with the model UNLOADED, so
+# generating here avoids a reload). NO hashtags anywhere (owner decision).
+# Gated by CLIP_POST_KIT (default off). Stored on the entry; Stage 7 just writes
+# the "<title>.post.json" sidecar. See plan §P2.3.
+# ---------------------------------------------------------------------------
+_POST_KIT_PROMPT = """/no_think
+Write ready-to-post captions for ONE short-form clip, for three platforms. Do NOT use hashtags anywhere — the creator posts with zero tags. Sound like a real person, sentence case, no clickbait words.
+
+Clip title: {title}
+On-screen hook: {hook}
+What happens in the clip (transcript): {transcript}
+
+Respond with ONLY JSON:
+{{"tiktok": "one short caption, no hashtags",
+  "instagram": "a hook line then one context sentence, no hashtags",
+  "youtube_title": "<= 90 chars, no hashtags",
+  "youtube_description": "1-2 sentences, no hashtags"}}"""
+
+
+def _strip_hashtags(s: str) -> str:
+    """Defensive: remove any #tag the model slipped in despite the instruction
+    (owner runs zero tags)."""
+    return re.sub(r"\s*#\w+", "", str(s or "")).strip()
+
+
+def _generate_post_kit(entry, local_transcript):
+    """Return the per-platform post-copy dict or None. Failure-soft (default
+    off). Includes both A/B hooks so the owner posting variant B has its line."""
+    if os.environ.get("CLIP_POST_KIT", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return None
+    title = (entry.get("title") or "").strip()
+    hook = (entry.get("hook") or "").strip()
+    if not (title or hook) or not (local_transcript or "").strip():
+        return None
+    prompt = _POST_KIT_PROMPT.format(
+        title=title or "(none)", hook=hook or "(none)",
+        transcript=local_transcript[:3000])
+    obj = _variant_llm(prompt)
+    if not obj:
+        return None
+    kit = {
+        "tiktok": _strip_hashtags(obj.get("tiktok")),
+        "instagram": _strip_hashtags(obj.get("instagram")),
+        "youtube_shorts": {
+            "title": _strip_hashtags(obj.get("youtube_title"))[:100],
+            "description": _strip_hashtags(obj.get("youtube_description")),
+        },
+    }
+    # Variant hooks for the owner (trial-reel marker set when a B exists).
+    b = next((v for v in (entry.get("hook_variants") or [])
+              if str(v.get("label", "")).upper() == "B"), None)
+    kit["variant_hooks"] = {"A": hook, "B": (b or {}).get("hook", "")}
+    kit["trial_reel"] = bool(b)
+    if not any((kit["tiktok"], kit["instagram"], kit["youtube_shorts"]["title"])):
+        return None
+    return kit
 
 
 def _process_moment(moment):
@@ -506,11 +748,17 @@ def _process_moment(moment):
                 _start, _end = T - 8, T + 8
             window = [seg for seg in _tr
                       if seg.get("end", 0) >= _start and seg.get("start", 0) <= _end]
-            local_transcript = " ".join(s.get("text", "").strip() for s in window)[:500]
+            # P1.1: full clip-window transcript (was [:500] ≈ first ~25 s — long
+            # clips were titled from a fraction of what they say, the structural
+            # cause of "the caption doesn't encapsulate the clip"). 4000 chars
+            # ≈ 1k tokens, comfortable in the 32k ctx. The SAME string feeds the
+            # grounding refs below, so generation and validation see identical
+            # evidence.
+            local_transcript = " ".join(s.get("text", "").strip() for s in window)[:4000]
             if _EDIT_INFER:
                 local_transcript_ts = " ".join(
                     f"[{float(s.get('start', 0)):.1f}-{float(s.get('end', 0)):.1f}] "
-                    f"{s.get('text', '').strip()}" for s in window)[:1100]
+                    f"{s.get('text', '').strip()}" for s in window)[:4000]
         except Exception:
             pass
 
@@ -654,13 +902,13 @@ Tier-4 Phase 4.5 — also identify the INTERACTION SHAPE the frames depict:
 - pattern_match: which catalog pattern the frames best support — "setup_external_contradiction", "challenge_and_fold", "reading_chat_reaction", "storytelling_arc", "hot_take_pushback", "informational_ramble", "interview_revelation", "rap_battle_freestyle", "social_callout", "unexpected_topic_shift", or null.
 - pattern_match_strength: 0.0-1.0 — confidence the frames support pattern_match.
 - gaze_direction: "at-camera" / "at-chat" / "at-screen" / "at-guest" / "off-screen" / "down".
-{edit_directive}{_caption_style_fewshot()}
+{edit_directive}{_caption_style_fewshot()}{_caption_voice_contract()}
 Respond ONLY with JSON: {{
   "score": 1-10,
   "category": "comedy/skill/reaction/controversy/emotional/irl",
-  "title": "short viral title rooted in the payoff and transcript",
+  "title": "<= 9 words, sentence case, names THIS clip's actual payoff — NOT a Title Case headline, NO scare-quotes around names",
   "description": "one sentence grounded in what was literally said/shown",
-  "hook": "punchy 1-line hook shown at top of the video, max 8 words, in the voice of a {stream_type} content creator, no hashtags",
+  "hook": "<= 8 words, spoken like a viewer texting a friend about the clip, no hashtags, no Title Case, no trailing period",
   "grounded_in_transcript": true|false,
   "mirror_safe": true|false,
   "voiceover": {{"text": "...", "placement": "intro|peak|outro", "tone": "hype|deadpan|earnest|snarky", "duration_estimate_s": 3.0}},
@@ -798,7 +1046,8 @@ Respond ONLY with JSON: {{
                         _claim = (parsed.get(_field) or "").strip()
                         if not _claim:
                             continue
-                        _chk = _ground_field(_field, _claim, refs, hard_events)
+                        _chk = _ground_field(_field, _claim, refs, hard_events,
+                                             description=parsed.get("description", ""))
                         field_results[_field] = _chk
 
                 # --- Phase 1.1: regenerate once when the first response failed. ---
@@ -817,7 +1066,11 @@ Respond ONLY with JSON: {{
                     _violation_lines = []
                     for _f, _r in failed_fields.items():
                         _hits = ",".join(h["match"] for h in _r.get("denylist_hits", []))
-                        if _hits:
+                        if _r.get("caption_detail"):
+                            _violation_lines.append(
+                                f'- "{_f}" reads AI-written or off-topic: {_r["caption_detail"]}'
+                            )
+                        elif _hits:
                             _violation_lines.append(
                                 f'- "{_f}" contained "{_hits}" but the transcript never mentions that'
                             )
@@ -838,7 +1091,7 @@ Respond ONLY with JSON: {{
 [RETRY — your previous response failed the grounding cascade:
 {_violations}
 
-Rewrite your JSON so every claim in title, hook, and description is directly supported by the transcript above. If the transcript doesn't contain enough detail to justify a field, make that field a plain description of what is visibly happening in the frames — do NOT invent subscription events, raids, hype trains, kills, or any specifics not present in the transcript or frames.]"""
+Rewrite your JSON so every claim in title, hook, and description is directly supported by the transcript above. If the transcript doesn't contain enough detail to justify a field, make that field a plain description of what is visibly happening in the frames — do NOT invent subscription events, raids, hype trains, kills, or any specifics not present in the transcript or frames. For any field flagged as reading AI-written, rewrite it in plain sentence-case creator voice: no Title Case Every Word, no scare-quotes around names, no clickbait adjectives.]"""
 
                     print(
                         f"  T={T} REGEN — {len(failed_fields)} field(s) failed grounding "
@@ -853,7 +1106,8 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                             _rclaim = (retry_parsed.get(_f) or "").strip()
                             if not _rclaim:
                                 continue
-                            _rchk = _ground_field(_f, _rclaim, refs, hard_events)
+                            _rchk = _ground_field(_f, _rclaim, refs, hard_events,
+                                                  description=retry_parsed.get("description", ""))
                             if _rchk["passed"]:
                                 parsed[_f] = _rclaim
                                 field_results[_f] = _rchk
@@ -886,7 +1140,7 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                         continue
                     _hit_summary = ",".join(
                         h["match"] for h in _chk.get("denylist_hits", [])
-                    ) or (
+                    ) or _chk.get("caption_detail") or (
                         f"judge={_chk.get('judge_weighted')}"
                         if _chk.get("judge_weighted") is not None
                         else f"overlap={_chk.get('overlap')}"
@@ -1091,6 +1345,29 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
         f"[{entry['category']}]",
         file=sys.stderr,
     )
+
+    # P2.1 — classic A/B: attach ONE alternate-angle caption variant B (default
+    # off; CLIP_AB_VARIANTS>=2). Additive + failure-soft: on any failure the key
+    # stays unset and only A ships. Stage 7 renders B (with varied SFX/visual)
+    # for the top-N clips.
+    try:
+        _b = _generate_variant_b(entry, local_transcript, hard_events)
+        if _b:
+            entry["hook_variants"] = [_b]
+            print(f"  T={T} variant-B [{_b['angle']}]: hook=\"{_b['hook']}\"", file=sys.stderr)
+    except Exception as _ve:
+        print(f"  T={T} variant-B skipped ({_ve})", file=sys.stderr)
+
+    # P2.3 — per-platform post kit (default off; runs after variant so its hook
+    # is included). Written to a "<title>.post.json" sidecar by Stage 7.
+    try:
+        _pk = _generate_post_kit(entry, local_transcript)
+        if _pk:
+            entry["post_kit"] = _pk
+            print(f"  T={T} post-kit ready (tiktok/instagram/youtube_shorts)", file=sys.stderr)
+    except Exception as _pke:
+        print(f"  T={T} post-kit skipped ({_pke})", file=sys.stderr)
+
     return entry
 
 

@@ -133,9 +133,27 @@ def cmd_set(a) -> int:
         for r in hit:
             print(f"   T={r['timestamp']} {r['clip'][:60]}")
         return 1
+    # --label is optional now: a `set` may record ONLY a caption verdict or a
+    # variant winner (P1.6 / P2.4) without touching the clip-quality label.
     for r in hit:
-        r["label"] = int(a.label)
-        print(f"[rate_run] label={a.label} -> T={r['timestamp']} {r['clip'][:60]}")
+        parts = []
+        if a.label is not None:
+            r["label"] = int(a.label)
+            parts.append(f"label={a.label}")
+        # P1.6 — caption verdict, stored SEPARATELY from the clip label. Clip-good
+        # != caption-good (Little J's was exactly this split); this builds the
+        # negative-exemplar pool + a caption regression metric.
+        if a.caption is not None:
+            r["caption_label"] = int(a.caption)
+            parts.append(f"caption={a.caption}")
+        # P2.4 — which A/B variant won on the platform (owner-recorded post-hoc).
+        if a.variant_winner is not None:
+            r["variant_winner"] = a.variant_winner
+            parts.append(f"variant_winner={a.variant_winner}")
+        if not parts:
+            print("[rate_run] nothing to set — pass --label, --caption, and/or --variant-winner.")
+            return 1
+        print(f"[rate_run] {' '.join(parts)} -> T={r['timestamp']} {r['clip'][:55]}")
     _save_ratings(a.run, rows)
     return 0
 
@@ -147,25 +165,37 @@ def cmd_show(a) -> int:
         return 0
     for r in rows:
         lab = r.get("label")
-        print(f"   [{'?' if lab is None else lab}] T={r['timestamp']:<8} {r['clip'][:60]}")
+        extra = ""
+        if r.get("caption_label") is not None:
+            extra += f" cap={r['caption_label']}"
+        if r.get("variant_winner"):
+            extra += f" win={r['variant_winner']}"
+        print(f"   [{'?' if lab is None else lab}] T={r['timestamp']:<8} {r['clip'][:52]}{extra}")
     done = sum(1 for r in rows if r.get("label") is not None)
-    print(f"[rate_run] {done}/{len(rows)} rated")
+    capdone = sum(1 for r in rows if r.get("caption_label") is not None)
+    print(f"[rate_run] {done}/{len(rows)} rated"
+          + (f", {capdone} caption-rated" if capdone else ""))
     return 0
 
 
 def cmd_collect(a) -> int:
-    out = Path(a.out) if a.out else (DIAG / "labels_owner.jsonl")
+    # Default = clip-quality labels -> labels_owner.jsonl (the ranker's input,
+    # unchanged). --captions = the P1.6 caption verdicts -> labels_caption.jsonl
+    # (a separate metric / negative-exemplar pool; never touches the ranker).
+    field = "caption_label" if getattr(a, "captions", False) else "label"
+    default_name = "labels_caption.jsonl" if field == "caption_label" else "labels_owner.jsonl"
+    out = Path(a.out) if a.out else (DIAG / default_name)
     merged, n_files = [], 0
     for rp in sorted(DIAG.glob("ratings_*.jsonl")):
         n_files += 1
         for r in _load_ratings(rp.name[len("ratings_"):-len(".jsonl")]):
-            if r.get("label") is not None:
+            if r.get(field) is not None:
                 merged.append({"run": r["run"], "timestamp": r["timestamp"],
-                               "label": int(r["label"]), "source": "owner"})
+                               field: int(r[field]), "source": "owner"})
     out.write_text("\n".join(json.dumps(m) for m in merged) + ("\n" if merged else ""),
                    encoding="utf-8")
-    pos = sum(1 for m in merged if m["label"] == 1)
-    print(f"[rate_run] collected {len(merged)} owner labels ({pos} pos / {len(merged)-pos} neg) "
+    pos = sum(1 for m in merged if m[field] == 1)
+    print(f"[rate_run] collected {len(merged)} owner {field}(s) ({pos} pos / {len(merged)-pos} neg) "
           f"from {n_files} run(s) -> {out}")
     return 0
 
@@ -175,10 +205,15 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("template"); t.add_argument("--run", required=True); t.set_defaults(fn=cmd_template)
     s = sub.add_parser("set"); s.add_argument("--run", required=True); s.add_argument("--match", required=True)
-    s.add_argument("--label", type=int, required=True, choices=[0, 1]); s.add_argument("--all", action="store_true")
+    s.add_argument("--label", type=int, choices=[0, 1])          # clip quality (optional now)
+    s.add_argument("--caption", type=int, choices=[0, 1])        # P1.6 caption verdict
+    s.add_argument("--variant-winner", choices=["A", "B"])       # P2.4 A/B outcome
+    s.add_argument("--all", action="store_true")
     s.set_defaults(fn=cmd_set)
     sh = sub.add_parser("show"); sh.add_argument("--run", required=True); sh.set_defaults(fn=cmd_show)
-    c = sub.add_parser("collect"); c.add_argument("--out"); c.set_defaults(fn=cmd_collect)
+    c = sub.add_parser("collect"); c.add_argument("--out")
+    c.add_argument("--captions", action="store_true")           # collect caption_label instead of label
+    c.set_defaults(fn=cmd_collect)
     a = ap.parse_args()
     return a.fn(a)
 

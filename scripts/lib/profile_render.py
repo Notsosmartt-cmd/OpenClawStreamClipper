@@ -257,11 +257,19 @@ def render(*,
            clip_start: float, clip_duration: float, speed: float,
            captions: bool, hook: bool, hook_text: str,
            temp_dir: str, lib_dir: str,
-           music_folder: str | None, clips_dir: str | None) -> int:
+           music_folder: str | None, clips_dir: str | None,
+           seed_offset: int = 0) -> int:
 
     plan = ep.normalize(moment.get("edit_plan") or {})
     category = plan.get("profile") or moment.get("category") or "reactive"
-    profile_seed = int(round(float(moment.get("timestamp", 0))))
+    # P2.2 — A/B variant B renders with a PERTURBED seed so its SFX picks +
+    # profile / fingerprint draws differ from A (owner wants varied sound AND
+    # visual effects per A/B side). Beat PLACEMENT stays anchored on the real
+    # timestamp inside sfx_cues.build; only WHICH file / effect is drawn moves.
+    # seed_offset=0 (the default, variant A) is byte-identical to before.
+    profile_seed = int(round(float(moment.get("timestamp", 0)))) + int(seed_offset)
+    if seed_offset:
+        _log(f"variant seed_offset={seed_offset} -> profile_seed={profile_seed}")
     profile = sp.get_profile(category, seed=profile_seed)
     fingerprint = sp.fingerprint_params(profile_seed)
     cat_canon = profile["_category"]
@@ -706,6 +714,9 @@ def main() -> int:
     ap.add_argument("--lib-dir", default=str(_HERE))
     ap.add_argument("--music-folder", default=os.environ.get("CLIP_MUSIC_BED", ""))
     ap.add_argument("--clips-dir", default=os.environ.get("CLIPS_DIR", ""))
+    ap.add_argument("--seed-offset", type=int,
+                    default=int(os.environ.get("CLIP_VARIANT_SEED_OFFSET", "0") or "0"),
+                    help="P2.2 A/B: perturb the SFX/profile/fingerprint seed for variant B")
     args = ap.parse_args()
 
     try:
@@ -724,6 +735,7 @@ def main() -> int:
         temp_dir=args.temp_dir, lib_dir=args.lib_dir,
         music_folder=(args.music_folder or None),
         clips_dir=(args.clips_dir or None),
+        seed_offset=args.seed_offset,
     )
 
 

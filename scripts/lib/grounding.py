@@ -370,6 +370,92 @@ def llm_judge(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Caption-fidelity judge (Part 1, P1.2) — the check the CREATIVE fields lacked
+# ---------------------------------------------------------------------------
+# `title` / `hook` are the two owner-VISIBLE fields, and historically they ran
+# only Tier-1 (denylist + hard-events, min_overlap=0.0) — no semantic check at
+# all — so "caption doesn't match the video" was structurally uncatchable. This
+# judge fills that hole: ONE call scoring whether the caption actually describes
+# the clip (fidelity) and whether it reads like a human clipper wrote it
+# (human_voice). Model-agnostic; failure-soft (None on any error → caller does
+# not gate). Separate from the 5-dimensional faithfulness `llm_judge` above,
+# which is tuned for the literal `description`/Pass-B `why` fields.
+
+_CAPTION_JUDGE_PROMPT = """/no_think
+You judge ONE short-form video caption for a livestream clip. The caption is the {field} shown to viewers. Score it against what ACTUALLY happens in the clip (the transcript window below, plus the neutral description).
+
+{field_upper}: {claim}
+
+TRANSCRIPT (what is actually said in the clip):
+{transcript_window}
+
+NEUTRAL_DESCRIPTION (what is visibly happening):
+{description}
+
+Score two dimensions, each 0-10:
+1. fidelity (0-10): does the {field} describe what actually happens in THIS clip? 10 = names the real payoff/topic; 5 = vaguely related; 0 = describes something not in the clip, or is generic filler that would fit any clip.
+2. human_voice (0-10): would a real short-form creator write this? 10 = sounds like a person texting a friend about the clip; 0 = AI headline voice (Title Case, scare-quotes around invented names, "The 'X' Y", clickbait adjectives like epic/insane/ensues).
+
+Respond with ONLY a single JSON object:
+{{"fidelity": <int>, "human_voice": <int>, "rationale": "one short sentence"}}"""
+
+
+def caption_judge(
+    field: str,
+    claim: str,
+    transcript_window: str,
+    description: str = "",
+    lm_studio_model: Optional[str] = None,
+    url: Optional[str] = None,
+    timeout: float = 20.0,
+) -> Optional[Dict]:
+    """Score a creative caption field on {fidelity, human_voice} (0-10 each) in
+    one LLM call. Returns the dict or None on any failure (network, bad JSON,
+    LM Studio missing) — the caller treats None as 'judge unavailable' and does
+    not gate, so a down judge never blocks a render."""
+    if not (claim or "").strip() or not (transcript_window or "").strip():
+        return None
+    chat = _import_lmstudio()
+    if chat is None:
+        return None
+    prompt = _CAPTION_JUDGE_PROMPT.format(
+        field=field,
+        field_upper=field.upper(),
+        claim=claim[:300],
+        transcript_window=transcript_window[:3000],
+        description=(description[:600] or "(none)"),
+    )
+    text = chat(
+        prompt,
+        model=_resolve_judge_model(lm_studio_model),
+        url=url or os.environ.get("CLIP_LLM_URL", "http://host.docker.internal:1234"),
+        timeout=timeout,
+        response_json=True,
+        max_tokens=250,
+    )
+    if not text:
+        return None
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        obj = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    out: Dict = {}
+    for k in ("fidelity", "human_voice"):
+        try:
+            out[k] = max(0.0, min(10.0, float(obj.get(k, 0))))
+        except (TypeError, ValueError):
+            out[k] = 0.0
+    out["rationale"] = str(obj.get("rationale") or "")[:200]
+    return out
+
+
 # Default per-dimension weights and pass threshold. Tunable via
 # ``config/grounding.json::judge``. Sum should be 1.0 for the weighted-mean
 # to land in [0, 10]; pass_threshold is on that 0-10 scale.
