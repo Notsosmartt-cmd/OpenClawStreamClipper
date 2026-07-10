@@ -69,6 +69,7 @@ def api_clip():
     speed = str(data.get("speed", "1.0"))
     hook_caption = data.get("hook_caption", True)
     enable_thinking = bool(data.get("enable_thinking", False))
+    companion_shorts = bool(data.get("companion_shorts", False))
     # Pass B dead-chunk gate mode — UI dropdown sends one of
     # {off, multi, sample, strict}. Default "off" preserves selection
     # fidelity (no LLM calls skipped). See pipeline_runner.spawn_pipeline.
@@ -103,6 +104,7 @@ def api_clip():
                 hook_caption=hook_caption, originality=orig_override,
                 passb_dead_gate=passb_dead_gate,
                 enable_thinking=enable_thinking,
+                companion_shorts=companion_shorts,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -122,6 +124,7 @@ def api_clip_all():
     speed = str(data.get("speed", "1.0"))
     hook_caption = data.get("hook_caption", True)
     enable_thinking = bool(data.get("enable_thinking", False))
+    companion_shorts = bool(data.get("companion_shorts", False))
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
@@ -158,6 +161,7 @@ def api_clip_all():
                 originality=orig_override,
                 passb_dead_gate=passb_dead_gate,
                 enable_thinking=enable_thinking,
+                companion_shorts=companion_shorts,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -187,6 +191,7 @@ def api_clip_batch():
     speed = str(data.get("speed", "1.0"))
     hook_caption = data.get("hook_caption", True)
     enable_thinking = bool(data.get("enable_thinking", False))
+    companion_shorts = bool(data.get("companion_shorts", False))
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
@@ -237,6 +242,7 @@ def api_clip_batch():
                 hook_caption=hook_caption, originality=orig_override,
                 passb_dead_gate=passb_dead_gate,
                 enable_thinking=enable_thinking,
+                companion_shorts=companion_shorts,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
