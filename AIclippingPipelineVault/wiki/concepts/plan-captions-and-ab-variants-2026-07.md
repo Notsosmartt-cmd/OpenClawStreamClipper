@@ -71,6 +71,18 @@ B is logged-skipped.
 2. **P1.5 profile enable** — `python scripts/research/caption_style.py --review-sheet sheet.txt` → mark `[x]` the good lines → `--ingest-sheet sheet.txt --enable`. Until then the voice bank stays `enabled=false` (unchanged behavior).
 3. **Part-2 variant run** — flip the dashboard "A/B variant clips" checkbox (needs Style profiles ON) on one VOD, review B vs A + render cost, then default-on for top-N.
 
+**Part-2 variant run EXECUTED (2026-07-10, run `20260710_202308`, 2xRaKai, exit 0, 43m49s):**
+`CLIP_AB_VARIANTS=2 CLIP_POST_KIT=1 CLIP_STYLE_PROFILES=true` → **9 primary clips + 5 (B) variants**
+(top-N=5) + **9 `.post.json`**. Verified: (a) A vs B file sizes differ (64/72M, 59/65M, 55/49M,
+44/35M) → the `--seed-offset 1` genuinely changed B's SFX/visual, not just the hook; (b) post kits
+are clean human copy, **no hashtags**, both A/B hooks + `trial_reel:true`; (c) titles render as
+natural lowercase creator voice (no AI headlines); (d) **the caption gate caught a live mismatch** —
+T=6799 title nulled at `caption_low_fidelity` (fidelity 2/10: "focuses on a minor topic ('Hot Cheeto
+girls') while ignoring the clip's actual climax of threats to get a 'big homie'"). Only ONE title
+nulled across the run (precise, not over-triggering). **Remaining owner step: eyeball B-vs-A quality
++ decide default-on for top-N.** Cost: Stage 6 405.9s / Stage 7 276.1s (A/B extras vs the ~38 min
+SFX-run baseline → +~6 min).
+
 ---
 
 ## Current state (grounded inventory, 2026-07-10)
