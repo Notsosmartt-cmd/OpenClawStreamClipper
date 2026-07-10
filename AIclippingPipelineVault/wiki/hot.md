@@ -2,7 +2,7 @@
 title: "Hot — current state & recent activity"
 type: overview
 tags: [hot, hub, status]
-updated: 2026-07-09
+updated: 2026-07-10
 ---
 
 # Hot
@@ -41,6 +41,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Fix 2 finding: short category prototypes only mildly discriminative (cosine ~0.15–0.27); follow-up is richer `config/patterns.json` signatures — [[concepts/detection-improvements-plan]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-07-10] **Caption-quality + A/B-variant plan drafted** (owner: fix "AI-sounding"/mismatched captions FIRST, then trial-reel-style variant outputs for any platform): found `title`/`hook` bypass ALL semantic checks (`_CREATIVE_FIELDS`, overlap=0.0, no judge) + vision transcript truncated `[:500]` (long clips titled from ~25s of speech) + voice profile disabled-and-poisoned (OCR garble). Plan: fidelity judge + AI-tell linter + voice bank v2 → then K=3 angle variants + `.post.json` platform kit — [[concepts/plan-captions-and-ab-variants-2026-07]] — [[log]]
 - [2026-07-10] **Owner review → BUG 68 FIXED + boom pool tightened + 6 labels**: A1 arc lane clipped the end-of-stream DEAD-AIR screen (0-word window, vision judge passed it 0.778!) → dead-air guard at Pass-C (`CLIP_MIN_CLIP_WORDS=8` default-on, validated vs real trace: drops exactly the bad clip). Boom = ddg+vine only (CC0 impacts "too quiet"). 5 pos + 1 NEG labels (pool 26; 2nd real negative). Coke Machines + Gym Class = clean passes. New cases: moment-splitting (2 payoffs in one window), visual-subtext blind spot — [[concepts/bugs-and-fixes#BUG 68]] — [[log]]
 - [2026-07-09] **SFX seeded + guide + review run DONE (10 clips, 37.6 min — fastest yet)**: boom kind (DDG boom trimmed 2.5s, vine boom); NEW pop kind (laughter: boing/oof/quack/dry_fart) + fart kind. Loader gotcha: manifest folders ONLY use manifest entries. Guide: [[concepts/sfx-cue-taxonomy-2026-06]] §HOW-TO — [[log]]
 - [2026-07-09] **Session handoff filed** → [[concepts/handoff-2026-07-09]] (capstone: speed scorecard, BUG 67, moment-parallel, thinking control, companion shorts, doctrine). **Companion-shorts dashboard toggle** wired (`chk-companion-shorts` → `CLIP_COMPANION_SHORTS`, env-chain verified) — [[log]]
@@ -76,11 +77,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - [2026-07-08] **Durable label store — trace pile safe to clean**: labels were pointers into gitignored traces; `label_store.py` freezes each labeled run's full candidate set + labels into committed `learning/frozen_runs/` (features only). `fit_ranker --frozen` trains/gates trace-independently (verified identical verdict). `prune_traces.py` safe-deletes junk traces (124/132 ~28 MB prunable, refuses to orphan a label). Survives disk wipe / fresh checkout — [[concepts/plan-learning-activation-2026-07]] — [[log]]
 - [2026-07-05] **P-TIGHT head rebuilt CONTENT-ADAPTIVE** (owner: no fixed length): clip_start snaps to the utterance start (silence gap + transcript sentence boundary, speech-ref from payoff), head length derived from content — same payoff@20 + 3 setups → heads 3/11/5 s; tail already adaptive → NOTHING fixed-length now. Bounds are guardrails only. Default OFF — [[concepts/plan-learning-activation-2026-07]] — [[log]]
 - [2026-07-03] **HANDOFF filed** [[concepts/handoff-2026-07-03]] — done/left execution state for the next agent (next = Phase 1 live Stage-4 wiring; harness drives all gated runs; resume via phase_state.json)
-- [2026-07-03] **Phase 0.1 PASSED — autonomous loop proven**: harness launched a real 44-min rakai run detached, watcher caught it, `evaluate` graded **6/6 PASS** (10 clips, loudness −20.73 LUFS = SFX don't drown speech, forensics-on-output dogfood). 3 grader bugs found+fixed by the real run — [[log]]
-- [2026-07-03] **Phase 2 core built**: `chat_mine.py` burned-in-overlay OCR path (auto-ROI = has-chat test, velocity burst detector, fuzzy scroll dedup, 7s-seed lag cross-correlation) → emits chat_features-compatible JSONL. Logic verified; real-frame ROI gated on a chat VOD — [[log]]
-- [2026-07-03] **Phase 5 built**: `config/meme_formats.json` (12 formats, george_bush first) + `meme_match.py` precision-first matcher (verbal trigger req'd for trigger formats; audio-signature formats fire on their cue) — verified George-Bush 1.0, plain speech rejected — [[log]]
-- [2026-07-03] **Phase 1 modules built**: `event_timeline.py` (fused symbolic stream) + `anomaly_propose.py` (8s windows, reaction×unexplained, few-shot verifier) — logic unit-verified (George-Bush proposes, precision controls hold); live Stage-4 wiring pending — [[log]]
-- [2026-07-03] (older Phase 0-6 planning / phase-runner / chat-mining / fusion / roadmap entries pruned — full record in [[log]])
+- [2026-07-03] (older Phase 0-6 build/planning entries — autonomous-loop proof, chat_mine, meme_match, event_timeline — pruned; full record in [[log]])
 
 ## Landmines (top gotchas for the next agent)
 - **A model loaded with thinking ON wedges Stage 4** (BUG 67) — it burns the 8000-tok budget on `<think>` → empty JSON → 100% failure. gemma-4-26b's thinking is controllable at the TEMPLATE level (fresh load = 0 reasoning, works); the request kwarg only reaches compliant models (qwen). The **fail-fast guard** (`common.preflight_thinking`) now aborts such a run in ~1 s; the **`CLIP_ENABLE_THINKING` dashboard toggle** (default off) drives the request-level lever. Don't toggle thinking ON in LM Studio for the clip model. — [[concepts/bugs-and-fixes#BUG 67]]
