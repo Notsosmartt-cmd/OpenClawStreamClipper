@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "_note": "Light comedic pop kind — FIRST option for the punchline_light beat (laughter markers in funny/reactive clips; see config/sfx_cues.json). Seeded 2026-07-09 as a meme-variety rotation (per-seed random pick): boing / oof / quack from the owner's reference set + the occasional dry fart. Add files here + an entry to widen the rotation.",
+  "entries": [
+    {
+      "file": "boing.mp3",
+      "tags": ["pop", "boing", "meme", "cartoon"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "reference_clips/sfx_reference/boing.mp3 (owner's set)"
+    },
+    {
+      "file": "oof.mp3",
+      "tags": ["pop", "oof", "meme", "roblox"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "reference_clips/sfx_reference/oof.mp3 (owner's set)"
+    },
+    {
+      "file": "quack.mp3",
+      "tags": ["pop", "quack", "meme"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "reference_clips/sfx_reference/quack.mp3 (owner's set)"
+    },
+    {
+      "file": "dry_fart.mp3",
+      "tags": ["pop", "fart", "meme", "short"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "https://www.myinstants.com/media/sounds/dry-fart.mp3"
+    }
+  ]
+}

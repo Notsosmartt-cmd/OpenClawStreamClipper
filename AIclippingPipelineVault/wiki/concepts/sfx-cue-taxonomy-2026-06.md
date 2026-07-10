@@ -4,7 +4,7 @@ type: concept
 tags: [research, sfx, audio, originality, edit-plan, sound-design, reference, tiktok]
 sources: 0
 status: shipped
-updated: 2026-07-04
+updated: 2026-07-09
 ---
 
 # SFX Cue Taxonomy (2026-06 research)
@@ -164,3 +164,43 @@ Academic: [FunnyNet (ACCV 2022)](https://openaccess.thecvf.com/content/ACCV2022/
 First real listen (p4cal run): SFX **buried on loud clips** (fixed per-kind `gain_db` is program-blind; 1.5× volume ceiling) and **early on the quiet clip** (anchor = detection timestamp, a beat before the delivered punchline). Fixes: **loudness-adaptive gain** (`sfx_inject.adaptive_gain_db` — ffmpeg volumedetect on the clip segment, boost-only clamp(mean−ref,0,+9 dB), ref −20 dB, ceiling 4.0×, env `CLIP_SFX_ADAPTIVE/_REF_DB/_ADAPT_MAX_DB`, `sfx_adapt_db` logged to the effects manifest) and **payoff onset-snap** (`sfx_cues._refine_payoff` — strongest RMS transient within 1.2 s after the nominal payoff, fallback +0.35 s; riser lead measured from the refined payoff; config `payoff_delay_s`/`snap_to_onset`/`onset_snap_window_s`). Owner-clip probe matched perception exactly: Rap Battle −14.9 dB→+5.1 boost, Shakespeare −24.9→+0.0. See [[log]] 2026-07-04.
 
 **Round 2 (2026-07-05, L0 listen):** two placement bugs fixed in `_refine_payoff` — **payoff rescue** (detected payoff at clip start = setup mis-anchor; search the whole clip for the dominant transient — Hot Cheeto boom@1s → real beat ~18s) and **boom-after-line** (first speech gap within 2.5s after the hit so the punchline stays audible — Shower Bluff). Floor 2.5s on clips >8s. Verified on synthetic audio (4 cases). Cold-open perceptually validated by the owner the same day.
+
+
+## HOW TO ADD SOUND EFFECTS (owner guide, 2026-07-09)
+
+The production library is `assets/sfx/<kind>/` — one folder per SOUND KIND (boom, impact,
+pop, fart, ding, riser, scratch, whoosh, …). Beats pick a KIND (first kind in the beat's
+config list that has any assets), then `pick_sfx` picks a FILE **randomly-per-clip** from
+that kind's pool — so adding files to a kind widens its rotation.
+
+**To add a sound (30 seconds):**
+1. Drop the audio file (`.mp3/.wav/.ogg/.flac`) into the right kind folder, e.g.
+   `assets/sfx/boom/my_new_boom.mp3`. Keep punchline hits SHORT (~0.3–2.5 s) — trim long
+   files first: `ffmpeg -i in.mp3 -t 2.5 -af "afade=t=out:st=2.0:d=0.5" out.mp3`.
+2. ⚠️ **If that folder has a `library.json`, you MUST add an entry for the file** — when a
+   manifest exists, ONLY its entries are the pick pool (loader: `sfx_inject._candidates_for_kind`).
+   Copy an existing entry and change `file`/`tags`/`source`. Folders WITHOUT a manifest
+   (impact, riser, …) auto-include every audio file.
+3. That's it — no code change, no restart. Verify with:
+   `python -c "import sys; sys.path.insert(0,'scripts/lib'); import sfx_inject as s; print(s._candidates_for_kind('boom'))"`
+
+**To add a whole new KIND** (e.g. `airhorn/`): make the folder, drop files in, then wire it
+to a beat in `config/sfx_cues.json` → `beat_defaults` (an ordered list per beat; the FIRST
+kind with assets wins, so position = priority). Reachable beats today: `punchline` (payoff of
+funny/reactive/hype/dancing/controversial/hot_take), `reveal` (storytime payoff), `buildup`
+(riser before hyped payoffs), `punchline_light` (laughter markers in funny/reactive).
+`fail`/`awkward_silence`/`disbelief` exist in config but aren't mapped from any category yet.
+
+**Where to GET sounds:** myinstants.com hosts meme sounds as direct mp3s
+(`curl -O https://www.myinstants.com/media/sounds/<name>.mp3`); archive.org has CC0 packs
+(existing whooshes came from there); the owner's own `reference_clips/sfx_reference/` set can
+be copied into production kinds. Record `license`/`source` in the manifest entry.
+
+**Seeded 2026-07-09 (owner request):**
+- `boom/` (punchline beat) now rotates **5**: `ddg_boom.mp3` (trimmed 2.5 s), `vine_boom.mp3`
+  (from the owner's reference set), + the 3 CC0 impact aliases.
+- `pop/` (NEW — laughter beats, `punchline_light`'s first choice) rotates **4**: boing / oof /
+  quack / dry_fart. Side benefit: laughter beats no longer fall through to the generic
+  333-file `impact/` pack (which includes footsteps and dish clatter — a bad draw waiting to
+  happen).
+- `fart/` (NEW dedicated kind): dry_fart + fart_reverb — available for beat wiring per above.
