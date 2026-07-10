@@ -129,6 +129,10 @@
                 <label for="chk-enable-thinking" title="Let the model reason (write a &lt;think&gt; block) before answering. OFF by default (faster, direct JSON). Reliable on qwen; a permanent-reasoning model (e.g. gemma-4) is caught by the Stage-4 fail-fast guard.">Enable model thinking</label>
             </div>
             <div class="checkbox-group">
+                <input type="checkbox" id="chk-companion-shorts">
+                <label for="chk-companion-shorts" title="For long clips (&ge;30s) with a strong late payoff, ALSO render a short punchline-only version — '&lt;title&gt; (Short).mp4' — a payoff-centered sub-cut of the finished clip for quick sharing. OFF by default. Skips storytime/emotional.">Companion punchline shorts</label>
+            </div>
+            <div class="checkbox-group">
                 <input type="checkbox" id="chk-force">
                 <label for="chk-force">Force reprocess</label>
             </div>

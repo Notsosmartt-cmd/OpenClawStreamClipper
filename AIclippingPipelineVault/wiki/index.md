@@ -56,7 +56,8 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/evaluation-status-2026-06]] — **Consolidated tracker**: the whole 2026-06 originality+calibration evaluation in one file with a verified done/not-done audit
 - [[concepts/master-proposal-2026-07]] — **Master roadmap**: all workstreams (fusion, reference-humor, calibration, originality, coverage, forensics) sequenced w/ claim evaluations + deep-research prompts
 - [[concepts/master-research-2026-07]] — RQ1-4 research findings: llama-server dissolves the omni catch-22; symbolic timeline academically supported; 7s chat lag; meme-library method (claims unverified — panel died)
-- [[concepts/handoff-2026-07-03]] — **HANDOFF**: exact execution state (done/left) + how to drive the harness — start here to continue
+- [[concepts/handoff-2026-07-09]] — **HANDOFF (latest)**: speed campaign close-out + final scorecard, BUG 67 incident, moment-parallel, thinking control, companion shorts, doctrine — start here
+- [[concepts/handoff-2026-07-03]] — **HANDOFF**: exact execution state (done/left) + how to drive the harness
 - [[concepts/plan-pipeline-upgrade-2026-07]] — **The actionable engineering plan**: 6 build phases (validation → anomaly lane → chat mining → judge/probe → calibration → meme lib → omni) w/ files, flags, params, DoD
 - [[concepts/corpus-learning-loop-2026-07]] — **Phase 7 (shipped)**: reference clips → learning. Draft-annotation+precision/recall (`corpus_eval`), caption-voice distiller→Stage 6 few-shot, transcript-value classifier
 - [[concepts/calibration-ranker-2026-07]] — **Phase 4 (machinery shipped)**: log-space fittable Pass-C ranker (`ranker.py`+`fit_ranker.py`, default-off) + gemma-4 rubric decorrelation (`text_model_passd`)
