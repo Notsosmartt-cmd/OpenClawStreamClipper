@@ -3585,6 +3585,46 @@ else:
 
 final.sort(key=lambda x: x["final_score"], reverse=True)
 
+# --- BUG 68 dead-air guard (2026-07-09) ---------------------------------------
+# Owner-reported BAD clip "The 'Right on the Dot' Payoff" (run 20260710_005533): the A1
+# arc lane matched an earlier punctuality claim to "the stream ending on time" and anchored
+# its payoff clip at T=11224 — a window [11212-11247] with ZERO transcript words (the
+# end-of-stream screen: silence + scrolling chat). Nothing checked that a selected clip
+# window contains actual speech. Guard: drop any final pick whose [clip_start, clip_end]
+# holds fewer than CLIP_MIN_CLIP_WORDS transcript words (default 8 — no legitimate speech
+# clip has <8 words in ~35 s). Exempt the legitimately non-verbal lanes (dancing category,
+# anomaly-lane src). Never empties the list (all-dead-air would mean a silent VOD — keep
+# originals rather than regress). Kill switch: CLIP_MIN_CLIP_WORDS=0. Failure-soft.
+try:
+    _min_clip_words = int(os.environ.get("CLIP_MIN_CLIP_WORDS", "8") or "8")
+except ValueError:
+    _min_clip_words = 8
+if _min_clip_words > 0 and final:
+    try:
+        _da_kept = []
+        for _m in final:
+            _t = float(_m.get("timestamp", 0) or 0)
+            _cs = float(_m.get("clip_start") if _m.get("clip_start") is not None
+                        else max(0.0, _t - 15))
+            _ce = float(_m.get("clip_end") if _m.get("clip_end") is not None
+                        else (_cs + float(_m.get("clip_duration", 30) or 30)))
+            _cat = str(_m.get("primary_category", "") or _m.get("category", "")).lower()
+            if _cat == "dancing" or str(_m.get("src", "")).upper() == "ANOMALY":
+                _da_kept.append(_m)
+                continue
+            _wc = sum(len(str(s.get("text", "")).split()) for s in segments
+                      if s.get("start", 0) < _ce and s.get("end", 0) > _cs)
+            if _wc >= _min_clip_words:
+                _da_kept.append(_m)
+            else:
+                print(f"[PASS C] dead-air guard: DROPPED T={_m.get('timestamp')} "
+                      f"({_cat or '?'}, window {_cs:.0f}-{_ce:.0f}s has {_wc} transcript "
+                      f"words < {_min_clip_words}) — see BUG 68", file=sys.stderr)
+        if _da_kept:
+            final = _da_kept
+    except Exception as _dae:
+        print(f"[PASS C] dead-air guard skipped ({_dae})", file=sys.stderr)
+
 # --- Plan A tail floor: drop weak tail picks (relative to THIS run) ----------
 # Floor = tau x median(pre_bucket_score of the top `MAX_CLIPS` picks). Judges on the
 # PRE-bucket-norm score (the blend hides tail weakness). Only ever REMOVES; never

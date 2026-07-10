@@ -1720,6 +1720,34 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
+## BUG 68 — A1 arc lane clipped the end-of-stream DEAD-AIR screen (zero-word clip window)
+
+> [!warning] Status: FIXED 2026-07-09 (dead-air guard at Pass-C final selection, default ON)
+
+**Symptom (owner review of run `20260710_005533`, rated BAD):** "The 'Right on the Dot'
+Payoff" — a clip of the stream's END SCREEN: total silence, a static custom photo, scrolling
+chat ("w stream", "is it over"), and a caption that referenced content from BEFORE the clip.
+Owner: "I have never had the pipeline clip this before."
+
+**Diagnosis (from the trace):** `category=arc` — the **A1 global-arc lane** matched the
+streamer's earlier punctuality claim ("We're not going to be late" / "Right on the dot") to
+*the stream ending on time* as its payoff and emitted a payoff-centered clip at T=11224.
+The window **[11212–11247] contains ZERO transcript words** (last speech gap before the
+11589 s goodbye; VOD ends 11623 s). Vision judge even passed it (`vision_score=0.778` on a
+static end screen — the judge has no "is this dead air" concept). **Nothing anywhere checked
+that a selected clip window contains actual speech.** Semantically the arc match was almost
+clever — but a viewer sees 35 s of silent chat-scroll.
+
+**Fix:** dead-air guard in `stage4_moments.py` right after the final Pass-C sort: drop any
+final pick whose `[clip_start, clip_end]` holds `< CLIP_MIN_CLIP_WORDS` transcript words
+(**default 8**, kill switch `=0`). Exempt the legitimately non-verbal lanes (`dancing`
+category, anomaly-lane `src`); never empties the list (all-dead-air ⇒ keep originals rather
+than regress); failure-soft. **Validated against the real run data: drops exactly the
+T=11224 clip (0 words), keeps the other 9 (all ≥8 words).** A negative label (the pipeline's
+2nd real negative) was filed for this clip.
+
+---
+
 ## BUG 67 — 8-hour wedged batch: gemma-4-26b (thinking model) fails EVERY Stage-4 chunk + a double-launch amplified it
 
 > [!warning] Two independent root causes, both live 2026-07-09. Config reverted; no code fix yet for the concurrency half.

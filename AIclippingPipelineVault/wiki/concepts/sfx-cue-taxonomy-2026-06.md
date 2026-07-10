@@ -196,6 +196,17 @@ funny/reactive/hype/dancing/controversial/hot_take), `reveal` (storytime payoff)
 (existing whooshes came from there); the owner's own `reference_clips/sfx_reference/` set can
 be copied into production kinds. Record `license`/`source` in the manifest entry.
 
+**Round 3 (2026-07-09 owner listen, run `20260710_005533`):** placement broadly GOOD (Foot
+Bag "good sound effect placement", Rap Battle "good sfx placement"). Tuning from the review:
+(1) **the CC0 impact booms are too quiet for engagement** (Foot Bag drew
+`explosion_ls100155.ogg`) → the 3 impact aliases were REMOVED from the boom rotation; boom
+pool is now **ddg_boom + vine_boom only**. (2) **"a little too soon"** on Little J's — second
+early-placement data point (after 2026-07-04's); if a third appears, bump `payoff_delay_s`
+0.35→0.5 and re-listen rather than tuning on n=2. (3) Owner wants **MORE cues on
+multi-beat clips** — Rap Battle ("only one sfx but there could have been more") and Bring the
+Chop ("effects after each roast/diss until it ended") → follow-up idea: a `roast_cadence`
+beat that fires a hit per diss/laughter burst within rap/roast segments (max_cues currently 4).
+
 **Seeded 2026-07-09 (owner request):**
 - `boom/` (punchline beat) now rotates **5**: `ddg_boom.mp3` (trimmed 2.5 s), `vine_boom.mp3`
   (from the owner's reference set), + the 3 CC0 impact aliases.
