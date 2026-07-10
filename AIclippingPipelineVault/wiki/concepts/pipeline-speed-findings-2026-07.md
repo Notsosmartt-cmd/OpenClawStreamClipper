@@ -196,12 +196,14 @@ prior-context from precomputed cards) and the gated A/B ran on 2xRaKai
   speculative decoding (§9b) and made card-parallel ~4%. The theoretical
   2-stage-pipeline 2× never materializes because the bottleneck isn't idle compute,
   it's the per-pass sync.
-- **Disposition (UPDATED 2026-07-09):** first reverted on a 1.4× bar, then **RE-INSTATED**
-  when the owner lowered the speed bar to **1.1×** (the 1.15× measured clears it) and
-  reclassified overlap as advisory — "15% is worth it on long VODs." Now flag-gated
-  (`CLIP_PASSB_MOMENT_WORKERS`, default off) **pending an owner spot-check** of the parallel
-  run's clips (6 of 10 differ from serial); promote to default-on on OK. The behavior-
-  identical serial arm (1107 s ≈ the 1156 s historical median) also confirms the instrument.
+- **Disposition (FINAL 2026-07-09): DEFAULT-ON.** First reverted on a 1.4× bar → owner
+  lowered it to **1.1×** (the measured 1.15× clears it) + reclassified overlap as advisory
+  ("different-but-good is fine; overlap ≠ quality") → owner spot-checked all 6 parallel-only
+  clips: **4 good ('Fake Girls' Freestyle, Principal Addresses, 'Yo!' Freestyle, 'Samurai
+  Slicer'), 2 needs-work (both "not bad"), ZERO bad** → the concurrent draw does not surface
+  junk → `CLIP_PASSB_MOMENT_WORKERS` default **2** (kill switch `=1`). The behavior-identical
+  serial arm (1107 s ≈ the 1156 s historical median) also confirmed the instrument. 4 positive
+  labels filed + frozen from the review.
 - **Consequence:** §7's ceiling still holds — parallelism only buys ~1.15× because serving
   co-batching barely amortizes the cross-vendor per-pass sync (spec-decode 0.12×, cards ~4%
   are the same floor). The 15% is real but modest and concentrated on LONG VODs (Lacy-class

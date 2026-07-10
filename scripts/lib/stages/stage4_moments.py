@@ -1663,9 +1663,14 @@ try:
 except ValueError:
     _card_workers = 1
 try:
-    _moment_workers = int(os.environ.get("CLIP_PASSB_MOMENT_WORKERS", "1") or "1")
+    # DEFAULT ON = 2 (promoted 2026-07-09 after the owner spot-check: A/B measured 1.15×
+    # Stage-4 (1107→959 s, clears the owner-set 1.1× bar) and the owner reviewed all 6
+    # parallel-only clips — 4 good, 2 "needs work", ZERO bad → the concurrent draw does
+    # not surface junk. ~30 min saved on Lacy-class VODs, ~3 min typical. Kill switch:
+    # CLIP_PASSB_MOMENT_WORKERS=1 (restores the exact legacy serial path).
+    _moment_workers = int(os.environ.get("CLIP_PASSB_MOMENT_WORKERS", "2") or "2")
 except ValueError:
-    _moment_workers = 1
+    _moment_workers = 2
 if _moment_workers >= 2 and _card_workers < 2:
     # Speed #5 CUT-OVER 2: moment-parallel REQUIRES precomputed cards — the eager
     # summary (below) must come from the precompute dict, never an inline LLM call
