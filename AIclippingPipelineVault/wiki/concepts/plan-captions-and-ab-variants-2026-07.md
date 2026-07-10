@@ -134,35 +134,42 @@ owner review pass; P1.6 trivial.
 
 ## Part 2 — A/B variant outputs + platform post kit (implement AFTER Part 1)
 
-Goal: per clip, emit K hook-variant renders + paste-ready per-platform post text, so the owner
-can trial-reel/A-B test across ANY platform. Part 1's judge+linter become the quality gate
-every variant must pass.
+Goal: per clip, emit an A + B variant render (2 versions) + paste-ready per-platform post
+text, so the owner can trial-reel/A-B test across ANY platform. Part 1's judge+linter become
+the quality gate every variant must pass.
 
-### P2.1 Variant generation (angles, not temperature)
-Stage 6: for clips above a score threshold, one extra LLM call returns K=3 hook/title variants
-with DISTINCT angles — (a) quote-the-punchline (verbatim line from the transcript), (b)
-reaction-POV ("the way he …"), (c) context-tease (setup withheld). Distinct angles give the
-A/B test real contrast; temperature resampling gives near-duplicates. Every variant passes
-`caption_judge` + `caption_lint`; failures are dropped (K is a max, not a promise). Stored on
-the entry as `hook_variants: [{hook, title, angle}, …]`.
+### P2.1 Variant generation (classic A/B, 2 versions, angle-distinct)
+Owner: **exactly 2 variants — classic A and B.** A = the primary caption already generated
+(highest-fidelity, typically quote-the-punchline). B = ONE alternate-angle challenger chosen
+by the model from {reaction-POV ("the way he …"), context-tease (setup withheld)} — whichever
+contrasts most with A. So Part 2 adds just ONE extra generation (B); A is free. Distinct
+angles give the A/B test real contrast (temperature resampling gives near-duplicates). B must
+pass `caption_judge` + `caption_lint`; if it fails twice, no B is emitted for that clip (A
+still ships). Stored as `hook_variants: [{label:"B", hook, title, angle}]` (A is the base entry).
 
-### P2.2 Variant rendering (v1 = reuse the render path unchanged)
-`stage7.py`: for each surviving variant, re-invoke the existing render with `--hook-text`
-overridden → `"<title> (B).mp4"`, `"(C)"` (suffix after the `[:50]` sanitize). Deterministic
-SFX/effects (seeded by T) mean variants differ ONLY in the header. Cost: one full NVENC render
-per variant (~10-30 s/clip) — bounded by gating variants to top-N clips per run
-(`CLIP_AB_VARIANTS_TOP_N`, default 5). Later optimization if cost ever matters: render a
-hook-less master once + per-variant drawtext-only encode pass (one extra generation loss —
-measure first). Companion shorts (`stage7.py:_maybe_companion_short`) apply to the primary
-variant only.
+### P2.2 Variant rendering (full independent render per variant — owner wants varied AV)
+Owner: **variants vary SOUND and VISUAL effects too**, not just the header. Mechanic: the SFX
+pick and the style-profile / fingerprint randomization are already deterministic seeded draws
+(`pick_sfx` seed = `int(round(T))`; profile effects seeded per-clip). Variant B renders with a
+**perturbed seed** (`seed + 1`, env `CLIP_VARIANT_SEED_OFFSET`) so it draws a different but
+still-valid SFX + visual-effect set, AND with B's `--hook-text`. Each variant is therefore a
+**full independent NVENC render** (~10-30 s/clip) — the earlier "hook-less master +
+drawtext-only pass" optimization is INVALID here (a shared master can't carry per-variant AV),
+so it's dropped. Files: A = `"<title>.mp4"` (primary), B = `"<title> (B).mp4"` (suffix after
+the `[:50]` sanitize). Bounded by gating variants to top-N clips per run
+(`CLIP_AB_VARIANTS_TOP_N`, default 5). Companion shorts
+(`stage7.py:_maybe_companion_short`) apply to A only.
+**Note the tradeoff (owner's explicit choice):** varying AV means the A/B test measures
+caption + AV *together*, not the caption in isolation — a won variant tells you "this whole
+package won", not specifically "this hook won". Accepted for stronger per-post differentiation.
 
 ### P2.3 Platform post kit (the "any platform" part — zero render cost)
 The 9:16 file already fits TikTok/Reels/Shorts; what differs per platform is the POST TEXT.
 New sidecar `"<title>.post.json"` per clip, one LLM call from {title, hook, description,
-punchline quote, voice profile}: `tiktok` (short caption + 3-5 tags), `instagram` (hook line +
-context sentence + tags + `trial_reel: true` marker for variant sets), `youtube_shorts`
-(title ≤100 chars + description). Copy-paste-ready; variants get their own entries. Flag
-`CLIP_POST_KIT` (default on after gate — it's additive text).
+punchline quote, voice profile}: `tiktok` (short caption), `instagram` (hook line + context
+sentence + `trial_reel: true` marker for variant sets), `youtube_shorts` (title ≤100 chars +
+description). **No hashtags anywhere (owner: zero tags)** — pure post copy. Copy-paste-ready;
+variants A/B get their own entries. Flag `CLIP_POST_KIT` (default on after gate — additive text).
 
 ### P2.4 Outcome loop (later, owner-driven)
 Owner records which variant won (views) per platform — a one-line `rate_run` extension
@@ -191,6 +198,9 @@ P1.5 voice bank (owner curation pass) ──────→ Part 2 build (P2.1�
 P1.6 caption labels (any time)                         → OWNER GATE → default-on
 ```
 
-Open decisions for the owner: (1) K=3 or K=2 variants; (2) post-kit hashtag policy (some
-creators run zero tags); (3) whether variant sets should ALSO vary the SFX draw (held as a
-later axis — one variable per experiment first).
+**Owner decisions locked (2026-07-10):** (1) **2 variants — classic A/B**, not K=3;
+(2) **no hashtags** in the post kit; (3) **variants DO vary SFX + visual effects**
+(seed-perturbed B), overriding the earlier "one variable per experiment" default — owner
+prefers maximum per-post differentiation over isolating the caption as the sole A/B variable.
+Consequence baked into P2.2: B is a full independent render (no shared master), and the A/B
+outcome reflects the whole package (caption + AV), not the hook alone.
