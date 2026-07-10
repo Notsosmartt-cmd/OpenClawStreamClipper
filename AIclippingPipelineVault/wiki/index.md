@@ -69,6 +69,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/plan-speed56-execution-2026-07]] — #5/#6 execution plan — both RED: #5 moment-parallel never wired, #6 dominated by #2; code archived for forensics (**retired 2026-07-09**)
 - [[concepts/pipeline-speed-findings-2026-07]] — **REFERENCE (measured facts)**: 21-run timing baseline, byte-identical wins (#1/#2/#7), the LLM-concurrency non-determinism LANDMINE, whisper-already-batched, dual-GPU reality, validation-method learnings, §9 serving-stack controllability
 - [[concepts/plan-serving-stack-2026-07]] — **Speed Wave 2 UNIFIED plan**: S1 spec decode + P prefill + C1 batch prefetch + C2 prefix-cache + C3 reload hygiene + C4 segment cache, execution-grade w/ file:line anchors + gates (**planned 2026-07-09**)
+- [[concepts/plan-captions-and-ab-variants-2026-07]] — Caption-LANGUAGE overhaul (fidelity judge, AI-tell linter, voice bank v2) THEN A/B hook-variant renders + per-platform post kit (**planned 2026-07-10**)
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
