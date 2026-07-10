@@ -13,24 +13,7 @@
       "tags": ["boom", "vine", "meme", "thud"],
       "license": "meme sound, owner-directed 2026-07-09",
       "source": "reference_clips/sfx_reference/vine_boom.mp3 (owner's set)"
-    },
-    {
-      "file": "../impact/cannon.mp3",
-      "tags": ["boom", "deep", "thud"],
-      "license": "CC0",
-      "source": "alias: assets/sfx/impact/cannon.mp3"
-    },
-    {
-      "file": "../impact/explosion_ls100155.ogg",
-      "tags": ["boom", "deep", "impact"],
-      "license": "CC0",
-      "source": "alias: assets/sfx/impact/explosion_ls100155.ogg"
-    },
-    {
-      "file": "../impact/muffled_distant_explosion.wav",
-      "tags": ["boom", "muffled", "bass"],
-      "license": "CC0",
-      "source": "alias: assets/sfx/impact/muffled_distant_explosion.wav"
     }
-  ]
+  ],
+  "_removed_2026_07_09": "The 3 CC0 impact aliases (cannon / explosion_ls100155 / muffled_distant_explosion) were dropped from the rotation per owner review of run 20260710_005533: the Foot Bag clip drew explosion_ls100155 and the owner found it 'a tad bit quiet — the vine boom or ddg boom should probably replace it for better engagement'. Pool is now the two meme booms only; the CC0 files remain in assets/sfx/impact/ if ever needed."
 }
