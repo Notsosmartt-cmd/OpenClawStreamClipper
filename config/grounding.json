@@ -28,5 +28,11 @@
     "enabled": true,
     "description": "On a Stage 6 grounding fail, retry the vision call ONCE with a stricter prompt that names the violation. If the retry also fails, null the field and fall back to transcript defaults.",
     "stage_6_retry_count": 1
+  },
+  "caption_judge": {
+    "enabled": true,
+    "description": "Part 1 P1.2 — semantic gate for the CREATIVE fields (title/hook) that previously ran Tier-1 only (no fidelity check). One LLM call scoring fidelity (does the caption describe what actually happens?) + human_voice (does it read like a human clipper?). fidelity < fidelity_threshold marks the field failed so the existing regenerate-once path fires. Failure-soft: LM Studio down => no gate. Toggle at runtime via CLIP_CAPTION_JUDGE=0.",
+    "fidelity_threshold": 6,
+    "timeout_s": 20
   }
 }

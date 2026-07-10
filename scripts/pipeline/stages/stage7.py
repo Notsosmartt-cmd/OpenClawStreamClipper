@@ -155,6 +155,17 @@ def _generate_manifest(ctx) -> list[dict]:
             row["description"], row["hook"], row["segment_type"],
             row["clip_start"], row["clip_duration"])))
     p.work("clip_manifest.txt").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    # P2.2 — A/B variants: carry Stage 6's variant-B caption onto the row and tag
+    # the top-N clips (moments arrive score-sorted from scored_moments) as
+    # eligible for a second render. Only these get a B; default off upstream.
+    try:
+        _ab_top_n = int(os.environ.get("CLIP_AB_VARIANTS_TOP_N", "5") or "5")
+    except ValueError:
+        _ab_top_n = 5
+    for _i, (_m, _row) in enumerate(zip(moments, rows)):
+        _row["hook_variants"] = _m.get("hook_variants") or []
+        _row["ab_eligible"] = _i < _ab_top_n
+        _row["post_kit"] = _m.get("post_kit") or {}     # P2.3 sidecar payload
     return rows
 
 
@@ -249,6 +260,9 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
                 _maybe_companion_short(ctx, row, clip_output, clip_start, clip_length)
                 _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
                 _record_clip(ctx, row, clip_output, clip_length, profile=True)
+                _maybe_ab_variant(ctx, row, clip_start, clip_length,
+                                  clip_srt_render, moment_json)
+                _maybe_write_post_kit(ctx, row)
                 return
             log.warn(f"Profile render failed for T={T} — falling back to legacy render")
 
@@ -348,6 +362,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
         _maybe_companion_short(ctx, row, clip_output, clip_start, clip_length)
         _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
         _record_clip(ctx, row, clip_output, clip_length)
+        _maybe_write_post_kit(ctx, row)
 
 
 def _probe_duration(path: str) -> float | None:
@@ -506,6 +521,72 @@ def _maybe_companion_short(ctx, row, clip_output: Path, clip_start, clip_length)
                          f"({(r.stderr or b'')[-120:]!r})")
     except Exception as e:  # noqa: BLE001 — additive extra never breaks the run
         ctx.log.warn(f"companion-short skipped for T={row.get('t')}: {e}")
+
+
+def _maybe_write_post_kit(ctx, row) -> None:
+    """P2.3 — write the "<title>.post.json" sidecar (per-platform post copy,
+    generated in Stage 6). One per primary clip; failure-soft. Default off
+    upstream (CLIP_POST_KIT), so row['post_kit'] is normally empty → no-op."""
+    pk = row.get("post_kit")
+    if not pk:
+        return
+    try:
+        out = ctx.paths.clips_dir / f"{row['title']}.post.json"
+        out.write_text(json.dumps(pk, indent=2, ensure_ascii=False), encoding="utf-8")
+        ctx.log.log(f"  [post-kit] {row['title']}.post.json")
+    except Exception as e:  # noqa: BLE001
+        ctx.log.warn(f"post-kit write skipped for T={row.get('t')}: {e}")
+
+
+def _maybe_ab_variant(ctx, row, clip_start, clip_length, clip_srt_render, moment_json) -> None:
+    """P2.2 — classic A/B: render variant B of an eligible clip. B is a FULL
+    INDEPENDENT profile render with (a) the alternate-angle hook from Stage 6 and
+    (b) a PERTURBED seed (CLIP_VARIANT_SEED_OFFSET, default 1) so its SFX + visual
+    effects differ from A — the owner wants varied sound AND visuals per A/B side,
+    which is why this can't reuse a shared master. Gated by CLIP_AB_VARIANTS>=2 +
+    row.ab_eligible (top-N). Additive + failure-soft: a failed B never touches A.
+    Needs profile mode (that's where the SFX/visual variety lives); logged-skip
+    otherwise. See concepts/plan-captions-and-ab-variants-2026-07 §P2.2."""
+    try:
+        n = int(os.environ.get("CLIP_AB_VARIANTS", "0") or "0")
+    except ValueError:
+        n = 0
+    if n < 2 or not row.get("ab_eligible"):
+        return
+    b = next((v for v in (row.get("hook_variants") or [])
+              if str(v.get("label", "")).upper() == "B"), None)
+    if not b or not (b.get("hook") or b.get("title")):
+        return
+    if not ctx.style_profiles:
+        ctx.log.log(f"  [ab-variant] T={row['t']}: skipped — needs CLIP_STYLE_PROFILES "
+                    f"for varied SFX/visual (a hook-only B isn't the owner's A/B)")
+        return
+    try:
+        T = row["t"]
+        seed_off = int(os.environ.get("CLIP_VARIANT_SEED_OFFSET", "1") or "1") or 1
+        b_hook = b.get("hook") or row.get("hook", "")
+        out_b = ctx.paths.clips_dir / f"{row['title']} (B).mp4"
+        r = common.run_module(ctx.log, "profile_render.py", [
+            "--moment-json", str(moment_json), "--src", str(ctx.vod_path),
+            "--srt", str(clip_srt_render), "--out", str(out_b),
+            "--clip-start", str(clip_start), "--clip-duration", str(clip_length),
+            "--speed", ctx.clip_speed,
+            "--captions", "true" if ctx.captions_enabled else "false",
+            "--hook", "true" if ctx.hook_caption_enabled else "false",
+            "--hook-text", b_hook, "--temp-dir", str(ctx.paths.work_dir),
+            "--music-folder", ctx.music_bed,
+            "--seed-offset", str(seed_off),
+        ], env=ctx.child_env(), check=False)
+        if r.returncode == 0 and out_b.exists():
+            ctx.log.log(f"  [ab-variant] {row['title']} (B) [{b.get('angle', 'alt')}] "
+                        f"hook=\"{b_hook}\" seed+{seed_off}")
+            _record_clip(ctx, {**row, "title": f"{row['title']} (B)", "hook": b_hook},
+                         out_b, clip_length, profile=True)
+        else:
+            out_b.unlink(missing_ok=True)
+            ctx.log.warn(f"ab-variant B render failed for T={T}")
+    except Exception as e:  # noqa: BLE001 — additive extra never breaks the run
+        ctx.log.warn(f"ab-variant skipped for T={row.get('t')}: {e}")
 
 
 def _wrap_hook(hook: str) -> str:

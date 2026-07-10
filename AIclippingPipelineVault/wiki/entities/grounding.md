@@ -68,6 +68,7 @@ result = grounding.cascade_check(
 - `check_claim(...)` — Tier 1 only (preserved for callers that want the cheapest check).
 - `cascade_check(...)` — Tier 1 → judge. Returns the same shape as `check_claim` plus a `tier` field (`1` or `"judge"`) and an `escalations` list with every intermediate result.
 - `llm_judge(claim, transcript_window, optional_setup, optional_speaker_info, ...)` — call the judge directly. Returns `{grounding, setup_payoff, speaker, conceptual, callback, rationale}` (each 0-10) or `None`.
+- `caption_judge(field, claim, transcript_window, description, ...)` — **(2026-07-10, P1.2)** a separate ONE-call judge for the CREATIVE fields (title/hook) that historically ran Tier-1 only. Returns `{fidelity, human_voice, rationale}` (each 0-10) or `None`. Stage 6's `_caption_gate` calls it (pinned to the loaded model, no swap) after the Tier-1 pass; `fidelity < caption_judge.fidelity_threshold` (default 6) drives the existing regenerate-once path. Failure-soft. Config: `grounding.json::caption_judge`; toggle `CLIP_CAPTION_JUDGE`. Pairs with the deterministic `caption_lint.py` linter. See [[concepts/plan-captions-and-ab-variants-2026-07]].
 - `_resolve_judge_model(cfg_model)` — pick the judge model. Order: explicit cfg → `CLIP_GROUNDING_JUDGE_MODEL` env → `CLIP_TEXT_MODEL` env → fallback `qwen/qwen3.5-9b`.
 - `_judge_weighted_score(dimensions, weights=None)` — reduce 5-dim judge result to a single 0-10 score via weighted mean. Default weights: grounding 0.55, setup_payoff 0.15, speaker 0.05, conceptual 0.15, callback 0.10.
 

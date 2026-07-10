@@ -44,6 +44,50 @@ _STOP = set("the a an and or but to of in on for it its is are was were be been 
             "no yeah bro dont don't im i'm gonna got get go u ur".split())
 _EMOJI = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF]")
 
+_VOWEL = re.compile(r"[aeiouAEIOU]")
+
+
+def _looks_like_handle(tok: str) -> bool:
+    """P1.5 — a token that is almost certainly an OCR'd watermark HANDLE, not
+    real caption language. These poisoned the v1 profile's `frequent_tokens`
+    (solereports, realstableronaldo, chubbyreports, kingflacous…). Heuristic:
+    long, digit-bearing, or interior-caps 'compound' handles."""
+    t = tok.strip()
+    if len(t) >= 13:                       # handles are long compounds
+        return True
+    if any(c.isdigit() for c in t):        # e.g. alotttwlr, bn3dits
+        return True
+    # interior capital after the first char (camel/Pascal compound handle)
+    if len(t) > 2 and any(c.isupper() for c in t[1:]):
+        return True
+    return False
+
+
+def _looks_like_garble(tok: str) -> bool:
+    """P1.5 — OCR garble, not a word: a run of 3+ identical letters (pyyyyyyy),
+    or a vowel-less alphabetic blob (ngflacous, tktok)."""
+    low = tok.lower()
+    if re.search(r"(.)\1\1", low):         # 3+ repeated chars
+        return True
+    if len(low) >= 4 and low.isalpha() and not _VOWEL.search(low):
+        return True
+    return False
+
+
+def _plausible_word(tok: str) -> bool:
+    """A token that plausibly is real caption language (for ranking/curation)."""
+    return (2 <= len(tok) <= 15 and not _looks_like_handle(tok)
+            and not _looks_like_garble(tok))
+
+
+def _plausible_score(line: str) -> float:
+    """Fraction of a line's alpha tokens that look like real words — used to
+    rank candidate lines highest-signal-first in the curation sheet."""
+    toks = [t for t in re.findall(r"[A-Za-z']+", line)]
+    if not toks:
+        return 0.0
+    return sum(1 for t in toks if _plausible_word(t)) / len(toks)
+
 
 def _distinct_lines(samples: list[dict]) -> list[str]:
     """Collapse the per-frame OCR repeats into distinct caption lines, stripping
@@ -110,8 +154,11 @@ def local_stats(lines: list[str]) -> dict:
               "all-caps-heavy" if upper and upper / max(1, len(alpha)) >= 0.3 else
               "mixed")
     toks = Counter(re.sub(r"[^a-z']", "", w.lower()) for w in words)
-    slang = [w for w, _ in toks.most_common(40)
-             if w and len(w) >= 2 and w not in _STOP][:15]
+    # P1.5: exclude OCR'd watermark handles + garble so the learned "slang"
+    # isn't the v1 profile's solereports/pyyyyyyy pollution.
+    slang = [w for w, _ in toks.most_common(60)
+             if w and len(w) >= 2 and w not in _STOP
+             and not _looks_like_handle(w) and not _looks_like_garble(w)][:15]
     return {
         "casing": casing,
         "lowercase_ratio": ratio,
@@ -162,7 +209,81 @@ def synthesize(lines: list[str], stats: dict, *, timeout: float = 90.0) -> dict 
     return obj
 
 
+def _arg(flag: str) -> str | None:
+    """Value after `flag` in argv, or None."""
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return None
+
+
+def write_review_sheet(path: str) -> int:
+    """P1.5 — emit the highest-signal candidate caption lines for the owner to
+    curate. Because OCR mangles even good hooks, the reliable path to a usable
+    voice bank is a human keep/drop pass (not more auto-cleaning). Owner marks
+    KEEP lines [x], then `--ingest-sheet` folds them into examples/hook_phrasings."""
+    lines, n_clips = collect()
+    if not lines:
+        print("[caption_style] no OCR'd captions in cache — run clip_forensics --ocr first.")
+        return 1
+    ranked = sorted(lines, key=_plausible_score, reverse=True)
+    top = [ln for ln in ranked if _plausible_score(ln) >= 0.5][:40] or ranked[:40]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# Caption-voice curation sheet (P1.5) — from "
+                f"{n_clips} clip(s), {len(lines)} distinct lines.\n")
+        f.write("# Mark lines that read like a REAL creator's caption with [x]; leave [ ] to drop.\n")
+        f.write("# Fix OCR typos inline if you like. Then:\n")
+        f.write("#   python scripts/research/caption_style.py --ingest-sheet "
+                f"{path} [--enable]\n\n")
+        for ln in top:
+            f.write(f"[ ] {ln}\n")
+    print(f"[caption_style] wrote curation sheet -> {path} ({len(top)} candidates). "
+          f"Mark [x] the good ones, then --ingest-sheet.")
+    return 0
+
+
+def ingest_sheet(path: str, enable: bool) -> int:
+    """P1.5 — read owner-kept lines ([x]) back into the profile's curated
+    examples/hook_phrasings. `--enable` flips enabled=true (the v1 blocker was
+    that the profile was never good enough to enable; a curated bank is)."""
+    kept: list[str] = []
+    try:
+        for raw in Path(path).read_text(encoding="utf-8").splitlines():
+            s = raw.strip()
+            if s.lower().startswith("[x]"):
+                kept.append(s[3:].strip())
+    except OSError as e:
+        print(f"[caption_style] cannot read sheet {path}: {e}")
+        return 1
+    if not kept:
+        print(f"[caption_style] no [x]-marked lines in {path}; nothing ingested.")
+        return 1
+    try:
+        prof = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
+    except Exception:
+        prof = {}
+    prof["examples"] = kept[:12]
+    prof["hook_phrasings"] = kept[:8]
+    prof["_curated"] = True
+    prof["_curated_count"] = len(kept)
+    if enable:
+        prof["enabled"] = True
+    OUT.write_text(json.dumps(prof, indent=2), encoding="utf-8")
+    print(f"[caption_style] ingested {len(kept)} curated line(s) -> {OUT} "
+          f"(enabled={str(prof.get('enabled', False)).lower()}). "
+          f"Stage 6 will use these as the voice few-shot when enabled.")
+    return 0
+
+
 def main() -> int:
+    _sheet = _arg("--review-sheet")
+    if _sheet is not None:
+        return write_review_sheet(_sheet)
+    _ingest = _arg("--ingest-sheet")
+    if _ingest is not None:
+        return ingest_sheet(_ingest, enable=("--enable" in sys.argv))
+
     lines, n_clips = collect()
     if not lines:
         print("[caption_style] no OCR'd captions in cache. Decompose clips with --ocr first "

@@ -123,7 +123,9 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
                  hook_caption: bool = True, originality: dict | None = None,
                  passb_dead_gate: str | None = None,
                  enable_thinking: bool = False,
-                 companion_shorts: bool = False) -> dict:
+                 companion_shorts: bool = False,
+                 ab_variants: int = 0,
+                 post_kit: bool = False) -> dict:
     """Build environment dict for direct pipeline subprocess (inside Docker).
 
     ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
@@ -157,6 +159,12 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     # Companion punchline-only shorts (default off): Stage 7 also emits a "<title> (Short).mp4"
     # for long clips with a late payoff. See concepts/clip-rendering.
     env["CLIP_COMPANION_SHORTS"] = "1" if companion_shorts else "0"
+    # A/B caption variants (default off = 0; classic A/B = 2). Stage 6 generates
+    # an alternate-angle variant B; Stage 7 renders it (top-N, varied SFX/visual
+    # via a perturbed seed). Post kit writes per-platform "<title>.post.json".
+    # See concepts/plan-captions-and-ab-variants-2026-07.
+    env["CLIP_AB_VARIANTS"] = str(int(ab_variants) if ab_variants else 0)
+    env["CLIP_POST_KIT"] = "1" if post_kit else "0"
     for k, v in originality_to_env(originality or load_originality_config()).items():
         env[k] = v
     return env
@@ -335,7 +343,8 @@ def _poll_container_stages(container: str, proc) -> None:
 def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                    hook_caption: bool = True, originality: dict | None = None,
                    passb_dead_gate: str | None = None, enable_thinking: bool = False,
-                   companion_shorts: bool = False):
+                   companion_shorts: bool = False, ab_variants: int = 0,
+                   post_kit: bool = False):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.
@@ -383,6 +392,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
             env_flags += ["-e", f"CLIP_PASSB_DEAD_GATE={passb_dead_gate}"]
         env_flags += ["-e", f"CLIP_ENABLE_THINKING={'1' if enable_thinking else '0'}"]
         env_flags += ["-e", f"CLIP_COMPANION_SHORTS={'1' if companion_shorts else '0'}"]
+        env_flags += ["-e", f"CLIP_AB_VARIANTS={int(ab_variants) if ab_variants else 0}"]
+        env_flags += ["-e", f"CLIP_POST_KIT={'1' if post_kit else '0'}"]
         for k, v in orig_env.items():
             env_flags += ["-e", f"{k}={v}"]
 
@@ -432,7 +443,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                          hook_caption=hook_caption, originality=originality,
                          passb_dead_gate=passb_dead_gate,
                          enable_thinking=enable_thinking,
-                         companion_shorts=companion_shorts),
+                         companion_shorts=companion_shorts,
+                         ab_variants=ab_variants, post_kit=post_kit),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP

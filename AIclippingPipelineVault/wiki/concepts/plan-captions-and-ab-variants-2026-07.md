@@ -2,7 +2,7 @@
 title: "Plan — Caption-Language Overhaul, then A/B Variant Outputs"
 type: concept
 tags: [plan, captions, stage6, stage7, ab-testing, voice, platform]
-status: planned
+status: in-progress
 updated: 2026-07-10
 ---
 
@@ -25,6 +25,51 @@ quality exists (3 variants of an AI-sounding caption = 3 AI-sounding captions).
 - Ties into [[concepts/plan-learning-activation-2026-07]] (labels) and the
   [[concepts/corpus-learning-loop-2026-07]] caption-voice distiller (Phase 7.2), which this
   plan repairs and supersedes in part.
+
+---
+
+## Implementation status (shipped 2026-07-10)
+
+**All machinery for Part 1 + Part 2 is built, compiles, and is live-validated against the
+real model.** Part 1 caption fixes are **default-ON** (with per-flag kill switches); Part 2 A/B
+is **default-OFF** (env flag + dashboard checkbox), per the plan's gating.
+
+| Item | File(s) | Flag (default) | State |
+|---|---|---|---|
+| P1.1 full-window transcript | `stage6_vision.py` (`[:500]`→`[:4000]`, + `_ts` variant) | — | **ON** |
+| P1.2 caption fidelity judge | `grounding.py::caption_judge` + `config/grounding.json::caption_judge` | `CLIP_CAPTION_JUDGE=1` | **ON** |
+| P1.3 voice-contract prompt | `stage6_vision.py::_caption_voice_contract` + JSON field rewrite | `CLIP_CAPTION_VOICE=1` | **ON** |
+| P1.4 AI-tell linter | `scripts/lib/caption_lint.py` (self-test PASS) | `CLIP_CAPTION_LINT=1` | **ON** |
+| P1.5 voice bank v2 | `caption_style.py` (handle/garble filter + `--review-sheet`/`--ingest-sheet`) | profile `enabled=false` | machinery ON; profile awaits owner curation |
+| P1.6 caption labels | `rate_run.py set --caption`, `collect --captions` | — | tool ready |
+| P2.1 variant-B generation | `stage6_vision.py::_generate_variant_b` | `CLIP_AB_VARIANTS>=2` (**0**) | OFF |
+| P2.2 variant render (varied AV) | `stage7.py::_maybe_ab_variant`, `profile_render.py --seed-offset` | `CLIP_AB_VARIANTS` + `CLIP_AB_VARIANTS_TOP_N=5` + `CLIP_VARIANT_SEED_OFFSET=1` | OFF |
+| P2.3 platform post kit | `stage6_vision.py::_generate_post_kit` + `stage7.py::_maybe_write_post_kit` | `CLIP_POST_KIT` (**0**) | OFF |
+| P2.4 variant-winner label | `rate_run.py set --variant-winner` | — | tool ready |
+| Dashboard toggles | `pipeline_runner.py`, `pipeline_routes.py`, `pipeline-ui.js`, `index.html` | `chk-ab-variants`, `chk-post-kit` | wired (env-chain verified: checked → `CLIP_AB_VARIANTS=2`) |
+
+**The caption gate (P1.2/P1.4):** `_ground_field` for the creative fields (title/hook) now, AFTER
+the existing Tier-1 pass, runs `_caption_gate` — the deterministic linter first (free), then the
+fidelity judge (one call, pinned to the loaded Stage-6 `VISION_MODEL` so it never swaps models). A
+fail sets `passed=False` + `caption_detail`, which drives the EXISTING regenerate-once path
+(violation named in the retry prompt); a second fail nulls to the plain baseline. The creative
+fields finally get the semantic check `description` always had, reusing all the regen/null wiring.
+
+**The A/B seed mechanic (P2.2):** variant B is a full INDEPENDENT `profile_render` with the
+alternate hook AND `--seed-offset 1`, so its SFX pick + profile/fingerprint draws differ from A
+while beat PLACEMENT stays anchored on the real timestamp. `seed_offset=0` (variant A) is
+byte-identical to before. Needs profile mode (that's where SFX/visual variety lives) — a hook-only
+B is logged-skipped.
+
+**Live validation (2026-07-10, qwen3.5-9b):**
+- Linter: "The Ultimate Vending Machine Reveal" → flagged (title_case + headline_the + "ultimate"); human caption → clean.
+- **caption_judge discriminates sharply**: on-topic caption fidelity **10** / human_voice 9; off-topic ("epic freestyle rap battle") fidelity **0** / human_voice 2, rationale "describes a rap battle that never happens in the clip." This is the caption↔video mismatch detector the owner asked for.
+- Variant B: produced a distinct, on-topic, linter-clean alternate ("school vending machines are segregated" / "one for staff one for everyone", angle=quote).
+
+**Gates still owned by the owner:**
+1. **Part-1 default-on eyeball** — judge+lint add ~2 short calls/moment and can null a title→regen→baseline. Failure-soft + kill switches (`CLIP_CAPTION_JUDGE=0`, `CLIP_CAPTION_LINT=0`, `CLIP_CAPTION_VOICE=0`). The offline before/after A/B on run `20260710_005533`'s cached clips is the formal gate.
+2. **P1.5 profile enable** — `python scripts/research/caption_style.py --review-sheet sheet.txt` → mark `[x]` the good lines → `--ingest-sheet sheet.txt --enable`. Until then the voice bank stays `enabled=false` (unchanged behavior).
+3. **Part-2 variant run** — flip the dashboard "A/B variant clips" checkbox (needs Style profiles ON) on one VOD, review B vs A + render cost, then default-on for top-N.
 
 ---
 
