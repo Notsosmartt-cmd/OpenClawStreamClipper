@@ -246,6 +246,7 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
                 "--music-folder", ctx.music_bed,
             ], env=env, check=False)
             if r.returncode == 0 and clip_output.exists():
+                _maybe_companion_short(ctx, row, clip_output, clip_start, clip_length)
                 _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
                 _record_clip(ctx, row, clip_output, clip_length, profile=True)
                 return
@@ -342,6 +343,9 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
             return
 
     if clip_output.exists():
+        # Companion punchline-only short (CLIP_COMPANION_SHORTS) BEFORE cold-open: a straight
+        # sub-cut of the finished clip so captions/effects are inherited + aligned.
+        _maybe_companion_short(ctx, row, clip_output, clip_start, clip_length)
         _maybe_cold_open(ctx, row, clip_output, clip_start, clip_length)
         _record_clip(ctx, row, clip_output, clip_length)
 
@@ -423,6 +427,85 @@ def _maybe_cold_open(ctx, row, clip_output: Path, clip_start, clip_length) -> No
                 pass
     except Exception as e:
         ctx.log.warn(f"cold-open teaser failed for T={row.get('t')}: {e}")
+
+
+def _snap_short_start(ctx, T, clip_start, speed: float, start_r: float) -> float:
+    """Nudge the companion short's start back to a word boundary so it doesn't open
+    mid-word. clip_<T>.srt is 0-based SOURCE time from clip_start; the short runs in
+    RENDERED time (source/speed). Returns start_r unchanged on any issue (failure-soft)."""
+    try:
+        srt = ctx.paths.work(f"clip_{T}.srt")
+        if not srt.exists():
+            return start_r
+        import re
+        target_src = start_r * speed  # desired start in SRT's source-time base
+        best = None
+        for m in re.finditer(r"(\d\d):(\d\d):(\d\d),(\d\d\d)\s*-->", srt.read_text(
+                encoding="utf-8", errors="replace")):
+            h, mi, s, ms = map(int, m.groups())
+            ws = h * 3600 + mi * 60 + s + ms / 1000.0
+            # nearest word-start at/just-before the target, within 2.5 s back
+            if ws <= target_src + 0.3 and (target_src - ws) <= 2.5:
+                best = ws if best is None else max(best, ws)
+        if best is not None:
+            return max(0.0, best / speed)
+    except Exception:
+        pass
+    return start_r
+
+
+def _maybe_companion_short(ctx, row, clip_output: Path, clip_start, clip_length) -> None:
+    """CLIP_COMPANION_SHORTS (default OFF): for a LONG clip with a confident payoff, also
+    emit a punchline-only SHORT — a payoff-centered sub-cut of the FINISHED clip (so its
+    captions / blur-fill / colors are inherited and stay aligned; no re-caption needed).
+    Owner req 2026-07-09 (the 'Yo!' Freestyle: post the full clip AND a small ending clip
+    for quick sharing). ADDITIVE: never touches the full clip. Runs BEFORE cold-open so the
+    payoff offset is clean. Failure-soft. Skipped for storytime/emotional (a payoff-only cut
+    loses the essential buildup) — but NOT for rap/freestyle (the owner's actual use case)."""
+    if os.environ.get("CLIP_COMPANION_SHORTS", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return
+    try:
+        T = float(row["t"])
+        cat = str(row.get("category", "")).lower()
+        seg = str(row.get("segment_type", "")).lower()
+        exempt = os.environ.get("CLIP_COMPANION_EXEMPT", "storytime,emotional").lower()
+        if any(e and (e in cat or e in seg) for e in exempt.split(",")):
+            return
+        # Floor at 30 s: below this a payoff-only short isn't meaningfully shorter (the
+        # owner's motivating 'Yo!' Freestyle clip is 36 s, so 45 was too high).
+        min_full = float(os.environ.get("CLIP_COMPANION_MIN_FULL_S", "30") or "30")
+        if float(clip_length) < min_full:
+            return
+        try:
+            speed = float(ctx.clip_speed or "1.0") or 1.0
+        except (TypeError, ValueError):
+            speed = 1.0
+        lead = float(os.environ.get("CLIP_COMPANION_LEAD_S", "5") or "5")
+        tail = float(os.environ.get("CLIP_COMPANION_TAIL_S", "10") or "10")
+        rendered_dur = _probe_duration(str(clip_output)) or (float(clip_length) / speed)
+        payoff_r = (T - float(clip_start)) / speed            # payoff position in the rendered clip
+        start_r = _snap_short_start(ctx, T, clip_start, speed, max(0.0, payoff_r - lead))
+        end_r = min(rendered_dur, payoff_r + tail)
+        short_len = end_r - start_r
+        min_short = float(os.environ.get("CLIP_COMPANION_MIN_S", "6") or "6")
+        if short_len < min_short or short_len >= rendered_dur * 0.75:
+            return  # too short to matter, or not meaningfully shorter than the full clip
+        short_out = ctx.paths.clips_dir / f"{row['title']} (Short).mp4"
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{start_r:.3f}", "-i", str(clip_output),
+             "-t", f"{short_len:.3f}", "-c:v", "h264_nvenc", "-preset", "p4",
+             "-c:a", "aac", "-b:a", "128k", "-avoid_negative_ts", "make_zero", str(short_out)],
+            capture_output=True, timeout=300)
+        if r.returncode == 0 and short_out.exists() and short_out.stat().st_size > 1024:
+            ctx.log.log(f"  [companion-short] {row['title']} -> +{short_len:.0f}s punchline short "
+                        f"(payoff T={T:.0f}, window {start_r:.0f}-{end_r:.0f}s of clip)")
+            _record_clip(ctx, {**row, "title": f"{row['title']} (Short)"}, short_out, round(short_len, 1))
+        else:
+            short_out.unlink(missing_ok=True)
+            ctx.log.warn(f"companion-short render failed for T={T:.0f} "
+                         f"({(r.stderr or b'')[-120:]!r})")
+    except Exception as e:  # noqa: BLE001 — additive extra never breaks the run
+        ctx.log.warn(f"companion-short skipped for T={row.get('t')}: {e}")
 
 
 def _wrap_hook(hook: str) -> str:

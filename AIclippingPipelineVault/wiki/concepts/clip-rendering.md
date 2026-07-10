@@ -3,7 +3,7 @@ title: "Clip Rendering (Stage 7)"
 type: concept
 tags: [rendering, ffmpeg, blur-fill, smart-crop, captions, subtitles, 9:16, vertical, originality, stitch, stage-7, video, nvenc, gpu-encode]
 sources: 3
-updated: 2026-06-06
+updated: 2026-07-09
 ---
 
 # Clip Rendering (Stage 7)
@@ -162,6 +162,40 @@ Saved to `clips/` on host (= `~/VODs/Clips_Ready/` in container). Filenames from
 - `Gaming_Clutch_1v4_Comeback.mp4`
 
 Diagnostic JSON saved to `clips/.diagnostics/` for post-hoc analysis.
+
+---
+
+## Companion punchline-only shorts (`CLIP_COMPANION_SHORTS`, default off — 2026-07-09)
+
+Owner req (clip review): for a long clip with a strong late payoff, ALSO emit a short,
+payoff-only version — "post the full clip AND a small ending clip for quick sharing" (the
+motivating example was the 'Yo!' Freestyle, punchline "grab your balls twist them pop them").
+Implemented in `stage7.py:_maybe_companion_short`, called right AFTER the full clip renders
+and BEFORE `_maybe_cold_open`.
+
+- **Mechanism (deliberate):** the short is a **straight sub-cut of the FINISHED clip** (ffmpeg
+  `-ss/-t` + NVENC re-encode), NOT a re-render. So it inherits burned-in captions, blur-fill,
+  colors, 9:16 framing — and the captions stay ALIGNED for free. A separate re-render would
+  misalign captions because `clip_<T>.srt` is 0-based per-clip (transcribed from
+  `clip_audio_<T>.wav`), so a different window would need SRT surgery. Running before
+  cold-open keeps the payoff offset clean (no teaser prefix).
+- **Window:** payoff-centered `[T−lead, T+tail]` in rendered time
+  (`payoff_r=(T−clip_start)/speed`), default lead 5 s / tail 10 s; start snapped back to a
+  word boundary via `clip_<T>.srt` (`_snap_short_start`, so it doesn't open mid-word). Output
+  `"<title> (Short).mp4"`, recorded to `clips_made` (delivery posts it alongside the full clip).
+- **Gates:** flag on; full clip ≥ `CLIP_COMPANION_MIN_FULL_S` (default **30 s** — the owner's
+  36 s example must qualify); short ≥ `CLIP_COMPANION_MIN_S` (6 s) AND < 75% of the full;
+  category/segment NOT in `CLIP_COMPANION_EXEMPT` (default `storytime,emotional` — a
+  payoff-only cut loses their buildup; note rap/freestyle are NOT exempt here, unlike P-TIGHT,
+  because they're the owner's use case).
+- **Safety:** ADDITIVE (never touches the full clip) + failure-soft. Env tuning:
+  `CLIP_COMPANION_LEAD_S`, `_TAIL_S`, `_MIN_FULL_S`, `_MIN_S`, `_EXEMPT`. Verified on the real
+  36 s 'Yo!' clip → 11 s ending short; storytime + <30 s correctly skip.
+
+> [!note] Follow-ups if enabled in production
+> Titles are inherited from the full clip, so a short may carry a title referencing trimmed
+> setup — same title-decoherence class as the P-TIGHT head-cut warning. A smarter version
+> could use the P-TIGHT payoff locator for a tighter punchline boundary.
 
 ---
 
