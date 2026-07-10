@@ -1,7 +1,19 @@
 {
-  "version": 1,
-  "_note": "Vine-boom / deep-thud kind. Aliased to the seeded impact library (the cannon/explosion samples are credible Vine-boom stand-ins) via relative '../impact/' paths so punchline SFX work immediately without a separate download. To use a dedicated CC0 Vine-boom re-creation instead (recommended — see concepts/sfx-cue-taxonomy-2026-06), drop the file(s) into this folder and add them as entries here; own-folder files take priority. Do NOT rip the copyrighted original.",
+  "version": 2,
+  "_note": "Vine-boom / deep-thud kind for the punchline beat. LOADER SEMANTICS (sfx_inject._candidates_for_kind): when this manifest exists, ONLY its entries form the pick pool — new files MUST be added here. 2026-07-09 owner direction: seeded with the DDG boom (trimmed to a 2.5s hit) + the vine boom from the owner's reference set, alongside the CC0 impact aliases; per-seed pick rotates across all five.",
   "entries": [
+    {
+      "file": "ddg_boom.mp3",
+      "tags": ["boom", "ddg", "meme", "bass"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "https://www.myinstants.com/media/sounds/ddg-boom.mp3 (trimmed 2.5s + fade)"
+    },
+    {
+      "file": "vine_boom.mp3",
+      "tags": ["boom", "vine", "meme", "thud"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "reference_clips/sfx_reference/vine_boom.mp3 (owner's set)"
+    },
     {
       "file": "../impact/cannon.mp3",
       "tags": ["boom", "deep", "thud"],

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "_note": "Fart / flatulence kind (owner request 2026-07-09). Dedicated kind so it can be wired to any beat via config/sfx_cues.json beat_defaults (e.g. as a 'fail' or comedic-payoff option). dry_fart also rides in the pop kind's laughter-beat rotation.",
+  "entries": [
+    {
+      "file": "dry_fart.mp3",
+      "tags": ["fart", "dry", "meme", "short"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "https://www.myinstants.com/media/sounds/dry-fart.mp3"
+    },
+    {
+      "file": "fart_reverb.mp3",
+      "tags": ["fart", "reverb", "meme", "dramatic"],
+      "license": "meme sound, owner-directed 2026-07-09",
+      "source": "https://www.myinstants.com/media/sounds/fart-with-reverb.mp3"
+    }
+  ]
+}
