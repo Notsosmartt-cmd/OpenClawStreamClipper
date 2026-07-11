@@ -96,7 +96,12 @@ def _agg(cards: list[dict], ours: bool) -> dict:
         "caption_casing_top": casings.most_common(2),
         "arc_shapes": arcs.most_common(3),
         "verbal_vs_visual": vvv.most_common(3),
-        "chat_overlay_pct": round(100 * sum(1 for c in cards if (c.get("engagement") or {}).get("chat_overlay")) / len(cards)) if cards else None,
+        # schema v2: only EDITOR-ADDED overlays count (v1's chat_overlay conflated the
+        # stream's own on-screen chat with an added overlay — owner-rejected artifact).
+        # v1 cards lack the field → None (excluded), never silently mixed.
+        "chat_overlay_pct": round(100 * sum(
+            1 for c in cards if (c.get("engagement") or {}).get("added_chat_overlay")) / len(cards))
+            if cards and any("added_chat_overlay" in (c.get("engagement") or {}) for c in cards) else None,
     }
 
 
@@ -109,7 +114,8 @@ _LEVERS = {
     "pct_text_hook": ("config/hook_templates.json + CLIP_HOOK_CAPTION", "hook-card presence/phrasing (voice contract already governs style)"),
     "caption_casing_top": ("config/caption_style.json (P1.5 voice bank)", "curate + enable; the voice contract bans Title Case already"),
     "caption_wps_med": ("scripts/lib/kinetic_captions.py preset", "caption pacing/word-grouping"),
-    "chat_overlay_pct": ("style_profiles chat_overlay flag", "enable for reactive/controversy categories"),
+    "chat_overlay_pct": ("style_profiles chat_overlay flag (render feature, needs a chat dump)",
+                         "EDITOR-ADDED overlays only (schema v2); the stream's own on-screen chat doesn't count"),
     "cut_alignment_top": ("clip_cuts seed/beats", "align cuts to punchline beats vs loose"),
     "category_coverage": ("feature-card", "formats the corpus has that we never produce (e.g. news_compilation -> plan-news-compilation-2026-07)"),
 }

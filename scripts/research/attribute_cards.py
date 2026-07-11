@@ -44,7 +44,10 @@ sys.path.insert(0, str(REPO / "scripts" / "lib"))  # lmstudio.loads_lenient
 import clip_forensics as cf  # noqa: E402  — reuse _resolve_clip / _llm_config / REF_DIR / _ffprobe
 
 CACHE = cf.REF_DIR / ".cache"
-CARD_SCHEMA_VERSION = 1
+# v2 (2026-07-11): engagement.chat_overlay split into source_chat_visible vs
+# added_chat_overlay — v1 conflated the stream's own chat panel with an
+# editor-composited overlay (owner catch; the 89%-vs-31% diff line was an artifact).
+CARD_SCHEMA_VERSION = 2
 
 
 def _log(msg: str) -> None:
@@ -168,7 +171,7 @@ Respond with ONLY a JSON object (no prose, no markdown fences):
   "edit_grammar": {{"cut_alignment": "on-beat|on-punchline|loose|none", "zooms": <int>, "freezes": <int>}},
   "sfx_grammar": {{"kinds": ["boom","whoosh","..."], "offset_from_payoff_ms": <int or null>, "loudness_vs_speech": "over|under|ducked|none"}},
   "captions": {{"casing": "all-lowercase|Title Case|SCREAMING CAPS|sentence case|mixed|none", "voice": "the caption WRITING voice in 1 phrase", "on_screen_text_samples": ["verbatim lines you can read in the frames"]}},
-  "engagement": {{"chat_overlay": true/false, "emoji": true/false, "freeze_bait": true/false}},
+  "engagement": {{"source_chat_visible": true/false (the STREAM's own chat panel, part of the source footage), "added_chat_overlay": true/false (a chat box the EDITOR composited in — different style/position than the stream layout), "emoji": true/false, "freeze_bait": true/false}},
   "essence_commentary": "one plain-language paragraph: what an editor should copy from this clip",
   "confidence": <0.0-1.0>
 }}"""
