@@ -131,6 +131,47 @@ into the prompt. Per-clip mimicry that compounds automatically as reference clip
 Flag `CLIP_REF_FEWSHOT` (ship default-off → owner spot-check run → default-on per the rubric).
 Channel/niche scoping reuses the caption-style `applies_to` pattern (generalization guard).
 
+## Phase R6 — "Reference Lab" dashboard tab (owner req 2026-07-10: see + execute the reverse pipeline on demand)
+
+The CLI tools (R0–R3) are the substrate; this tab is their permanent face, so running the
+reverse pipeline never requires an agent session. Follows the dashboard's existing
+architecture (Flask blueprint + ES module + panel section — [[entities/dashboard]]).
+
+**Backend** — new `dashboard/routes/reference_routes.py` (registered like the other 8
+blueprints):
+- `GET /api/reference/corpus` — the corpus table: every video in `reference_clips/` with
+  per-clip status badges — decomposed? (timeline.json), card? (card.json), notes state
+  (none / `_draft` / corrected), duration/size, mtimes.
+- `POST /api/reference/decompose` `{clips: [...] | "missing"}` — bounded background job
+  running `clip_forensics --ocr --trim-end 4` per clip (R0).
+- `POST /api/reference/cards` `{clips: [...] | "missing"}` — `attribute_cards.py` job (R1);
+  refuses when LM Studio is down (reuse `check_lm_studio`).
+- `POST /api/reference/diff` `{runs: [...]}` — `corpus_diff.py` job (R2+R3) against chosen
+  run(s); result listed under reports.
+- `GET /api/reference/card/<stem>` · `GET /api/reference/report/<id|latest>` — viewers' data.
+- `GET /api/reference/job` — status + log tail (poll; same pattern as the pipeline log).
+- `POST /api/reference/approve` `{report_id, item_id, verdict}` — records approve/reject per
+  diff line into `clips/.diagnostics/diff_approvals.json`. **Approving does NOT auto-apply**
+  (doctrine): approvals are the queue the agent works through in R4, each becoming a small
+  reviewed config/prompt commit.
+
+**Job safety (owner's no-zombie directive + GPU contention):** the reverse pipeline shares
+the GPUs with the forward one (whisper CUDA, CLAP, 35B calls) — so ONE job at a time, mutual
+exclusion BOTH ways with the clip pipeline via the same on-disk pid-marker pattern as BUG 67
+(`reference_job.pid`; forward play → 409 while a lab job runs, lab buttons → 409 while the
+pipeline runs), hard per-job timeout, Stop button kills the process tree, done-marker +
+log file for progress polling.
+
+**Frontend** — `dashboard/static/modules/reference-panel.js` + a "Reference Lab" tab in
+`index.html`: corpus table with status chips + select-all (mirrors the VOD Library pattern);
+buttons "Decompose missing (N)" / "Build cards (N)" / "Run diff vs run…" (run picker from
+`clips/.diagnostics/`); job progress area; a card viewer (structured fields + the essence
+commentary paragraph); a report viewer rendering the diff markdown with per-line
+Approve / Reject / Later controls. No external CDNs (dashboard is local-only).
+
+**Effort:** ~one session once R0–R3 tools exist (the tab only shells to them). **Gate:** none
+beyond the R1/R3 gates it surfaces — it's a control surface, not new behavior.
+
 ---
 
 ## Sequencing, effort, gates
@@ -140,11 +181,17 @@ R0 coverage (batch, no gate)
   → R1 cards (batch ~45 min) → GATE: owner spot-reads 5 cards
   → R2 our-clips cards (per run, fast)
   → R3 first diff report      → GATE: owner approves items
+  → R6 Reference Lab dashboard tab (control surface over R0–R4: corpus table,
+        execute buttons, card/report viewers, approve/reject per diff line)
   → R4 apply commits (each small, reviewed)   → next run closes the loop
   → R5 retrieval few-shot (flag) → GATE: spot-check run → default-on
 ```
 
-Estimated build: R0–R3 one session; R4 is ongoing practice; R5 a second session.
+Estimated build: R0–R3 one session; **R6 one session** (thin face over the CLI tools; first
+diff report arrives via CLI before the tab exists); R4 is ongoing practice; R5 a second
+session. Steady state: the owner drops new reference clips into `reference_clips/`, opens the
+Reference Lab tab, clicks Decompose/Cards/Diff as needed, and approves lines — no agent
+session required to *run* the loop, only to *apply* approved items (R4).
 
 Related: [[concepts/plan-clip-forensics]] (the decomposer this builds on),
 [[concepts/corpus-learning-loop-2026-07]] (Phase 7 — superseded in part by this),
