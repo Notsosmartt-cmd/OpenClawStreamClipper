@@ -30,6 +30,27 @@ updated: 2026-07-11
 > to `street_interview|news_compilation|irl_moment|reaction|rap_freestyle|gaming|story|skill|
 > controversy|other` and the FULL 59-card batch launched (rebuilds the 6 for consistency; 2h
 > hard cap, failure-soft per clip).
+>
+> **R1 COMPLETE (2026-07-11): 59/59 cards, 0 skipped, mean confidence 0.94.** The refined
+> taxonomy genuinely separated the corpus: `irl_moment` 38, `reaction` 7, **`news_compilation` 5**
+> (the StreamerUpdate set = the [[concepts/plan-news-compilation-2026-07]] format spec),
+> `gaming` 5, `story` 2, `street_interview` 1 (George Bush), `controversy` 1.
+>
+> **R2 tooling SHIPPED, first run in flight** — `scripts/research/our_clip_cards.py`: the same
+> deconstruction over OUR produced clips into a RUN-SCOPED cache
+> (`clips/.diagnostics/cards/<run>/`; `clip_forensics.decompose` + `attribute_cards.build_card`
+> gained `--cache-dir` so our artifacts never mix into the reference cache). Primaries only by
+> default ((B)/(Short) would double-count moments); each card merges `_ground_truth` from
+> `effects_log.jsonl` (normalized-title match — log titles are RAW, filenames Stage-7-sanitized;
+> gotcha: the effects run stamp is the pipeline START time, so the A/B run is `20260710_143929`
+> in effects_log vs `last_run_20260710_202308` in diagnostics). No OCR/no text-LLM on our clips
+> (we know our burned text; cards supersede the old style_profile).
+> **R3 tool SHIPPED** — `scripts/research/corpus_diff.py`: per-category deterministic aggregates
+> (OUR sfx counts prefer ground truth over CLAP), 25%-relative gap threshold, every gap item
+> `lever:`-tagged (sfx_cues / style_profiles / hook_templates / caption bank / jump-cuts, or
+> `feature-card`), category-coverage misses surfaced (news_compilation → the new mode), optional
+> LLM narrative; outputs `corpus_diff_<date>.md` + machine-readable `.json` (the future R6
+> approve queue). First report generates when the R2 run finishes.
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 
