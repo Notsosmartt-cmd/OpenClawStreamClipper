@@ -51,6 +51,12 @@ def _norm(s: str) -> str:
     return "".join(c for c in str(s) if c.isalnum() or c in " -").strip().lower()
 
 
+def _title_match(stem_norm: str, title_norm: str) -> bool:
+    """Filenames are the title TRUNCATED to 50 chars (stage7 [:50]); effects_log
+    keeps the full title — so the stem is a PREFIX of the title, not an equal."""
+    return title_norm == stem_norm or title_norm.startswith(stem_norm)
+
+
 def _effects_for_run(run_stamp: str) -> dict[str, dict]:
     """{clip_title: render_plan data} for the run — the injected ground truth."""
     out: dict[str, dict] = {}
@@ -91,7 +97,7 @@ def _run_clips(run_stamp: str, include_variants: bool) -> list[Path]:
         if not include_variants and (name.endswith(" (B)") or name.endswith(" (Short)")):
             continue
         base = _norm(name.replace(" (B)", "").replace(" (Short)", ""))
-        if titles and base not in titles:
+        if titles and not any(_title_match(base, t) for t in titles):
             continue
         vids.append(f)
     if not vids and not titles:
@@ -135,10 +141,10 @@ def main() -> int:
         card = ac.build_card(clip, n_frames=args.frames, cache_dir=cache_dir)
         if card is None:
             continue
-        # 3) merge injected ground truth from effects_log (normalized-title match:
-        #    log titles are raw, filenames are Stage-7-sanitized)
-        _gnorm = {_norm(k): v for k, v in ground.items()}
-        gt = _gnorm.get(_norm(stem)) or {}
+        # 3) merge injected ground truth from effects_log (normalized PREFIX match:
+        #    log titles are raw + full-length; filenames are sanitized + [:50])
+        _sn = _norm(stem)
+        gt = next((v for k, v in ground.items() if _title_match(_sn, _norm(k))), {})
         if gt:
             card["_ground_truth"] = gt
             (cache_dir / f"{stem}.card.json").write_text(

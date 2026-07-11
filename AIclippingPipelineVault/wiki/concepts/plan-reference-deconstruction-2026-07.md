@@ -50,7 +50,25 @@ updated: 2026-07-11
 > `lever:`-tagged (sfx_cues / style_profiles / hook_templates / caption bank / jump-cuts, or
 > `feature-card`), category-coverage misses surfaced (news_compilation → the new mode), optional
 > LLM narrative; outputs `corpus_diff_<date>.md` + machine-readable `.json` (the future R6
-> approve queue). First report generates when the R2 run finishes.
+> approve queue).
+>
+> **R2 COMPLETE + R3 FIRST REPORT GENERATED (2026-07-11)** — 9/9 our-clip cards (all with
+> `_ground_truth`; needed a PREFIX title match — filenames are the title `[:50]`-truncated) →
+> `clips/.diagnostics/corpus_diff_20260711.md` (13 gap items). **Headline finding: the loop
+> independently reproduced the owner's own recurring critique** — our clips are SFX-sparse vs
+> the corpus (median 0.88 injected cues/30s vs the reference's dense sound furniture; the owner
+> said "I wish there was sound effects" unprompted on 2026-07-09). Also: caption casing `mixed`
+> vs reference `sentence case` (voice-bank/P1.5 lever), and coverage misses (news_compilation →
+> the new mode; gaming = corpus-vs-run mismatch, our test VODs are IRL).
+>
+> **Measurement asymmetries filed (fix before trusting magnitudes, not directions):**
+> (a) reference SFX counts come from raw CLAP events which over-fire on speech exclamations
+> (28× "bruh" on one clip) — reference `31/30s` is inflated; ours is exact ground truth. Fix:
+> dedupe consecutive CLAP windows + drop speech-like labels on the reference side.
+> (b) our `caption_wps 3.08` is the SPEECH-rate fallback (our clips skip OCR) vs the
+> reference's burned-caption OCR rate — not the same metric. Fix: derive our caption wps from
+> the clip SRT (we own the exact timing). (c) our cut counts may include burned zoom-punches
+> (PySceneDetect reads them as cuts). Directions are trustworthy; magnitudes need these fixes.
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 
