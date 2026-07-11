@@ -61,6 +61,10 @@ post text).
 4. **Mode entry** — `run_pipeline.py --news-compile` (uses the same `--vods` list) + a third
    dashboard button ("News Compile (N)") wired like Clip Selected; compile output lands in
    `clips/` as one video + its post kit.
+   > [!note] Owner directive (2026-07-11): this is a **separate, explicit button acting on the
+   > multi-select — NEVER part of the standard clipping flow**. Pressing Clip Selected/Clip All
+   > must never produce a compilation; no default-on promotion path exists for this mode — it
+   > is press-to-run by design.
 
 ## Design questions for the owner (defaults proposed)
 
@@ -69,9 +73,15 @@ post text).
    v1 = "today's best moments" compilation (zero new detection risk); a later v2 can add a
    news-weighted scorer (controversy/announcement patterns) if the v1 story mix feels off.
 2. **Target length**: 60–120s (3–6 stories × 10–25s)?
-3. **Narration**: v1 = text headline cards + the streamers' own audio (matches the cards'
-   structure, zero VO risk); v2 opt-in = piper TTS anchor lines ("Streamer X got hit with Y
-   today"). Piper is local/robotic — needs an owner ear-check before default.
+3. **Narration — ANSWERED by owner (2026-07-11): piper TTS anchor narration is IN, and the
+   news mode is its flagship home.** The pipeline has carried piper (Wave D, `piper_vo.py`)
+   dormant for weeks; a news-anchor format is the one output where a synthetic narrator VOICE
+   is native to the genre rather than a tell. v1 builds anchor lines per story ("Streamer X
+   got hit with Y today") read by piper over the story's intro beat, ducked under the source
+   audio at the payoff. Text headline cards remain as the fallback layer (and stay burned in
+   regardless — the VO complements, never replaces them). Gate: owner EAR-CHECK of the first
+   compilation before the voice is kept — if piper's local voice reads too robotic for the
+   anchor role, we fall back to text-only and revisit voices.
 4. **Same-story merging** (v2+): two streamers reacting to the same event should become ONE
    story with both angles — needs cross-VOD topic matching (embedding similarity over story
    transcripts, frozen embedder). Deferred; v1 treats VODs independently.
@@ -88,6 +98,9 @@ post text).
   pass first; C1 prefetch + caches already amortize this). Over processed VODs the compile is
   minutes.
 - **Rights surface**: unchanged from current practice (same streamers, same source VODs).
+- **Piper VO in v1** (owner directive): adds TTS synthesis + audio-duck mixing to the v1 build
+  (was v2) — modest scope increase, machinery exists (`piper_vo.py` + the Stage-7 VO mix path);
+  the ear-check gate keeps it reversible to text-only.
 
 ## Effort + sequencing
 
