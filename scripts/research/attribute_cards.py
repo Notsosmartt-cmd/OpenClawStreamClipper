@@ -161,7 +161,7 @@ Automated signals (already measured — do NOT recompute these numbers, use them
 
 Respond with ONLY a JSON object (no prose, no markdown fences):
 {{
-  "category": "comedy|irl|rap_freestyle|reaction|skill|story|controversy|other",
+  "category": "street_interview|news_compilation|irl_moment|reaction|rap_freestyle|gaming|story|skill|controversy|other",
   "hook": {{"mechanic": "how the first ~2s grabs attention, 1 sentence", "first_2s": "what literally happens in frame 1-2", "text_hook_style": "the on-screen text hook if any (quote it), else 'none'"}},
   "arc": {{"shape": "setup_payoff|escalation|instant|list|story", "setup_s": <seconds or null>, "payoff_s": <seconds the payoff/punchline lands, or null>}},
   "comedy": {{"device": "what makes it funny/engaging, 1 phrase", "verbal_vs_visual": "verbal|visual|both"}},

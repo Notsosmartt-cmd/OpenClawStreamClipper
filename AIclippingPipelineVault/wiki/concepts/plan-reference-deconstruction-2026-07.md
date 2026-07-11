@@ -18,10 +18,18 @@ updated: 2026-07-11
 > validation: on `GeorgeBushFailJokeClip` the VLM read the on-screen hook as a clean
 > `"you ever heard of george"` — the *exact* line EasyOCR mangled into "yoU ever heard of george
 > TkTok KS" that poisoned caption-voice v1. The VLM also correctly *distrusted* noisy CLAP labels
-> (set `sfx_grammar.kinds=[]` on a clip whose CLAP was 28× "bruh"). **Open gate question:** all 6
-> spot-read clips classified `category:"irl"` — the taxonomy may be too coarse for R3's
-> per-category diff (street-interview-comedy vs streamer-news-compilation vs reaction). Owner to
-> confirm card truthfulness + whether to refine the category set before the full 59-card batch.
+> (set `sfx_grammar.kinds=[]` on a clip whose CLAP was 28× "bruh").
+>
+> **R1 GATE CLEARED (owner spot-read, 2026-07-11):** StreamerUpdate cards = "great outputs"
+> (they directly inspired the [[concepts/plan-news-compilation-2026-07]] mode); George-Bush card
+> = "alright" — the model can't know the external joke context ("absurd to expect"), but it
+> "picks up on the auxiliary and main aspects… great for generalization" (exactly the designed
+> behavior: cards capture STRUCTURE, the meme-format library carries external context);
+> ReemKnocks "isn't that bad either". **Category question resolved by the owner's own reaction:**
+> one "irl" bucket hid a format distinct enough to spawn a new pipeline mode → taxonomy refined
+> to `street_interview|news_compilation|irl_moment|reaction|rap_freestyle|gaming|story|skill|
+> controversy|other` and the FULL 59-card batch launched (rebuilds the 6 for consistency; 2h
+> hard cap, failure-soft per clip).
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 

@@ -1,0 +1,104 @@
+---
+title: "Plan — 'Streamer News Today' compilation mode (third pipeline output)"
+type: concept
+tags: [plan, news-compilation, multi-vod, stitch, stage7, evaluation]
+status: planned
+updated: 2026-07-11
+---
+
+# Evaluation + plan: the "news today" compilation mode
+
+Owner request (2026-07-11), triggered directly by the R1 attribute cards: the three
+StreamerUpdate reference cards ([[concepts/plan-reference-deconstruction-2026-07]]) decoded a
+distinct FORMAT — multi-story, news-ticker-style compilations — and the owner wants it as a
+**third pipeline output mode**: select multiple VODs → one compiled "today this happened"
+video, alongside the existing per-VOD clip mode and multi-VOD batch mode.
+
+**This is the first real consumer of the reference-deconstruction loop**: the format spec
+below comes from cards, not from the owner having to articulate it — exactly the loop-B
+workflow working as designed.
+
+---
+
+## The format spec (measured from the 3 StreamerUpdate cards)
+
+| Attribute | Card evidence |
+|---|---|
+| Intro | 4-panel grid / split-screen of recognizable faces + bold **"STREAMERS UPDATE \<date\>"** title card — establishes format + urgency instantly |
+| Arc | `list` — 3-6 unrelated high-interest stories, rapid-fire ("information density" is the value) |
+| Pacing | 9.4–14.1 cuts/30s (avg shot ~2–3s), cut alignment `on-punchline`/`on-beat` |
+| SFX | 31–44 events/30s (dense whoosh/boom furniture on transitions + punchlines) |
+| Captions | mixed casing, "news anchor / hype-man" voice, informative + fast |
+| Per-story edit | highlight-reel: only the peak of each story, headline text anchors each segment |
+| Essence | "pack multiple stories into one video, maximize information density" |
+
+## Reuse map — ~75% of this already exists
+
+**Needs NO new work (per-VOD side):** multi-VOD selection (`--vods a,b,c` + dashboard
+multi-select), Stages 1–6 per VOD (discovery → transcription → segments → moments → judge →
+titles) already produce scored, vision-judged, titled moments per VOD — and for
+already-processed VODs every stage is CACHED, so a news compile over yesterday's processed
+streams costs almost nothing but the compile itself.
+
+**Existing machinery the compile stage reuses:** `stitch_render.py` (multi-segment concat with
+the full blur-fill/caption chain — currently intra-VOD, needs cross-VOD input paths); P-TIGHT +
+companion-short payoff-centering logic (tighten a 45s moment to a 10–25s story segment);
+transitions (`clip_cuts` whoosh/white-flash — the on-punchline cut furniture); SFX anchors +
+`sfx_cues.json`; Stage-5 frames (the intro grid's face panels already exist on disk); Stage-6
+title machinery + caption gate (headline text per story, with a news-anchor voice-contract
+variant); `piper_vo.py` TTS (optional anchor narration, Wave D); post kit (compilation-level
+post text).
+
+**Genuinely new (the real build, ~25%):**
+1. **Story selection across VODs** — top-1..2 moments per selected VOD by `final_score` under a
+   total budget (target 60–120s), with a per-VOD guarantee (≥1 story per selected VOD) so the
+   compilation actually covers "today". Small module over already-scored moments (knapsack-ish,
+   no new detection).
+2. **Per-story segment render** — payoff-centered 10–25s cut + a lower-third HEADLINE overlay
+   ("<streamer> did X") + source audio; the companion-short sub-cut pattern applied per story.
+3. **News wrapper** — intro card (ffmpeg `xstack` 4-panel grid from per-VOD Stage-5 frames +
+   date title), whoosh/flash between stories, outro; concat via the stitch pattern.
+4. **Mode entry** — `run_pipeline.py --news-compile` (uses the same `--vods` list) + a third
+   dashboard button ("News Compile (N)") wired like Clip Selected; compile output lands in
+   `clips/` as one video + its post kit.
+
+## Design questions for the owner (defaults proposed)
+
+1. **Story sourcing (v1 default: reuse detection as-is).** The detectors are comedy/highlight
+   -tuned; true "news-worthiness" (announcements, drama, events) is a different scoring axis.
+   v1 = "today's best moments" compilation (zero new detection risk); a later v2 can add a
+   news-weighted scorer (controversy/announcement patterns) if the v1 story mix feels off.
+2. **Target length**: 60–120s (3–6 stories × 10–25s)?
+3. **Narration**: v1 = text headline cards + the streamers' own audio (matches the cards'
+   structure, zero VO risk); v2 opt-in = piper TTS anchor lines ("Streamer X got hit with Y
+   today"). Piper is local/robotic — needs an owner ear-check before default.
+4. **Same-story merging** (v2+): two streamers reacting to the same event should become ONE
+   story with both angles — needs cross-VOD topic matching (embedding similarity over story
+   transcripts, frozen embedder). Deferred; v1 treats VODs independently.
+
+## Risks (honest)
+
+- **Comedy-tuned selection** may surface punchlines over "news" — accepted for v1 (see Q1);
+  the owner's review of compilation #1 is the calibration signal.
+- **Faces/branding polish**: the competitor grid is hand-designed; our v1 grid (xstack + title)
+  will be plainer. Iterate via the R3 diff once compilation cards exist (dogfood: run
+  attribute_cards on OUR compilation and diff against the StreamerUpdate cards — the loop
+  measures its own gap).
+- **Multi-VOD wall-clock** only matters for UNprocessed VODs (each needs its normal Stage 1–6
+  pass first; C1 prefetch + caches already amortize this). Over processed VODs the compile is
+  minutes.
+- **Rights surface**: unchanged from current practice (same streamers, same source VODs).
+
+## Effort + sequencing
+
+**v1 ≈ 1–2 sessions** (selection module + story segment render + wrapper + mode entry + dashboard
+button). Best sequenced AFTER R2/R3 land so the news mode's pacing/caption numbers are pulled
+from the reference cards rather than hand-set — but nothing hard-blocks building it first if
+the owner wants to jump the queue. v2 items (VO narration, news-weighted scoring, same-story
+merge, grid polish) gate on v1's owner review.
+
+Related: [[concepts/plan-reference-deconstruction-2026-07]] (format spec source + the dogfood
+diff), [[concepts/clip-rendering]] (stitch/companion-short patterns), 
+[[concepts/hook-engineering-2026-06]] (cold-open/headline furniture),
+[[concepts/sfx-cue-taxonomy-2026-06]] (transition SFX), [[entities/piper]] (v2 narration),
+[[entities/dashboard]] (third button).
