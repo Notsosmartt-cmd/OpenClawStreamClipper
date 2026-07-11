@@ -2,7 +2,15 @@
   "version": 1,
   "_note": "Acoustic-anchor SFX cue taxonomy (implements wiki concepts/sfx-cue-taxonomy-2026-06). Read by scripts/lib/sfx_cues.py at Stage 7 (profile-mode) to place sound effects on the moment's beats instead of the vision/zoom-tied guess. Gated by CLIP_SFX_ANCHOR (default on); CLIP_SFX_ANCHOR=0 reverts to the legacy profile synthesis. Failure-soft: a missing/unreadable file falls back to the in-code defaults in sfx_cues.py. CONFIDENCE: beat->sound mappings are practitioner convention (cross-source, not formally proven) and licensing-only claims were the verified ones in the research; treat offsets/gains as starting defaults to A/B-test.",
   "enabled": true,
-  "max_cues": 4,
+  "_density_note": "R4 apply 2026-07-11 (corpus_diff report #1, owner-approved): reference clips carry far denser sound furniture than ours (we averaged ~1 cue/clip). max_cues 4->6, buildup risers on funny/reactive, and secondary_peaks drops ducked punchline_light hits on the clip's strongest OTHER acoustic transients (laughter bursts, exclamations, slams) - the roast-cadence mechanism the owner asked for ('there could have been visual and sound effects after each diss').",
+  "max_cues": 6,
+  "secondary_peaks": {
+    "enabled": true,
+    "max": 3,
+    "beat": "punchline_light",
+    "min_gap_from_cues_s": 2.5,
+    "min_prominence_ratio": 0.55
+  },
   "_dedup_note": "Min gap between cues (s). Kept BELOW the build-up lead (1.0s) so a riser and its payoff hit coexist as a one-two punch; large enough to merge genuinely coincident cues (e.g. two laughter markers).",
   "dedup_window_s": 0.6,
   "_beat_defaults_note": "Per beat-type: an ORDERED list of sound options. The builder emits the FIRST kind whose assets/sfx/<kind>/ folder has audio (sfx_inject.has_assets), so the feature works today with the seeded whoosh/impact/ding/riser/boom libraries and automatically upgrades to the ideal kind (scratch, sad_trombone, applause, crickets, bruh, pop) once those are seeded. offset_s is added to the beat time (negative = before). gain_db is relative to the source audio (0 = at speech level, negative = ducked under speech); linear = 10^(gain_db/20).",
@@ -110,12 +118,12 @@
     "funny": {
       "payoff": "punchline",
       "scan_laughter": true,
-      "buildup": false
+      "buildup": true
     },
     "reactive": {
       "payoff": "punchline",
       "scan_laughter": true,
-      "buildup": false
+      "buildup": true
     },
     "hype": {
       "payoff": "punchline",

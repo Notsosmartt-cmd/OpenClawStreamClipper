@@ -151,6 +151,20 @@ Primary/licensing (best verified): [Pixabay SFX](https://pixabay.com/sound-effec
 Convention/practitioner: [Epidemic Sound — meme SFX](https://www.epidemicsound.com/youtube/meme-sound-effects/), [Epidemic Sound — TikTok SFX](https://www.epidemicsound.com/tiktok/tik-tok-sound-effects/), [Uppbeat meme SFX](https://uppbeat.io/blog/sound-effects/meme-sound-effects), [Voicy meme sounds](https://blog.voicy.network/memes/sounds/top-meme-sound-effects-for-editing/), [KnowYourMeme — Vine boom](https://knowyourmeme.com/memes/vine-thud-boom-sound-effect), [SFXEngine timing](https://sfxengine.com/blog/sound-effects-timing-in-comedy-videos), [FlexClip transitions](https://www.flexclip.com/learn/transition-sound-effects.html), [Krotos mix balance](https://krotos.studio/blog/how-to-balance-music-and-sound-effects), [WeVideo audio levels](https://www.wevideo.com/blog/how-to-set-audio-levels).
 Academic: [FunnyNet (ACCV 2022)](https://openaccess.thecvf.com/content/ACCV2022/papers/Liu_FunnyNet_Audiovisual_Learning_of_Funny_Moments_in_Videos_ACCV_2022_paper.pdf), [FunnyNet-W (arXiv 2401.04210)](https://arxiv.org/pdf/2401.04210).
 
+## R4 density apply (2026-07-11, corpus_diff report #1 — owner-approved)
+
+The first reference-vs-ours diff ([[concepts/plan-reference-deconstruction-2026-07]]) confirmed
+what the owner kept saying in reviews: our clips carry ~1 cue each vs the corpus's dense sound
+furniture. Applied (`config/sfx_cues.json` + `sfx_cues.py`):
+- `max_cues` **4 → 6**
+- `buildup: true` for **funny + reactive** (the riser→boom one-two the owner liked on the SFX run)
+- NEW `secondary_peaks` block + `_secondary_peaks()` scanner: up to 3 DUCKED `punchline_light`
+  hits on the clip's strongest OTHER acoustic transients (laughter bursts, exclamations, slams),
+  ≥2.5s from existing cues, ≥0.55× max-flux prominence — **the roast-cadence mechanism** ("effects
+  after each diss"). The hot 0dB boom stays payoff-only. Synthetic self-test: 5 cues
+  (riser→boom + 3 light pops) where the old config produced 1. Failure-soft ([] on any error);
+  kill switches: `secondary_peaks.enabled=false`, `max_cues` back to 4.
+
 ## Related
 - [[concepts/plan-unoriginality-audio-layer]] — the plan this research feeds (P1 punchline-anchored SFX)
 - [[concepts/case-incongruity-comedy]] — the reference clips that need boom/crickets/trombone cues
