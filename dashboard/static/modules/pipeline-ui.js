@@ -243,6 +243,34 @@ export async function startClip() {
     }
 }
 
+export async function startNewsCompile() {
+    // "Streamers Update" compilation — separate explicit action on the
+    // multi-select (owner directive: never part of the standard clip flow).
+    const vods = state.selectedVods.slice();
+    if (!vods.length || state.pipelineRunning) return;
+    const { ok, data } = await apiPost("/api/news-compile", { vods });
+    if (!ok) {
+        alert(data.error || "Failed to start news compile");
+        return;
+    }
+    state.pipelineRunning = true;
+    updateControls();
+    updateStatusBadge(true, `News compile (${vods.length} VOD${vods.length > 1 ? "s" : ""})...`);
+    // The compiler writes no pipeline.log — poll status until it exits.
+    const poll = setInterval(async () => {
+        try {
+            const res = await fetch("/api/status");
+            const st = await res.json();
+            if (!st.running) {
+                clearInterval(poll);
+                state.pipelineRunning = false;
+                updateControls();
+                updateStatusBadge(false, "News compile finished");
+            }
+        } catch (e) { /* transient — keep polling */ }
+    }, 4000);
+}
+
 export async function startClipAll() {
     if (state.pipelineRunning) return;
     const style = document.getElementById("sel-style").value;

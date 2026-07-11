@@ -7,7 +7,7 @@
 import {
     fetchOriginality, browseMusicFolder, scanMusicLibrary, scanLibraries,
     onOriginalityChange,
-    startClip, startClipAll, stopPipeline,
+    startClip, startClipAll, startNewsCompile, stopPipeline,
     pollStatus,
 } from "./modules/pipeline-ui.js";
 
@@ -60,6 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("btn-clip").addEventListener("click", startClip);
     document.getElementById("btn-clip-all").addEventListener("click", startClipAll);
+    document.getElementById("btn-news-compile")?.addEventListener("click", startNewsCompile);
     document.getElementById("btn-stop").addEventListener("click", stopPipeline);
     document.getElementById("btn-refresh-clips").addEventListener("click", fetchClips);
     document.getElementById("btn-refresh-vods").addEventListener("click", fetchVods);

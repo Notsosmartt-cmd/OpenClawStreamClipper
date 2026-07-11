@@ -73,6 +73,7 @@ build/
 # Local model caches — recreate on first pipeline run
 models/whisper/
 models/piper/
+assets/piper/
 models/sentence-transformers/
 # Validation test artifacts
 test_gate.wav
