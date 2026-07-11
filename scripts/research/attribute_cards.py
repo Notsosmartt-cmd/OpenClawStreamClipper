@@ -54,8 +54,8 @@ def _log(msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Deterministic numeric facts from the timeline
 # ---------------------------------------------------------------------------
-def _load_timeline(stem: str) -> dict | None:
-    p = CACHE / f"{stem}.timeline.json"
+def _load_timeline(stem: str, cache_dir: Path = CACHE) -> dict | None:
+    p = cache_dir / f"{stem}.timeline.json"
     if not p.exists():
         return None
     try:
@@ -64,8 +64,8 @@ def _load_timeline(stem: str) -> dict | None:
         return None
 
 
-def _load_words(stem: str) -> list[dict]:
-    p = CACHE / f"{stem}.words.json"
+def _load_words(stem: str, cache_dir: Path = CACHE) -> list[dict]:
+    p = cache_dir / f"{stem}.words.json"
     if not p.exists():
         return []
     try:
@@ -221,13 +221,15 @@ def _call_vlm(prompt: str, frames_b64: list[str], model: str, url: str,
 # Build one card
 # ---------------------------------------------------------------------------
 def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
-               url: str | None = None) -> dict | None:
+               url: str | None = None, cache_dir: Path = CACHE) -> dict | None:
+    """cache_dir: where the timeline/words live AND where the card is written.
+    Default = the reference-corpus cache; R2 passes a run-scoped dir for OUR clips."""
     stem = clip.stem
-    timeline = _load_timeline(stem)
+    timeline = _load_timeline(stem, cache_dir)
     if timeline is None:
         _log(f"{stem}: no timeline.json — run clip_forensics first (R0). Skipping.")
         return None
-    words = _load_words(stem)
+    words = _load_words(stem, cache_dir)
     facts = _facts(timeline, words)
     transcript = " ".join(str(w.get("word", "")) for w in words).strip()[:3000] \
         or "(transcript unavailable)"
@@ -267,7 +269,7 @@ def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
         "_facts": facts,
         **editorial,
     }
-    out = CACHE / f"{stem}.card.json"
+    out = cache_dir / f"{stem}.card.json"
     out.write_text(json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8")
     _log(f"{stem}: card written (category={card.get('category')} "
          f"conf={card.get('confidence')} frames={len(frames)})")

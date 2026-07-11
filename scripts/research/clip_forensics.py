@@ -463,12 +463,16 @@ def _trim_signals(dur, trim_start, trim_end, events, words, onsets, cuts, motion
 def decompose(clip: Path, *, device: str | None = None,
               window_s: float = 1.0, hop_s: float = 0.5,
               deadline_scale: float = 1.0, ocr: bool = False,
-              llm: bool = True, trim_start: float = 0.0, trim_end: float = 0.0) -> dict:
+              llm: bool = True, trim_start: float = 0.0, trim_end: float = 0.0,
+              cache_dir: Path | None = None) -> dict:
     import audio_sense  # lazy; from LIB_DIR
     import visual_sense  # lazy; from LIB_DIR
 
-    cache_dir = REF_DIR / ".cache"
-    cache_dir.mkdir(exist_ok=True)
+    # R2 (plan-reference-deconstruction): decomposing OUR produced clips uses a
+    # separate cache dir so their events/words artifacts never mix into the
+    # reference corpus cache. Default (None) = the reference cache, unchanged.
+    cache_dir = Path(cache_dir) if cache_dir else (REF_DIR / ".cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
     stem = clip.stem
     dur, fps = _ffprobe(clip)
 
@@ -589,6 +593,9 @@ def _cli() -> int:
                     help="Phase 7.1: write a pre-filled <clip>.notes.json draft from "
                          "the detections for the owner to CORRECT. Refuses to overwrite "
                          "a file that has already been corrected (no _draft key).")
+    ap.add_argument("--cache-dir", default=None,
+                    help="R2: where events/words caches live (default reference_clips/.cache). "
+                         "Use a run-scoped dir when decomposing OUR produced clips.")
     args = ap.parse_args()
 
     clip = _resolve_clip(args.clip)
@@ -599,7 +606,8 @@ def _cli() -> int:
     device = None if args.cuda else "cpu"  # default CPU (offline; avoids Windows CUDA hangs)
     timeline = decompose(clip, device=device, window_s=args.window, hop_s=args.hop,
                          deadline_scale=args.deadline_scale, ocr=args.ocr,
-                         llm=not args.no_llm, trim_start=args.trim_start, trim_end=args.trim_end)
+                         llm=not args.no_llm, trim_start=args.trim_start, trim_end=args.trim_end,
+                         cache_dir=Path(args.cache_dir) if args.cache_dir else None)
     text = json.dumps(timeline, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
