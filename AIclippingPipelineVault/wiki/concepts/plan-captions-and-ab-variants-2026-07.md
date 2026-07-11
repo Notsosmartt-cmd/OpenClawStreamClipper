@@ -2,9 +2,19 @@
 title: "Plan — Caption-Language Overhaul, then A/B Variant Outputs"
 type: concept
 tags: [plan, captions, stage6, stage7, ab-testing, voice, platform]
-status: in-progress
+status: shipped
 updated: 2026-07-10
 ---
+
+> [!note] SHIPPED + PROMOTED 2026-07-10
+> Owner reviewed the A/B run `20260710_202308`: **9/9 GOOD, 0 needs-work, 0 bad** ("really good
+> run") — 5 of 9 explicitly marked (A+B), i.e. both variants landed. Per the promotion rubric:
+> **A/B variants, post kit, AND style profiles are now DEFAULT-ON everywhere** (env defaults +
+> dashboard checkboxes pre-checked + `DEFAULT_ORIGINALITY`); each keeps its toggle/kill switch
+> (`CLIP_AB_VARIANTS=0`, `CLIP_POST_KIT=0`, `CLIP_STYLE_PROFILES=0`). Post-kit sidecars moved to
+> **`clips/post_kits/`** (owner req: keep the clips folder video-only). 9 positive labels filed →
+> owner pool **35** (33 pos / 2 neg), run frozen. Remaining owner-gated item: P1.5 voice-bank
+> curation (`--review-sheet` → `--ingest-sheet --enable`).
 
 # Plan: caption-language overhaul → A/B variant outputs
 

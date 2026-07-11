@@ -525,15 +525,19 @@ def _maybe_companion_short(ctx, row, clip_output: Path, clip_start, clip_length)
 
 def _maybe_write_post_kit(ctx, row) -> None:
     """P2.3 — write the "<title>.post.json" sidecar (per-platform post copy,
-    generated in Stage 6). One per primary clip; failure-soft. Default off
-    upstream (CLIP_POST_KIT), so row['post_kit'] is normally empty → no-op."""
+    generated in Stage 6). One per primary clip; failure-soft. DEFAULT ON since
+    2026-07-10 (kill switch CLIP_POST_KIT=0 upstream → row['post_kit'] empty →
+    no-op here). Sidecars live in clips/post_kits/ (owner req 2026-07-10: keep
+    the clips folder video-only)."""
     pk = row.get("post_kit")
     if not pk:
         return
     try:
-        out = ctx.paths.clips_dir / f"{row['title']}.post.json"
+        kit_dir = ctx.paths.clips_dir / "post_kits"
+        kit_dir.mkdir(parents=True, exist_ok=True)
+        out = kit_dir / f"{row['title']}.post.json"
         out.write_text(json.dumps(pk, indent=2, ensure_ascii=False), encoding="utf-8")
-        ctx.log.log(f"  [post-kit] {row['title']}.post.json")
+        ctx.log.log(f"  [post-kit] post_kits/{row['title']}.post.json")
     except Exception as e:  # noqa: BLE001
         ctx.log.warn(f"post-kit write skipped for T={row.get('t')}: {e}")
 
@@ -546,11 +550,13 @@ def _maybe_ab_variant(ctx, row, clip_start, clip_length, clip_srt_render, moment
     which is why this can't reuse a shared master. Gated by CLIP_AB_VARIANTS>=2 +
     row.ab_eligible (top-N). Additive + failure-soft: a failed B never touches A.
     Needs profile mode (that's where the SFX/visual variety lives); logged-skip
-    otherwise. See concepts/plan-captions-and-ab-variants-2026-07 §P2.2."""
+    otherwise. DEFAULT ON since 2026-07-10 (owner promotion: 9/9-GOOD spot-check
+    on run 20260710_202308); kill switch CLIP_AB_VARIANTS=0.
+    See concepts/plan-captions-and-ab-variants-2026-07 §P2.2."""
     try:
-        n = int(os.environ.get("CLIP_AB_VARIANTS", "0") or "0")
+        n = int(os.environ.get("CLIP_AB_VARIANTS", "2") or "2")
     except ValueError:
-        n = 0
+        n = 2
     if n < 2 or not row.get("ab_eligible"):
         return
     b = next((v for v in (row.get("hook_variants") or [])

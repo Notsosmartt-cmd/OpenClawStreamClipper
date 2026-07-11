@@ -71,9 +71,11 @@ def api_clip():
     enable_thinking = bool(data.get("enable_thinking", False))
     companion_shorts = bool(data.get("companion_shorts", False))
     # A/B caption variants: checkbox → classic A/B (2) or off (0). Post kit =
-    # per-platform "<title>.post.json". See plan-captions-and-ab-variants-2026-07.
-    ab_variants = 2 if data.get("ab_variants") else 0
-    post_kit = bool(data.get("post_kit", False))
+    # per-platform clips/post_kits/"<title>.post.json". BOTH DEFAULT ON since
+    # 2026-07-10 (owner promotion) — an absent field means on; the checkbox
+    # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
+    ab_variants = 2 if data.get("ab_variants", True) else 0
+    post_kit = bool(data.get("post_kit", True))
     # Pass B dead-chunk gate mode — UI dropdown sends one of
     # {off, multi, sample, strict}. Default "off" preserves selection
     # fidelity (no LLM calls skipped). See pipeline_runner.spawn_pipeline.
@@ -132,9 +134,11 @@ def api_clip_all():
     enable_thinking = bool(data.get("enable_thinking", False))
     companion_shorts = bool(data.get("companion_shorts", False))
     # A/B caption variants: checkbox → classic A/B (2) or off (0). Post kit =
-    # per-platform "<title>.post.json". See plan-captions-and-ab-variants-2026-07.
-    ab_variants = 2 if data.get("ab_variants") else 0
-    post_kit = bool(data.get("post_kit", False))
+    # per-platform clips/post_kits/"<title>.post.json". BOTH DEFAULT ON since
+    # 2026-07-10 (owner promotion) — an absent field means on; the checkbox
+    # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
+    ab_variants = 2 if data.get("ab_variants", True) else 0
+    post_kit = bool(data.get("post_kit", True))
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
@@ -205,9 +209,11 @@ def api_clip_batch():
     enable_thinking = bool(data.get("enable_thinking", False))
     companion_shorts = bool(data.get("companion_shorts", False))
     # A/B caption variants: checkbox → classic A/B (2) or off (0). Post kit =
-    # per-platform "<title>.post.json". See plan-captions-and-ab-variants-2026-07.
-    ab_variants = 2 if data.get("ab_variants") else 0
-    post_kit = bool(data.get("post_kit", False))
+    # per-platform clips/post_kits/"<title>.post.json". BOTH DEFAULT ON since
+    # 2026-07-10 (owner promotion) — an absent field means on; the checkbox
+    # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
+    ab_variants = 2 if data.get("ab_variants", True) else 0
+    post_kit = bool(data.get("post_kit", True))
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"

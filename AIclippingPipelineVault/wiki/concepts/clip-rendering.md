@@ -199,10 +199,14 @@ and BEFORE `_maybe_cold_open`.
 
 ---
 
-## A/B variant clips + platform post kit (`CLIP_AB_VARIANTS`, `CLIP_POST_KIT`, default off — 2026-07-10)
+## A/B variant clips + platform post kit (`CLIP_AB_VARIANTS`, `CLIP_POST_KIT` — **DEFAULT ON since 2026-07-10**)
 
-Owner req (trial-reel A/B testing across platforms). Two additive Stage-7 outputs, both default off,
-gated behind their env flags / dashboard checkboxes. Full plan: [[concepts/plan-captions-and-ab-variants-2026-07]].
+Owner req (trial-reel A/B testing across platforms). Two additive Stage-7 outputs. Shipped default-off,
+**promoted to DEFAULT-ON same day** after the owner's 9/9-GOOD review of run `20260710_202308` (kill
+switches: `CLIP_AB_VARIANTS=0`, `CLIP_POST_KIT=0`; dashboard checkboxes pre-checked). `CLIP_STYLE_PROFILES`
+was promoted to default-on with them (the A/B + SFX lanes require profile mode). Post-kit sidecars write to
+**`clips/post_kits/`** (not the clips root — owner wants the clips folder video-only). Full plan:
+[[concepts/plan-captions-and-ab-variants-2026-07]].
 
 - **A/B variant B** (`stage7.py:_maybe_ab_variant`, after the primary render): a **full INDEPENDENT
   profile render** — NOT a sub-cut — of an eligible clip, using the alternate-angle hook that Stage 6

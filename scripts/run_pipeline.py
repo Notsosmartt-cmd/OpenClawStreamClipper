@@ -104,7 +104,10 @@ class Ctx:
         self.music_bed = os.environ.get("CLIP_MUSIC_BED", "")
         self.music_tier_c = _bool_env("CLIP_MUSIC_TIER_C", False)
         self.camera_pan = _bool_env("CLIP_CAMERA_PAN", False)
-        self.style_profiles = _bool_env("CLIP_STYLE_PROFILES", False)
+        # Default ON since 2026-07-10 (owner promotion after the 9/9-GOOD A/B run
+        # 20260710_202308; the SFX + A/B lanes live in profile mode). Kill switch:
+        # CLIP_STYLE_PROFILES=0 reverts to the legacy render path.
+        self.style_profiles = _bool_env("CLIP_STYLE_PROFILES", True)
         # Cold-open teaser: prepend a ~1-2s tease of the run-up to the payoff +
         # whoosh/flash into the clip (concepts/hook-engineering-2026-06). Opt-in;
         # a Stage 7 post-step (cold_open.py), failure-soft.
