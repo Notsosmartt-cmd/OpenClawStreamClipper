@@ -7,9 +7,11 @@ updated: 2026-07-11
 ---
 
 > [!note] R0 + R1 IN PROGRESS (2026-07-11)
-> **R0** (decompose the 24 missing clips → 59/59 timelines) launched as a bounded CPU batch
+> **R0 COMPLETE — 59/59 timelines, all parse-valid.** Ran as a bounded CPU batch
 > (`clip_forensics --ocr --trim-end 4 --no-llm`; `--no-llm` keeps LM Studio free for R1 and drops
-> the superseded text-only style_profile). **R1 tool SHIPPED + validated**:
+> the superseded text-only style_profile). Survived a mid-run PC crash — resumed cleanly (the
+> missing-set is recomputed each run; clip_forensics writes a timeline only on full completion, so
+> no partial/corrupt files). **R1 tool SHIPPED + validated**:
 > `scripts/research/attribute_cards.py` — one multimodal call/clip, Python-authoritative numerics
 > merged with LLM editorial fields, output `reference_clips/.cache/<stem>.card.json` (schema v1,
 > gitignored — derived artifact). **6 cards built for the owner spot-read gate.** Decisive
