@@ -218,6 +218,7 @@ export async function startClip() {
     const companion_shorts = document.getElementById("chk-companion-shorts")?.checked || false;
     const ab_variants = document.getElementById("chk-ab-variants")?.checked || false;
     const post_kit = document.getElementById("chk-post-kit")?.checked || false;
+    const news_after = document.getElementById("chk-news-after")?.checked || false;
     const speed = document.getElementById("sel-speed").value;
     // Pass B dead-chunk gate mode — controls how aggressively the pipeline
     // skips LLM calls on chunks with low Pass A signal. Default "off"
@@ -228,7 +229,7 @@ export async function startClip() {
     // One or many — the batch endpoint runs them sequentially in selection order.
     const { ok, data } = await apiPost("/api/clip-batch", {
         vods, style, type, force, captions, hook_caption, speed,
-        passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit,
+        passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, news_after,
         ...originality,
     });
     if (ok) {
@@ -281,12 +282,13 @@ export async function startClipAll() {
     const companion_shorts = document.getElementById("chk-companion-shorts")?.checked || false;
     const ab_variants = document.getElementById("chk-ab-variants")?.checked || false;
     const post_kit = document.getElementById("chk-post-kit")?.checked || false;
+    const news_after = document.getElementById("chk-news-after")?.checked || false;
     const speed = document.getElementById("sel-speed").value;
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     const originality = collectOriginality();
 
     const { ok, data } = await apiPost("/api/clip-all", {
-        style, force, captions, hook_caption, speed, passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, ...originality,
+        style, force, captions, hook_caption, speed, passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, news_after, ...originality,
     });
     if (ok) {
         state.pipelineRunning = true;

@@ -25,7 +25,26 @@ updated: 2026-07-11
 > (409 while pipeline runs, bare-metal only, spawn via the pipeline handle so Stop works;
 > status-polled — the compiler writes no pipeline.log). Speed-1.0 assumption on payoff offsets
 > documented in code. **Gate:** owner ear-checks the piper voice + story pacing on compilation
-> #1; v2 items (news-weighted scoring, same-story merge, grid polish) wait on that review.
+> #1; v2 items (same-story merge, grid polish) wait on that review.
+
+> [!note] v1.5 (2026-07-11, owner directives after seeing v1)
+> **Multi-VOD across streamers is the PRIMARY use** (single-VOD kept). Changes:
+> **(1) News-weighted selection** — the standard ranking is comedy-tuned; news re-weights
+> `final_score` by category (controversial ×1.35, storytime ×1.2, hype ×1.15, emotional ×1.1)
+> so "story times, controversial, or impactful events" surface, plus **category-diversity
+> swaps** during round-robin (a story duplicating an already-picked category yields to the
+> VOD's next story when it brings a new category at ≥85% of the news score).
+> **(2) "News compile after run" toggle** (`chk-news-after` → `CLIP_NEWS_AFTER`) —
+> `run_pipeline` now ends single- AND multi-VOD runs with one compilation from the freshly
+> clipped VODs (failure-soft, never changes the run's exit code; standalone button kept).
+> **(3) A/B compilations** — follows `CLIP_AB_VARIANTS` (default on): version B swaps each
+> story to its `(B)` clip render where one exists (different hook + SFX baked in) + rotates
+> the whoosh/boom draw; skipped with a log when no story has a B (never an identical dupe).
+> **(4) Reorg-proof lookup** — the owner moves finished clips into subfolders (2xBvnks/741/…)
+> and off-repo after posting; clip lookup is now RECURSIVE root-first (post_kits/.diagnostics
+> skipped; STREAMERS UPDATE outputs never story sources), and vanished sources log clearly
+> ("re-clip the VOD to compile from fresh sources"). A fresh 2xRaKai clip run with
+> `CLIP_NEWS_AFTER=1` exercises all of it end-to-end (also the R4 lever verification run).
 
 # Evaluation + plan: the "news today" compilation mode
 

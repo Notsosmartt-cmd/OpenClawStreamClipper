@@ -356,6 +356,7 @@ def main(argv: list[str]) -> int:
         except (ValueError, OSError):
             pass
 
+    _news_stems: list[str] = []   # VODs completed this run (for CLIP_NEWS_AFTER)
     try:
         if (args.all or args.vods) and not ctx.list_mode:
             if args.vods:
@@ -398,8 +399,35 @@ def main(argv: list[str]) -> int:
                         _pf[0] = _prefetch_stage2(_nv, p, _vc, log)
                 rc = _execute_stages(vctx, log, after_stage6=hook)
                 exit_code = rc or exit_code
+                if rc == 0:
+                    _news_stems.append(Path(vod_name).stem)
         else:
             exit_code = _execute_stages(ctx, log)
+            if exit_code == 0 and ctx.target_vod:
+                _news_stems.append(Path(ctx.target_vod).stem)
+
+        # CLIP_NEWS_AFTER (owner 2026-07-11): the "also produce a news compilation
+        # at the end of the run" toggle. Compiles ONE "Streamers Update" video from
+        # the run's freshly-clipped VODs via news_compile.py (finished-clips
+        # architecture — fast, no re-detection; A/B follows CLIP_AB_VARIANTS).
+        # Failure-soft: a compile problem never changes the run's exit code.
+        if (_news_stems and not ctx.list_mode
+                and os.environ.get("CLIP_NEWS_AFTER", "").strip().lower()
+                in ("1", "true", "yes", "on")):
+            log.line(f"=== News compile ({len(_news_stems)} VOD"
+                     f"{'s' if len(_news_stems) > 1 else ''}) ===")
+            try:
+                r = subprocess.run(
+                    [sys.executable, str(p.repo_root / "scripts" / "news_compile.py"),
+                     "--vods", ",".join(_news_stems)],
+                    cwd=str(p.repo_root), timeout=1200,
+                    capture_output=True, text=True)
+                for ln in (r.stdout or "").splitlines()[-8:]:
+                    log.log(f"  {ln}")
+                if r.returncode != 0:
+                    log.warn(f"news compile exited {r.returncode} (clips unaffected)")
+            except Exception as ne:  # noqa: BLE001
+                log.warn(f"news compile failed ({ne}) — clips unaffected")
     except Exception as e:  # noqa: BLE001
         exit_code = 1
         log.err(f"pipeline failed: {e}")

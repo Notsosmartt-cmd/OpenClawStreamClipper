@@ -125,7 +125,8 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
                  enable_thinking: bool = False,
                  companion_shorts: bool = False,
                  ab_variants: int = 2,
-                 post_kit: bool = True) -> dict:
+                 post_kit: bool = True,
+                 news_after: bool = False) -> dict:
     """Build environment dict for direct pipeline subprocess (inside Docker).
 
     ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
@@ -167,6 +168,10 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     # See concepts/plan-captions-and-ab-variants-2026-07.
     env["CLIP_AB_VARIANTS"] = str(int(ab_variants) if ab_variants else 0)
     env["CLIP_POST_KIT"] = "1" if post_kit else "0"
+    # "News compile after run" toggle (owner 2026-07-11): when on, run_pipeline
+    # ends the run by compiling ONE "Streamers Update" video from the VODs it
+    # just clipped (news_compile.py; A/B follows CLIP_AB_VARIANTS). Default off.
+    env["CLIP_NEWS_AFTER"] = "1" if news_after else "0"
     for k, v in originality_to_env(originality or load_originality_config()).items():
         env[k] = v
     return env
@@ -346,7 +351,7 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                    hook_caption: bool = True, originality: dict | None = None,
                    passb_dead_gate: str | None = None, enable_thinking: bool = False,
                    companion_shorts: bool = False, ab_variants: int = 2,
-                   post_kit: bool = True):
+                   post_kit: bool = True, news_after: bool = False):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.
@@ -396,6 +401,7 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
         env_flags += ["-e", f"CLIP_COMPANION_SHORTS={'1' if companion_shorts else '0'}"]
         env_flags += ["-e", f"CLIP_AB_VARIANTS={int(ab_variants) if ab_variants else 0}"]
         env_flags += ["-e", f"CLIP_POST_KIT={'1' if post_kit else '0'}"]
+        env_flags += ["-e", f"CLIP_NEWS_AFTER={'1' if news_after else '0'}"]
         for k, v in orig_env.items():
             env_flags += ["-e", f"{k}={v}"]
 
@@ -446,7 +452,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                          passb_dead_gate=passb_dead_gate,
                          enable_thinking=enable_thinking,
                          companion_shorts=companion_shorts,
-                         ab_variants=ab_variants, post_kit=post_kit),
+                         ab_variants=ab_variants, post_kit=post_kit,
+                         news_after=news_after),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
