@@ -492,11 +492,13 @@ def _variant_llm(prompt):
 def _generate_variant_b(entry, local_transcript, hard_events):
     """Return {label:'B', title, hook, angle} or None. B must pass the same
     creative-field gate as A and differ from A (no near-duplicate). Up to one
-    regen on failure; give up (return None → only A ships) after that."""
+    regen on failure; give up (return None → only A ships) after that.
+    DEFAULT ON since 2026-07-10 (owner promotion: 9/9-GOOD spot-check on run
+    20260710_202308). Kill switch: CLIP_AB_VARIANTS=0."""
     try:
-        n = int(os.environ.get("CLIP_AB_VARIANTS", "0") or "0")
+        n = int(os.environ.get("CLIP_AB_VARIANTS", "2") or "2")
     except ValueError:
-        n = 0
+        n = 2
     if n < 2:
         return None
     title_a = (entry.get("title") or "").strip()
@@ -566,9 +568,11 @@ def _strip_hashtags(s: str) -> str:
 
 
 def _generate_post_kit(entry, local_transcript):
-    """Return the per-platform post-copy dict or None. Failure-soft (default
-    off). Includes both A/B hooks so the owner posting variant B has its line."""
-    if os.environ.get("CLIP_POST_KIT", "").strip().lower() not in ("1", "true", "yes", "on"):
+    """Return the per-platform post-copy dict or None. Failure-soft. DEFAULT ON
+    since 2026-07-10 (owner promotion after the 9/9-GOOD run 20260710_202308).
+    Kill switch: CLIP_POST_KIT=0. Includes both A/B hooks so the owner posting
+    variant B has its line."""
+    if os.environ.get("CLIP_POST_KIT", "1").strip().lower() in ("0", "false", "no", "off"):
         return None
     title = (entry.get("title") or "").strip()
     hook = (entry.get("hook") or "").strip()

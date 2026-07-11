@@ -124,8 +124,8 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
                  passb_dead_gate: str | None = None,
                  enable_thinking: bool = False,
                  companion_shorts: bool = False,
-                 ab_variants: int = 0,
-                 post_kit: bool = False) -> dict:
+                 ab_variants: int = 2,
+                 post_kit: bool = True) -> dict:
     """Build environment dict for direct pipeline subprocess (inside Docker).
 
     ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
@@ -159,9 +159,11 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     # Companion punchline-only shorts (default off): Stage 7 also emits a "<title> (Short).mp4"
     # for long clips with a late payoff. See concepts/clip-rendering.
     env["CLIP_COMPANION_SHORTS"] = "1" if companion_shorts else "0"
-    # A/B caption variants (default off = 0; classic A/B = 2). Stage 6 generates
-    # an alternate-angle variant B; Stage 7 renders it (top-N, varied SFX/visual
-    # via a perturbed seed). Post kit writes per-platform "<title>.post.json".
+    # A/B caption variants + post kit — DEFAULT ON since 2026-07-10 (owner
+    # promotion after the 9/9-GOOD run 20260710_202308). Classic A/B = 2;
+    # uncheck the dashboard boxes (or =0) to disable. Stage 6 generates an
+    # alternate-angle variant B; Stage 7 renders it (top-N, varied SFX/visual
+    # via a perturbed seed) and writes clips/post_kits/"<title>.post.json".
     # See concepts/plan-captions-and-ab-variants-2026-07.
     env["CLIP_AB_VARIANTS"] = str(int(ab_variants) if ab_variants else 0)
     env["CLIP_POST_KIT"] = "1" if post_kit else "0"
@@ -343,8 +345,8 @@ def _poll_container_stages(container: str, proc) -> None:
 def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                    hook_caption: bool = True, originality: dict | None = None,
                    passb_dead_gate: str | None = None, enable_thinking: bool = False,
-                   companion_shorts: bool = False, ab_variants: int = 0,
-                   post_kit: bool = False):
+                   companion_shorts: bool = False, ab_variants: int = 2,
+                   post_kit: bool = True):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.

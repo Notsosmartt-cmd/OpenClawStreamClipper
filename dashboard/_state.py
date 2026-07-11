@@ -83,9 +83,10 @@ DEFAULT_ORIGINALITY = {
     # 2026-05-02: AI editing profiles toggle (per-category zoom punches,
     # freeze frames, slow-mo, meme cutaways, B-roll inserts, SFX cues,
     # kinetic captions, and audio + container fingerprint perturbation).
-    # Off by default — when on, Stage 7 dispatches each clip through
-    # scripts/lib/profile_render.py instead of the legacy render path.
-    "style_profiles": False,
+    # ON by default since 2026-07-10 (owner promotion after the 9/9-GOOD A/B
+    # run; the SFX + A/B-variant lanes require profile mode). When on, Stage 7
+    # dispatches each clip through scripts/lib/profile_render.py.
+    "style_profiles": True,
     # 2026-06-13: cold-open teaser (concepts/hook-engineering-2026-06). Prepends
     # a ~1-2s tease of the run-up to the payoff + whoosh/flash into the clip.
     # Off by default — a Stage 7 post-step, failure-soft (keeps the original

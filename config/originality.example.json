@@ -10,5 +10,5 @@
   "tts_vo": false,
   "music_bed": "",
   "music_tier_c": false,
-  "style_profiles": false
+  "style_profiles": true
 }
