@@ -92,7 +92,13 @@ def _run_clips(run_stamp: str, include_variants: bool) -> list[Path]:
     the run) with a mtime fallback when the log has nothing for that run."""
     titles = {_norm(t) for t in _effects_for_run(run_stamp).keys()}
     vids: list[Path] = []
-    for f in sorted(CLIPS.glob("*.mp4")):
+    # RECURSIVE: the owner organizes finished clips into subfolders after runs
+    # (2xBvnks/741/keep/…) — a root-only glob goes blind post-reorganize.
+    _skip = {"post_kits", ".diagnostics", ".pipeline_logs"}
+    _all = [f for f in sorted(CLIPS.rglob("*.mp4"))
+            if not any(part in _skip for part in f.relative_to(CLIPS).parts)
+            and not f.stem.startswith("STREAMERS UPDATE")]
+    for f in _all:
         name = f.stem
         if not include_variants and (name.endswith(" (B)") or name.endswith(" (Short)")):
             continue

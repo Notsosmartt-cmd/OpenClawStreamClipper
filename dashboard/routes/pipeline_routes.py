@@ -76,6 +76,7 @@ def api_clip():
     # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
     ab_variants = 2 if data.get("ab_variants", True) else 0
     post_kit = bool(data.get("post_kit", True))
+    news_after = bool(data.get("news_after", False))   # end the run with a news compile
     # Pass B dead-chunk gate mode — UI dropdown sends one of
     # {off, multi, sample, strict}. Default "off" preserves selection
     # fidelity (no LLM calls skipped). See pipeline_runner.spawn_pipeline.
@@ -113,6 +114,7 @@ def api_clip():
                 companion_shorts=companion_shorts,
                 ab_variants=ab_variants,
                 post_kit=post_kit,
+                news_after=news_after,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -139,6 +141,7 @@ def api_clip_all():
     # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
     ab_variants = 2 if data.get("ab_variants", True) else 0
     post_kit = bool(data.get("post_kit", True))
+    news_after = bool(data.get("news_after", False))   # end the run with a news compile
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
@@ -178,6 +181,7 @@ def api_clip_all():
                 companion_shorts=companion_shorts,
                 ab_variants=ab_variants,
                 post_kit=post_kit,
+                news_after=news_after,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -214,6 +218,7 @@ def api_clip_batch():
     # sends an explicit false to disable. See plan-captions-and-ab-variants-2026-07.
     ab_variants = 2 if data.get("ab_variants", True) else 0
     post_kit = bool(data.get("post_kit", True))
+    news_after = bool(data.get("news_after", False))   # end the run with a news compile
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
@@ -267,6 +272,7 @@ def api_clip_batch():
                 companion_shorts=companion_shorts,
                 ab_variants=ab_variants,
                 post_kit=post_kit,
+                news_after=news_after,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
