@@ -1,0 +1,75 @@
+{
+  "clip": "v15044gf0000d8uptlvog65nr9kbn42g.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 0.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.363)"
+    },
+    {
+      "t": 4.5,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed, mood=suspenseful?"
+    },
+    {
+      "t": 5.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'suspense_music' (clap 0.455)"
+    },
+    {
+      "t": 8.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.482)"
+    },
+    {
+      "t": 8.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 11.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.353)"
+    },
+    {
+      "t": 15.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.459)"
+    },
+    {
+      "t": 21.0,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 21.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.417)"
+    },
+    {
+      "t": 24.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'suspense_music' (clap 0.386)"
+    },
+    {
+      "t": 25.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    }
+  ]
+}

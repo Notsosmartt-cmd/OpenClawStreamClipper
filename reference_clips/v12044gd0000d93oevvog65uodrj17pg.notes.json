@@ -1,0 +1,45 @@
+{
+  "clip": "v12044gd0000d93oevvog65uodrj17pg.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 5.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.374)"
+    },
+    {
+      "t": 12.0,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 12.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'sad_trombone' (clap 0.413)"
+    },
+    {
+      "t": 12.5,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 22.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.451)"
+    },
+    {
+      "t": 26.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.407)"
+    }
+  ]
+}

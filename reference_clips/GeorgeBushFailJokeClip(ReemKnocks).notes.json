@@ -1,0 +1,27 @@
+{
+  "clip": "GeorgeBushFailJokeClip(ReemKnocks).MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 0.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.387)"
+    },
+    {
+      "t": 5.0,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 11.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    }
+  ]
+}

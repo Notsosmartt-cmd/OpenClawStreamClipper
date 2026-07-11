@@ -1,0 +1,69 @@
+{
+  "clip": "StreamerUpdate4_30.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 1.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.432)"
+    },
+    {
+      "t": 8.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.439)"
+    },
+    {
+      "t": 16.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.537)"
+    },
+    {
+      "t": 26.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.441)"
+    },
+    {
+      "t": 31.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.575)"
+    },
+    {
+      "t": 33.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.433)"
+    },
+    {
+      "t": 38.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.519)"
+    },
+    {
+      "t": 40.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.481)"
+    },
+    {
+      "t": 56.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.434)"
+    },
+    {
+      "t": 59.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.46)"
+    }
+  ]
+}

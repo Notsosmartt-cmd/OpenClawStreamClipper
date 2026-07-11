@@ -1,0 +1,87 @@
+{
+  "clip": "v12044gd0000d73ge9nog65ka9vi7ung.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 9.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.433)"
+    },
+    {
+      "t": 12.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.412)"
+    },
+    {
+      "t": 17.5,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 18.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'quack' (clap 0.411)"
+    },
+    {
+      "t": 18.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 24.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.365)"
+    },
+    {
+      "t": 32.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.477)"
+    },
+    {
+      "t": 39.5,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 41.0,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 51.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.355)"
+    },
+    {
+      "t": 56.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.371)"
+    },
+    {
+      "t": 58.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.368)"
+    },
+    {
+      "t": 61.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.362)"
+    }
+  ]
+}
