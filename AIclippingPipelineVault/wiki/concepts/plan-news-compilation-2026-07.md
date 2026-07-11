@@ -2,9 +2,30 @@
 title: "Plan — 'Streamer News Today' compilation mode (third pipeline output)"
 type: concept
 tags: [plan, news-compilation, multi-vod, stitch, stage7, evaluation]
-status: planned
+status: in-progress
 updated: 2026-07-11
 ---
+
+> [!note] v1 SHIPPED 2026-07-11 — first compilation rendered; owner ear-check gate OPEN
+> **`scripts/news_compile.py`** implements the finished-clips architecture: per selected VOD it
+> joins the newest diagnostics trace (selected candidates: T + final_score) to the newest
+> `effects_log` run (clip titles + windows) to the mp4s on disk (normalized-prefix title match,
+> same rules as R2), round-robins top stories under the budget (per-VOD guarantee), then renders
+> **intro** (2×2 `xstack` grid of story payoff thumbnails + "STREAMERS UPDATE <date>" band + boom
+> + piper VO) → **stories** (payoff-centered sub-cuts of the FINISHED clips — captions/SFX/blur
+> inherited — + lower-third `STREAMER — title` banner + whoosh + **piper anchor VO** reading the
+> title) → filter-concat, uniform encode. Failure-soft VO (missing piper → text-only), bounded
+> ffmpeg timeouts, sidecar `clips/post_kits/<name>.news.json`.
+> **Piper installed** (`pip install piper-tts`) + voice `en_US-ryan-high` at `assets/piper/`
+> (gitignored, 120 MB — re-fetch from HuggingFace rhasspy/piper-voices if missing); synth
+> verified 3.2 s natural read. **First live compilation:** 2xRaKai single-VOD →
+> `clips/STREAMERS UPDATE 07-11-2026.mp4` (58.9 s, intro + 4 stories, VO throughout); frames
+> verified (grid + date card; story banner "2XRAKAI — he really said she killed that shit").
+> **Dashboard:** `News Compile (N)` button on the multi-select → `POST /api/news-compile`
+> (409 while pipeline runs, bare-metal only, spawn via the pipeline handle so Stop works;
+> status-polled — the compiler writes no pipeline.log). Speed-1.0 assumption on payoff offsets
+> documented in code. **Gate:** owner ear-checks the piper voice + story pacing on compilation
+> #1; v2 items (news-weighted scoring, same-story merge, grid polish) wait on that review.
 
 # Evaluation + plan: the "news today" compilation mode
 

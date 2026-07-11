@@ -95,11 +95,18 @@ export function updateControls() {
     const clipBtn = document.getElementById("btn-clip");
     const clipAllBtn = document.getElementById("btn-clip-all");
     const stopBtn = document.getElementById("btn-stop");
+    const newsBtn = document.getElementById("btn-news-compile");
     const n = state.selectedVods.length;
 
     clipBtn.disabled = n === 0 || state.pipelineRunning;
     clipBtn.textContent = n > 1 ? `Clip Selected (${n})` : "Clip Selected";
     clipAllBtn.disabled = state.pipelineRunning;
+    // News Compile: a separate, explicit action on the multi-select (owner
+    // directive 2026-07-11 — never part of the standard clip flow).
+    if (newsBtn) {
+        newsBtn.disabled = n === 0 || state.pipelineRunning;
+        newsBtn.textContent = n > 1 ? `News Compile (${n})` : "News Compile";
+    }
     stopBtn.disabled = !state.pipelineRunning;
     stopBtn.style.display = state.pipelineRunning ? "inline-block" : "none";
 }

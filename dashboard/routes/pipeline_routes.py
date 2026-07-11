@@ -277,6 +277,43 @@ def api_clip_batch():
     return jsonify({"status": "started", "count": len(vods), "vods": vods}), 202
 
 
+@bp.route("/api/news-compile", methods=["POST"])
+def api_news_compile():
+    """'Streamers Update' news compilation (plan-news-compilation-2026-07 v1).
+
+    A SEPARATE explicit action on the multi-select (owner directive: never part
+    of the standard clip flow). Compiles from FINISHED clips + diagnostics of
+    already-clipped VODs — fast, no re-detection. Bare-metal only."""
+    data = request.get_json(force=True)
+    requested = data.get("vods") or []
+    if isinstance(requested, str):
+        requested = [requested]
+    requested = [str(v).strip() for v in requested if str(v).strip()]
+    if not requested:
+        return jsonify({"error": "No VODs selected"}), 400
+    if use_docker_exec():
+        return jsonify({"error": "News compile runs bare-metal only"}), 501
+    on_disk = {
+        f.stem for f in sorted(_state.VODS_DIR.iterdir())
+        if f.is_file() and f.suffix.lower() in (".mp4", ".mkv", ".avi", ".mov", ".webm")
+    }
+    vods = [v for v in requested if v in on_disk]
+    if not vods:
+        return jsonify({"error": "None of the selected VODs were found on disk"}), 400
+
+    with _state.pipeline_lock:
+        if is_pipeline_running():
+            return jsonify({"error": "Pipeline already running"}), 409
+        script = str(_state.PROJECT_DIR / "scripts" / "news_compile.py")
+        cmd = [sys.executable, script, "--vods", ",".join(vods)]
+        try:
+            _state.pipeline_process = spawn_pipeline(cmd)
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
+        _state.pipeline_vod_name = f"news compile ({len(vods)} VOD{'s' if len(vods) > 1 else ''})"
+    return jsonify({"status": "started", "mode": "news", "vods": vods}), 202
+
+
 @bp.route("/api/stop", methods=["POST"])
 def api_stop():
     """Stop the running pipeline."""
