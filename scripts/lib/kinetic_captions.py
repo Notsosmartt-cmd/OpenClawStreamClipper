@@ -18,6 +18,7 @@ fall back to whole-sentence reveals using the same preset typography.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -373,6 +374,44 @@ def render_ass(words: list[dict], preset: str = "clean",
     return "\n".join(lines) + "\n"
 
 
+_I_FORMS = {"i": "I", "i'm": "I'm", "i'll": "I'll", "i'd": "I'd", "i've": "I've"}
+
+
+def _sentence_case_words(words: list[dict]) -> list[dict]:
+    """R4 apply (corpus_diff report #1, owner-approved 2026-07-11): the reference
+    corpus captions run SENTENCE CASE; ours read 'mixed' because whisper's
+    Mid-Sentence Capitals were passed through verbatim. Lowercase every word,
+    re-capitalize sentence starts (first word + any word following .!?) and the
+    I-forms. Proper nouns lowercase too — that matches the casual creator voice
+    the owner wants (his approved titles are all lowercase)."""
+    out = []
+    sentence_start = True
+    for w in words:
+        ww = dict(w)
+        t = str(ww.get("text", ""))
+        low = t.lower()
+        core = low.strip(".,!?\"'")
+        if core in _I_FORMS:
+            t2 = low.replace(core, _I_FORMS[core], 1)
+        elif sentence_start and low[:1].isalpha():
+            t2 = low[0].upper() + low[1:]
+        else:
+            t2 = low
+        ww["text"] = t2
+        out.append(ww)
+        sentence_start = t2.rstrip("\"'").endswith((".", "!", "?"))
+    return out
+
+
+def _resolve_casing(caps: bool) -> str:
+    """caps=True (explicit) wins; else CLIP_CAPTION_CASING: sentence|keep|caps.
+    Default 'sentence' — the reference-corpus norm."""
+    if caps:
+        return "caps"
+    mode = os.environ.get("CLIP_CAPTION_CASING", "sentence").strip().lower()
+    return mode if mode in ("sentence", "keep", "caps") else "sentence"
+
+
 def srt_to_ass(srt_path: Path, ass_path: Path,
                preset: str = "capcut",
                emphasis_indices: list[int] | None = None,
@@ -385,6 +424,12 @@ def srt_to_ass(srt_path: Path, ass_path: Path,
     words = parse_srt(srt_path)
     if not words:
         return 1
+    casing = _resolve_casing(caps)
+    if casing == "sentence":
+        words = _sentence_case_words(words)
+        caps = False
+    elif casing == "caps":
+        caps = True
     if preset == "capcut":
         ass = render_box(words, font=(font or resolve_font()[0]), accent=accent,
                          caps=caps, fontsize=(fontsize or 84),

@@ -248,6 +248,64 @@ def _refine_payoff(payoff_rel: float, clip_start: float, clip_duration: float,
         return fallback
 
 
+def _secondary_peaks(clip_start: float, clip_duration: float, temp_dir: str,
+                     cfg: dict, taken: list[float]) -> list[float]:
+    """R4 density apply (corpus_diff report #1, owner-approved 2026-07-11): the
+    reference corpus runs far denser sound furniture than our one-cue clips. Find
+    the clip's strongest OTHER acoustic transients (laughter bursts, exclamations,
+    slams — the beats an editor would also punctuate) and return their clip-relative
+    times, skipping anything near an already-taken anchor. The caller places a
+    DUCKED punchline_light on each (never the hot boom — that stays payoff-only).
+    Failure-soft: [] on any problem."""
+    sp = cfg.get("secondary_peaks") or {}
+    if not sp.get("enabled", False):
+        return []
+    try:
+        import numpy as np
+        import soundfile as sf
+        wav = Path(temp_dir, "audio.wav")
+        if not wav.exists() or clip_duration < 10:
+            return []
+        sr = sf.info(str(wav)).samplerate
+        hop = max(1, int(0.05 * sr))
+        a_rel = 2.0
+        frames = int(max(0.0, (clip_duration - 1.0) - a_rel) * sr)
+        if frames < sr:
+            return []
+        data, _ = sf.read(str(wav), start=max(0, int((clip_start + a_rel) * sr)),
+                          frames=frames, dtype="float32", always_2d=False)
+        if data is None or getattr(data, "size", 0) < sr:
+            return []
+        if getattr(data, "ndim", 1) > 1:
+            data = data.mean(axis=1)
+        n_h = len(data) // hop
+        if n_h < 10:
+            return []
+        rms = np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
+        flux = np.diff(rms)
+        if not len(flux) or float(flux.max()) <= 0:
+            return []
+        min_prom = float(sp.get("min_prominence_ratio", 0.55) or 0.55) * float(flux.max())
+        min_gap = float(sp.get("min_gap_from_cues_s", 2.5) or 2.5)
+        max_n = int(sp.get("max", 3) or 3)
+        # strongest-first candidate times
+        order = np.argsort(flux)[::-1]
+        out: list[float] = []
+        for idx in order:
+            if float(flux[idx]) < min_prom:
+                break
+            t = a_rel + (int(idx) + 1) * hop / sr
+            if any(abs(t - p) < min_gap for p in taken) or \
+               any(abs(t - p) < min_gap for p in out):
+                continue
+            out.append(t)
+            if len(out) >= max_n:
+                break
+        return sorted(out)
+    except Exception:
+        return []
+
+
 def build(moment: dict, clip_start: float, clip_duration: float, *,
           temp_dir: str, seed: object = 0, config: dict | None = None) -> list[dict]:
     """Return a list of {t, kind, gain_db} cues (t = clip-relative seconds).
@@ -301,6 +359,14 @@ def build(moment: dict, clip_start: float, clip_duration: float, *,
             # Skip a laughter marker that coincides with the payoff beat.
             if abs(rel - payoff_rel) > 1.0:
                 anchors.append((rel, "punchline"))
+
+    # R4 density (owner-approved): light hits on the clip's other acoustic peaks.
+    # Skipped for categories that opted out of a payoff (payoff_beat None).
+    if payoff_beat:
+        _sp_beat = str((cfg.get("secondary_peaks") or {}).get("beat", "punchline_light"))
+        for rel in _secondary_peaks(clip_start, clip_duration, temp_dir, cfg,
+                                    taken=[a for a, _ in anchors]):
+            anchors.append((rel, _sp_beat))
 
     if not anchors:
         return []

@@ -23,7 +23,7 @@ The default caption is a **CapCut-style word box**: a short phrase is on screen 
 - **Font**: **Montserrat Black**, bundled at `assets/fonts/Montserrat-Black.ttf` (OFL; license alongside). Burned via `subtitles=…:fontsdir=assets/fonts` so libass uses it even though it isn't installed system-wide — verified `fontselect: (Montserrat Black, 700, 0) -> Montserrat-Black`.
 - **Base words**: white fill, **black outline** (`BorderStyle=1, Outline=4`) + soft shadow — readable on any background.
 - **Active word**: a second ASS style **`Box`** (`BorderStyle=3` opaque box) in the accent color with dark text; the renderer switches to it for the current word via the `{\rBox}word{\r}` inline tag. The box advances word-by-word because each word gets its own `Dialogue` event tiling the phrase's time span with no gaps.
-- **Case**: sentence case (default) — `CLIP_CAPTION_CAPS=true` for ALL CAPS.
+- **Case**: **true sentence case, ENFORCED (2026-07-11, R4 apply)** — before this, `caps=false` passed whisper's Mid-Sentence Capitals through verbatim, which the attribute cards read as "mixed" vs the reference corpus's sentence case (owner-approved gap). `srt_to_ass` now applies `_sentence_case_words`: lowercase everything, re-capitalize sentence starts + I-forms (proper nouns lowercase — matches the owner's casual voice). `CLIP_CAPTION_CASING` = `sentence` (default) / `keep` (old behavior) / `caps`; `CLIP_CAPTION_CAPS=true` still forces ALL CAPS.
 - **Position**: bottom-center, `MarginV≈220` (lower third); font size 84 at 1080×1920.
 - **Grouping**: ~3 words per phrase line.
 
