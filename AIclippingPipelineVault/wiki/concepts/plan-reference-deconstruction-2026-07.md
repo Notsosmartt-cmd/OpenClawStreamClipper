@@ -2,9 +2,24 @@
 title: "Plan — Reference-Clip Deconstruction: Cards → Diff → Apply (learning loop B rebuild)"
 type: concept
 tags: [plan, learning, reference-clips, forensics, attribute-cards, diff, few-shot, stage6]
-status: planned
-updated: 2026-07-10
+status: in-progress
+updated: 2026-07-11
 ---
+
+> [!note] R0 + R1 IN PROGRESS (2026-07-11)
+> **R0** (decompose the 24 missing clips → 59/59 timelines) launched as a bounded CPU batch
+> (`clip_forensics --ocr --trim-end 4 --no-llm`; `--no-llm` keeps LM Studio free for R1 and drops
+> the superseded text-only style_profile). **R1 tool SHIPPED + validated**:
+> `scripts/research/attribute_cards.py` — one multimodal call/clip, Python-authoritative numerics
+> merged with LLM editorial fields, output `reference_clips/.cache/<stem>.card.json` (schema v1,
+> gitignored — derived artifact). **6 cards built for the owner spot-read gate.** Decisive
+> validation: on `GeorgeBushFailJokeClip` the VLM read the on-screen hook as a clean
+> `"you ever heard of george"` — the *exact* line EasyOCR mangled into "yoU ever heard of george
+> TkTok KS" that poisoned caption-voice v1. The VLM also correctly *distrusted* noisy CLAP labels
+> (set `sfx_grammar.kinds=[]` on a clip whose CLAP was 28× "bruh"). **Open gate question:** all 6
+> spot-read clips classified `category:"irl"` — the taxonomy may be too coarse for R3's
+> per-category diff (street-interview-comedy vs streamer-news-compilation vs reaction). Owner to
+> confirm card truthfulness + whether to refine the category set before the full 59-card batch.
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 
