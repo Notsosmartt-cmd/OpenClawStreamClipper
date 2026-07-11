@@ -341,8 +341,13 @@ def render_story(story: dict, idx: int, work: Path, story_len: float, use_vo: bo
         vo_len = synth_vo(f"{story['streamer']} — {story['title']}.", vo_wav)
     whoosh = _pick_sfx("whoosh")
 
-    # video: sub-cut + lower-third headline banner (above the burned captions)
-    vf = (f"drawtext=textfile='{_ff(head_file)}':fontfile='{_ff(FONT)}':fontsize=44:"
+    # video: sub-cut + lower-third headline banner (above the burned captions).
+    # NORMALIZE to exactly 1080x1920 SAR 1:1 first: the originality fingerprint
+    # gives every finished clip slightly different dimensions (1080x1920 vs
+    # 1076x1916) and an odd SAR (10240:10239) — concat refuses any mismatch.
+    vf = (f"scale=1080:1920:force_original_aspect_ratio=decrease,"
+          f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+          f"drawtext=textfile='{_ff(head_file)}':fontfile='{_ff(FONT)}':fontsize=44:"
           f"fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18:line_spacing=10:"
           f"x=(w-text_w)/2:y=h-620")
     inputs = ["-ss", f"{start:.3f}", "-t", f"{length:.3f}", "-i", str(src)]
@@ -396,8 +401,14 @@ def render_intro(stories: list[dict], work: Path, use_vo: bool) -> Path | None:
     inputs = []
     for th in thumbs[:4]:
         inputs += ["-loop", "1", "-t", f"{intro_len:.2f}", "-i", str(th)]
-    fc = ("[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[grid];"
-          f"[grid]drawbox=x=0:y=760:w=1080:h=420:color=black@0.6:t=fill,"
+    # Each thumb normalized to exactly 540x960 before the stack (thumbnail JPEGs
+    # inherit the clips' fingerprint size jitter), grid re-normalized after.
+    _pre = "".join(
+        f"[{i}:v]scale=540:960:force_original_aspect_ratio=increase,"
+        f"crop=540:960,setsar=1[t{i}];" for i in range(4))
+    fc = (_pre + "[t0][t1][t2][t3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[grid];"
+          f"[grid]scale=1080:1920,setsar=1,"
+          f"drawbox=x=0:y=760:w=1080:h=420:color=black@0.6:t=fill,"
           f"drawtext=textfile='{_ff(title_file)}':fontfile='{_ff(FONT)}':fontsize=96:"
           f"fontcolor=white:line_spacing=14:x=(w-text_w)/2:y=800[vout]")
     n = 4
