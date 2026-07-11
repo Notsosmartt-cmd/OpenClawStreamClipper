@@ -1,0 +1,15 @@
+{
+  "clip": "v15025gf0000d8kuln7og65trtgft1d0.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 30.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'boing' (clap 0.352)"
+    }
+  ]
+}

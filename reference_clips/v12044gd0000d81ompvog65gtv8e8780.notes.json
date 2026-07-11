@@ -1,0 +1,105 @@
+{
+  "clip": "v12044gd0000d81ompvog65gtv8e8780.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 8.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.436)"
+    },
+    {
+      "t": 14.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'boing' (clap 0.43)"
+    },
+    {
+      "t": 22.5,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 22.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.468)"
+    },
+    {
+      "t": 27.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'laughter' (clap 0.398)"
+    },
+    {
+      "t": 29.0,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 29.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.485)"
+    },
+    {
+      "t": 31.5,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 31.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'quack' (clap 0.427)"
+    },
+    {
+      "t": 34.0,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=None"
+    },
+    {
+      "t": 36.0,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 41.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.548)"
+    },
+    {
+      "t": 48.5,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=sfx-gap sfx=quack"
+    },
+    {
+      "t": 48.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.433)"
+    },
+    {
+      "t": 50.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.435)"
+    },
+    {
+      "t": 53.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.404)"
+    }
+  ]
+}

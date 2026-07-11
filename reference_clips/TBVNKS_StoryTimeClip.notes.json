@@ -1,0 +1,81 @@
+{
+  "clip": "TBVNKS_StoryTimeClip.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 0.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.397)"
+    },
+    {
+      "t": 2.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.422)"
+    },
+    {
+      "t": 11.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'scratch' (clap 0.53)"
+    },
+    {
+      "t": 19.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.445)"
+    },
+    {
+      "t": 21.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.394)"
+    },
+    {
+      "t": 27.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.5)"
+    },
+    {
+      "t": 28.0,
+      "kind": "music_in",
+      "_auto": true,
+      "note": "detected music bed (editor-added), mood=suspenseful?"
+    },
+    {
+      "t": 30.5,
+      "kind": "music_out",
+      "_auto": true,
+      "note": "music bed ends"
+    },
+    {
+      "t": 39.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.428)"
+    },
+    {
+      "t": 45.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.427)"
+    },
+    {
+      "t": 47.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'quack' (clap 0.522)"
+    },
+    {
+      "t": 64.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.47)"
+    }
+  ]
+}

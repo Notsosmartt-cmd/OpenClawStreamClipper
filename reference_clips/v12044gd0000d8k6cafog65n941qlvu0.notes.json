@@ -1,0 +1,75 @@
+{
+  "clip": "v12044gd0000d8k6cafog65n941qlvu0.MP4",
+  "_draft": true,
+  "_instructions": "DRAFT auto-generated from detections. CORRECT it: delete lines the tool got wrong, ADD cues it missed (cold_open_teaser, sfx on the punchline, music the tool didn't hear), fix why_it_works, then DELETE the \"_draft\" key. Corrected files feed corpus precision/recall.",
+  "source": "competitor account / platform",
+  "why_it_works": "",
+  "events": [
+    {
+      "t": 10.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.527)"
+    },
+    {
+      "t": 18.09,
+      "kind": "censor",
+      "_auto": true,
+      "note": "via=word+sfx sfx=quack"
+    },
+    {
+      "t": 18.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.436)"
+    },
+    {
+      "t": 26.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.432)"
+    },
+    {
+      "t": 29.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.466)"
+    },
+    {
+      "t": 33.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.461)"
+    },
+    {
+      "t": 38.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.524)"
+    },
+    {
+      "t": 40.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.417)"
+    },
+    {
+      "t": 47.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.448)"
+    },
+    {
+      "t": 50.0,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.428)"
+    },
+    {
+      "t": 57.5,
+      "kind": "sfx",
+      "_auto": true,
+      "note": "detected 'bruh' (clap 0.455)"
+    }
+  ]
+}

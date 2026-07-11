@@ -1,0 +1,11 @@
+/* Cosmos plugin styles */
+
+.cosmos-galaxy-link {
+  margin-top: -8px;
+  margin-bottom: 12px;
+  font-size: var(--font-ui-small);
+}
+
+.cosmos-notice-link {
+  cursor: pointer;
+}
