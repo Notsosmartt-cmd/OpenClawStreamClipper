@@ -552,6 +552,14 @@ def _marker_pid() -> int | None:
     return None
 
 
+def is_reference_running() -> bool:
+    """True if a Reference Lab (R6) background job is active. Consulted by the clip
+    routes so the two never contend for the GPU / LM Studio; the Reference Lab
+    consults is_pipeline_running() for the reverse guard."""
+    j = getattr(_state, "reference_job", None)
+    return bool(j and j.get("proc") is not None and j["proc"].poll() is None)
+
+
 def is_pipeline_running() -> bool:
     """Running if THIS dashboard's handle is alive OR the on-disk pid marker points to a
     live pipeline. The marker check is what prevents the double-launch (BUG 67): start →

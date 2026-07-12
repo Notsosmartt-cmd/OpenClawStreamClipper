@@ -17,6 +17,7 @@ from ..config_io import extract_originality_fields
 from ..pipeline_runner import (
     check_lm_studio,
     is_pipeline_running,
+    is_reference_running,
     kill_pipeline,
     read_persistent_log_path,
     spawn_pipeline,
@@ -91,6 +92,8 @@ def api_clip():
     with _state.pipeline_lock:
         if is_pipeline_running():
             return jsonify({"error": "Pipeline already running"}), 409
+        if is_reference_running():
+            return jsonify({"error": "A Reference Lab job is running — wait for it to finish"}), 409
 
         for f in [_state.LOG_FILE, _state.STAGE_FILE, _state.STAGES_LOG]:
             if f.exists():
@@ -150,6 +153,8 @@ def api_clip_all():
     with _state.pipeline_lock:
         if is_pipeline_running():
             return jsonify({"error": "Pipeline already running"}), 409
+        if is_reference_running():
+            return jsonify({"error": "A Reference Lab job is running — wait for it to finish"}), 409
 
         for f in [_state.LOG_FILE, _state.STAGE_FILE, _state.STAGES_LOG]:
             if f.exists():
@@ -239,6 +244,8 @@ def api_clip_batch():
     with _state.pipeline_lock:
         if is_pipeline_running():
             return jsonify({"error": "Pipeline already running"}), 409
+        if is_reference_running():
+            return jsonify({"error": "A Reference Lab job is running — wait for it to finish"}), 409
 
         for f in [_state.LOG_FILE, _state.STAGE_FILE, _state.STAGES_LOG]:
             if f.exists():
@@ -310,6 +317,8 @@ def api_news_compile():
     with _state.pipeline_lock:
         if is_pipeline_running():
             return jsonify({"error": "Pipeline already running"}), 409
+        if is_reference_running():
+            return jsonify({"error": "A Reference Lab job is running — wait for it to finish"}), 409
         script = str(_state.PROJECT_DIR / "scripts" / "news_compile.py")
         cmd = [sys.executable, script, "--vods", ",".join(vods)]
         try:

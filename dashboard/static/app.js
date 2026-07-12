@@ -33,8 +33,9 @@ import {
 } from "./modules/assets-panel.js";
 
 import {
-    fetchForensicsClips, runForensics, loadForensicsResult,
-} from "./modules/forensics-panel.js";
+    fetchReferenceCorpus, runDecompose, runCards, runOurCards, runDiff,
+    stopReferenceJob, loadReport, initReferenceTab,
+} from "./modules/reference-panel.js";
 
 // Inline onclick= handlers in HTML need these on window.
 Object.assign(window, {
@@ -71,23 +72,26 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-restart-services").addEventListener("click", restartServices);
     document.getElementById("btn-refresh-folders").addEventListener("click", fetchFolders);
 
-    // --- Tab switching (Clipper | Clip Forensics) ---
-    let forensicsLoaded = false;
+    // --- Tab switching (Clipper | Reference Lab) ---
+    let referenceLoaded = false;
     function switchView(view) {
         document.querySelectorAll(".tab-btn").forEach(b =>
             b.classList.toggle("active", b.dataset.view === view));
         document.querySelectorAll(".view").forEach(v =>
             v.classList.toggle("active", v.id === `view-${view}`));
-        if (view === "forensics" && !forensicsLoaded) {
-            forensicsLoaded = true;
-            fetchForensicsClips();
+        if (view === "reference" && !referenceLoaded) {
+            referenceLoaded = true;
+            initReferenceTab();
         }
     }
     document.querySelectorAll(".tab-btn").forEach(b =>
         b.addEventListener("click", () => switchView(b.dataset.view)));
 
-    // --- Forensics tab controls ---
-    document.getElementById("btn-fx-run").addEventListener("click", runForensics);
-    document.getElementById("btn-fx-load").addEventListener("click", loadForensicsResult);
-    document.getElementById("btn-fx-refresh").addEventListener("click", fetchForensicsClips);
+    // --- Reference Lab tab controls ---
+    document.getElementById("btn-ref-refresh")?.addEventListener("click", fetchReferenceCorpus);
+    document.getElementById("btn-ref-decompose")?.addEventListener("click", runDecompose);
+    document.getElementById("btn-ref-cards")?.addEventListener("click", runCards);
+    document.getElementById("btn-ref-our-cards")?.addEventListener("click", runOurCards);
+    document.getElementById("btn-ref-diff")?.addEventListener("click", runDiff);
+    document.getElementById("btn-ref-stop")?.addEventListener("click", stopReferenceJob);
 });
