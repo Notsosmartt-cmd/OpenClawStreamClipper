@@ -151,6 +151,19 @@ Primary/licensing (best verified): [Pixabay SFX](https://pixabay.com/sound-effec
 Convention/practitioner: [Epidemic Sound — meme SFX](https://www.epidemicsound.com/youtube/meme-sound-effects/), [Epidemic Sound — TikTok SFX](https://www.epidemicsound.com/tiktok/tik-tok-sound-effects/), [Uppbeat meme SFX](https://uppbeat.io/blog/sound-effects/meme-sound-effects), [Voicy meme sounds](https://blog.voicy.network/memes/sounds/top-meme-sound-effects-for-editing/), [KnowYourMeme — Vine boom](https://knowyourmeme.com/memes/vine-thud-boom-sound-effect), [SFXEngine timing](https://sfxengine.com/blog/sound-effects-timing-in-comedy-videos), [FlexClip transitions](https://www.flexclip.com/learn/transition-sound-effects.html), [Krotos mix balance](https://krotos.studio/blog/how-to-balance-music-and-sound-effects), [WeVideo audio levels](https://www.wevideo.com/blog/how-to-set-audio-levels).
 Academic: [FunnyNet (ACCV 2022)](https://openaccess.thecvf.com/content/ACCV2022/papers/Liu_FunnyNet_Audiovisual_Learning_of_Funny_Moments_in_Videos_ACCV_2022_paper.pdf), [FunnyNet-W (arXiv 2401.04210)](https://arxiv.org/pdf/2401.04210).
 
+## Taxonomy fully stocked (2026-07-11, owner req: "find more sound effects")
+
+Five NEW kinds seeded from myinstants direct CDN URLs (curl w/ browser UA; the HTML pages 403
+robots — same route as the owner-directed `ddg_boom`): **scratch** (2), **sad_trombone** (2),
+**crickets** (2), **applause** (2, trimmed 4–4.5 s + fade), **bruh** (1). All ffprobe-validated,
+manifest-tracked (`{"entries": […]}` shape — a bare list breaks `_candidates_for_kind`),
+`kind_sources.have_assets` flipped. **Every beat now resolves to its DESIGNED first choice**:
+fail→scratch, reveal→applause (storytime clips get real applause immediately),
+awkward_silence→crickets, disbelief→bruh, punchline→boom, punchline_light→pop,
+buildup→riser, transition→whoosh. The fail/awkward_silence/disbelief beats remain unwired by
+`category_beats` — this seeding is the inventory that makes wiring them (roast-cadence, etc.)
+a pure config change.
+
 ## R4 density apply (2026-07-11, corpus_diff report #1 — owner-approved)
 
 The first reference-vs-ours diff ([[concepts/plan-reference-deconstruction-2026-07]]) confirmed

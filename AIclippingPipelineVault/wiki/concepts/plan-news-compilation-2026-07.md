@@ -24,8 +24,16 @@ updated: 2026-07-11
 > **Dashboard:** `News Compile (N)` button on the multi-select → `POST /api/news-compile`
 > (409 while pipeline runs, bare-metal only, spawn via the pipeline handle so Stop works;
 > status-polled — the compiler writes no pipeline.log). Speed-1.0 assumption on payoff offsets
-> documented in code. **Gate:** owner ear-checks the piper voice + story pacing on compilation
+> documented in code. **Gate:** owner ear-checks the voice + story pacing on compilation
 > #1; v2 items (same-story merge, grid polish) wait on that review.
+>
+> **Voice upgrade (2026-07-11):** owner ruled piper ryan-high "very noticeably ai with its
+> tonality and cadence" → **Kokoro-82M is the new default engine** (Apache-2.0 ONNX, local,
+> natural prosody; `assets/kokoro/`, gitignored — re-fetch from thewh1teagle/kokoro-onnx
+> releases; 8.3 s audio in 3.0 s CPU). Engine chain in `synth_vo`: **kokoro → piper →
+> text-only**, all failure-soft. Env dials: `CLIP_NEWS_TTS=kokoro|piper|off`,
+> `CLIP_NEWS_VOICE` (default `am_michael`; try `am_adam`/`af_heart` if michael doesn't land),
+> `CLIP_NEWS_TTS_SPEED`. Both compilations rebuilt with am_michael for the ear-check.
 
 > [!note] v1.5 (2026-07-11, owner directives after seeing v1)
 > **Multi-VOD across streamers is the PRIMARY use** (single-VOD kept). Changes:

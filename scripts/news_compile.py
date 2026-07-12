@@ -245,36 +245,74 @@ def select_stories(vod_stems: list[str], max_per_vod: int, budget_s: float,
 
 
 # ---------------------------------------------------------------------------
-# Piper VO (failure-soft)
+# Anchor VO — engine chain: kokoro (default) -> piper -> text-only.
+# Owner 2026-07-11: piper's ryan-high read "very noticeably ai with its
+# tonality and cadence" — Kokoro-82M (Apache-2.0, ONNX, local) is the natural-
+# prosody upgrade; piper stays as the fallback. All failure-soft.
+#   CLIP_NEWS_TTS   = kokoro | piper | off   (default kokoro)
+#   CLIP_NEWS_VOICE = kokoro voice id        (default am_michael)
+#   CLIP_NEWS_TTS_SPEED = float              (default 1.0)
 # ---------------------------------------------------------------------------
-_VOICE_CACHE = {"v": None, "tried": False}
+import os as _os
+
+KOKORO_MODEL = REPO / "assets" / "kokoro" / "kokoro-v1.0.onnx"
+KOKORO_VOICES = REPO / "assets" / "kokoro" / "voices-v1.0.bin"
+
+_VOICE_CACHE = {"engine": None, "tried": False, "kokoro": None, "piper": None}
 
 
-def _voice():
+def _tts_engine():
+    """Resolve + cache the TTS engine once per process."""
     if _VOICE_CACHE["tried"]:
-        return _VOICE_CACHE["v"]
+        return _VOICE_CACHE["engine"]
     _VOICE_CACHE["tried"] = True
+    pref = _os.environ.get("CLIP_NEWS_TTS", "kokoro").strip().lower()
+    if pref in ("off", "none", "0"):
+        log("VO disabled (CLIP_NEWS_TTS=off) — text headlines only")
+        return None
+    if pref == "kokoro":
+        try:
+            from kokoro_onnx import Kokoro
+            if KOKORO_MODEL.exists() and KOKORO_VOICES.exists():
+                _VOICE_CACHE["kokoro"] = Kokoro(str(KOKORO_MODEL), str(KOKORO_VOICES))
+                _VOICE_CACHE["engine"] = "kokoro"
+                log(f"kokoro voice loaded ({_os.environ.get('CLIP_NEWS_VOICE', 'am_michael')})")
+                return "kokoro"
+            log(f"kokoro model files missing under {KOKORO_MODEL.parent} — trying piper")
+        except Exception as e:
+            log(f"kokoro unavailable ({type(e).__name__}: {e}) — trying piper")
+    # piper fallback (or explicit CLIP_NEWS_TTS=piper)
     try:
         from piper import PiperVoice
         if VOICE.exists():
-            _VOICE_CACHE["v"] = PiperVoice.load(str(VOICE))
+            _VOICE_CACHE["piper"] = PiperVoice.load(str(VOICE))
+            _VOICE_CACHE["engine"] = "piper"
             log(f"piper voice loaded: {VOICE.name}")
-        else:
-            log(f"piper voice missing at {VOICE} — text-only headlines")
+            return "piper"
+        log(f"piper voice missing at {VOICE} — text-only headlines")
     except Exception as e:
         log(f"piper unavailable ({type(e).__name__}: {e}) — text-only headlines")
-    return _VOICE_CACHE["v"]
+    return None
 
 
 def synth_vo(text: str, out_wav: Path) -> float:
-    """Synthesize text -> wav; returns duration_s (0.0 = no VO)."""
-    v = _voice()
-    if v is None or not text.strip():
+    """Synthesize text -> wav via the engine chain; returns duration_s (0 = no VO)."""
+    text = (text or "").strip()
+    eng = _tts_engine()
+    if eng is None or not text:
         return 0.0
     try:
+        if eng == "kokoro":
+            import soundfile as sf
+            samples, sr = _VOICE_CACHE["kokoro"].create(
+                text,
+                voice=_os.environ.get("CLIP_NEWS_VOICE", "am_michael").strip() or "am_michael",
+                speed=float(_os.environ.get("CLIP_NEWS_TTS_SPEED", "1.0") or "1.0"))
+            sf.write(str(out_wav), samples, sr)
+            return len(samples) / float(sr)
         import wave
         with wave.open(str(out_wav), "wb") as w:
-            v.synthesize_wav(text.strip(), w)
+            _VOICE_CACHE["piper"].synthesize_wav(text, w)
         r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                             "-of", "csv=p=0", str(out_wav)], capture_output=True, text=True, timeout=30)
         return float(r.stdout.strip() or 0.0)
@@ -523,7 +561,7 @@ def main() -> int:
     kit_dir.mkdir(exist_ok=True)
     (kit_dir / f"{out.stem}.news.json").write_text(json.dumps({
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "vods": stems, "vo": bool(use_vo and _VOICE_CACHE["v"]),
+        "vods": stems, "vo": _VOICE_CACHE["engine"] if use_vo else None,
         "variant_b": str(b_out) if b_out else None,
         "stories": [{k: (str(v) if isinstance(v, Path) else v) for k, v in s.items()} for s in stories],
     }, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "file": "applause_1.mp3",
+      "source": "myinstants.com (meme-SFX host; owner-directed precedent = ddg_boom 2026-07-09)",
+      "note": "applause-4 (trimmed 4s+fade)",
+      "added": "2026-07-11 (owner req: more SFX for the density lever)"
+    },
+    {
+      "file": "applause_sitcom.mp3",
+      "source": "myinstants.com (meme-SFX host; owner-directed precedent = ddg_boom 2026-07-09)",
+      "note": "sitcom-laughing-and-applause (trimmed 4.5s+fade)",
+      "added": "2026-07-11 (owner req: more SFX for the density lever)"
+    }
+  ]
+}
