@@ -64,6 +64,11 @@
         "kind": "whoosh",
         "offset_s": 0.05,
         "gain_db": -7.0
+      },
+      {
+        "kind": "meme_scream",
+        "offset_s": 0.1,
+        "gain_db": -5.0
       }
     ],
     "reveal": [
@@ -110,6 +115,11 @@
         "kind": "scratch",
         "offset_s": 0.1,
         "gain_db": -6.0
+      },
+      {
+        "kind": "meme_scream",
+        "offset_s": 0.1,
+        "gain_db": -5.0
       }
     ]
   },
@@ -177,7 +187,7 @@
   "kind_sources": {
     "boom": {
       "have_assets": true,
-      "via": "alias->impact",
+      "via": "alias->impact +soundboard 2026-07-11",
       "label": "Vine boom / deep thud"
     },
     "impact": {
@@ -222,7 +232,7 @@
     },
     "applause": {
       "have_assets": true,
-      "via": "myinstants 2026-07-11",
+      "via": "myinstants 2026-07-11 +soundboard 2026-07-11",
       "label": "applause"
     },
     "boing": {
@@ -232,13 +242,18 @@
     },
     "pop": {
       "have_assets": false,
-      "via": "needs CC0",
+      "via": "needs CC0 +soundboard 2026-07-11",
       "label": "percussive pop/beep"
     },
     "bruh": {
       "have_assets": true,
-      "via": "myinstants 2026-07-11",
+      "via": "myinstants 2026-07-11 +soundboard 2026-07-11",
       "label": "'bruh' vocal"
+    },
+    "meme_scream": {
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
+      "label": "streamer meme screams (aughhh / needs-milk / why-running)"
     }
   }
 }
