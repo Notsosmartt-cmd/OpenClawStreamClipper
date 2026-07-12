@@ -201,7 +201,11 @@ def run_checks(root, today):
             if target in have:
                 inbound[target].add(rel)
             else:
-                if (src_base, target) in BROKEN_LINK_ALLOWLIST:
+                # log archives (log-2026-Q2 etc.) inherit log's allowlist — rotation
+                # moves entries VERBATIM (append-only), so their historical dead
+                # links move with them and must stay exempt, not get "fixed".
+                src_key = "log" if src_base.startswith("log-") else src_base
+                if (src_key, target) in BROKEN_LINK_ALLOWLIST:
                     continue
                 broken.append((rel, m.group(1).strip()))
 
@@ -209,7 +213,7 @@ def run_checks(root, today):
     orphans = []
     for rel in sorted(files):
         b = basename(rel)
-        if b in ORPHAN_EXEMPT:
+        if b in ORPHAN_EXEMPT or b.startswith("log-"):   # log archives = log
             continue
         if not inbound.get(b):
             orphans.append(rel)

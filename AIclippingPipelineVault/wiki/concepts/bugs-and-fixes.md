@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 66 bugs (highest number BUG 66) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 70 bugs (highest number BUG 70) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1717,6 +1717,50 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 > [!warning] Recurred (6/6 13:57 run) → central fix
 > The per-module patch wasn't enough: the next run hit the SAME failure in a **third** process — `[MMR] sentence-transformers unavailable (Could not load libtorchcodec ...)`. MMR diversity ranking lives in `scripts/lib/stages/stage4_diversity.py`, its own subprocess, which also imports the torch stack and didn't have the bootstrap. (`transformers`/`sentence-transformers` eagerly probe torchcodec on import, so ANY torch-stack stage breaks without the FFmpeg DLLs.)
 > **Central fix:** added `scripts/lib/sitecustomize.py` (just calls `ffmpeg_dll.enable_ffmpeg_dll_dir()`). `PATHS.child_env()` already puts `scripts/lib` on `PYTHONPATH` for every stage subprocess, so Python's `site` machinery **auto-imports this sitecustomize at startup in every stage process** — before any heavy import — covering M3, MMR, pyannote, and any future torch-stack stage in one place. Verified: with only `PYTHONPATH=scripts/lib`, a fresh interpreter auto-runs the hook and `import sentence_transformers` / `torchcodec` succeed with no explicit call. The explicit calls in speech.py/stage4_moments.py stay as idempotent belt-and-suspenders.
+
+---
+
+## BUG 70 — Stale dashboard process: NEW frontend + OLD routes looks like "missing data" (+ parent/child double-launch)
+
+> [!warning] Status: FIXED operationally 2026-07-12 (restart); landmine recorded — restart the dashboard after ANY dashboard code change
+
+**Symptom:** the owner opened the brand-new Reference Lab tab and it said there were no
+reference clips — despite 60 clips / 59 cards verified on disk minutes earlier.
+
+**Cause:** Flask reads `templates/index.html` and `static/*.js` from disk **per request**, but
+registers Python routes only **once at process start**. The running dashboard (started before
+the R6 commit) served the NEW tab UI whose API calls hit a backend with the OLD route table —
+`/api/reference/corpus` → 404 → the UI's empty state. A mixed old-backend/new-frontend
+split-brain that presents as *missing data*, not as *stale code*. Bonus find: the two stray
+`app.py` processes were a **parent/child pair across two interpreters** (`.venv` python had
+spawned the Program-Files python) — the [[#BUG 67]] double-launch pattern recurring.
+
+**Fix:** killed the process tree, started ONE fresh instance → API returned the full corpus
+(60/59/59). No code change. **Rule:** after any dashboard code change, kill every `app.py` and
+start exactly one.
+
+---
+
+## BUG 69 — Originality fingerprint's size/SAR jitter breaks compilation concat (misleading aac error)
+
+> [!warning] Status: FIXED 2026-07-11 (`news_compile.py` normalizes every piece to exact 1080×1920 SAR 1:1)
+
+**Symptom:** the first post-run news compile died at concat in 0.06 s leaving a 0-byte
+`STREAMERS UPDATE ….mp4`; the ffmpeg tail error was `aac … Could not open encoder before EOF …
+-22 (Invalid argument)` — which reads like an audio-encoder problem.
+
+**Cause:** the real error (buried above the tail) was `Input link in0:v0 parameters (size
+1076x1916, SAR 1:1) do not match … (1080x1920 …)`. The **originality fingerprint deliberately
+gives every finished clip slightly different dimensions** (1080×1920 vs 1076×1916) **and an odd
+SAR (10240:10239)** — a feature for platform-fingerprint evasion — and ffmpeg's `concat` filter
+refuses ANY parameter mismatch, then cascades a misleading encoder-init failure downstream. Any
+future tool that concatenates finished clips (stitches, compilations, montages) hits this class.
+
+**Fix:** every compilation piece normalizes first — story chain
+`scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:…,setsar=1`; intro thumbs
+normalized to 540×960 each + the grid re-scaled + `setsar=1`. Verified: A and B compilations
+build (44.9 s each). Diagnostic lesson: on ffmpeg filter-graph -22 failures, search the FULL
+stderr for `do not match` — the tail error lies.
 
 ---
 
