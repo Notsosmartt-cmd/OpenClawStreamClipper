@@ -74,6 +74,7 @@ build/
 models/whisper/
 models/piper/
 assets/piper/
+assets/kokoro/
 models/sentence-transformers/
 # Validation test artifacts
 test_gate.wav

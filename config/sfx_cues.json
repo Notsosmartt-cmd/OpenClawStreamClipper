@@ -201,13 +201,13 @@
       "label": "riser / build-up"
     },
     "scratch": {
-      "have_assets": false,
-      "via": "needs CC0",
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
       "label": "record scratch"
     },
     "sad_trombone": {
-      "have_assets": false,
-      "via": "needs CC0",
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
       "label": "sad trombone (wah-wah)"
     },
     "sad_violin": {
@@ -216,13 +216,13 @@
       "label": "sad violin"
     },
     "crickets": {
-      "have_assets": false,
-      "via": "needs CC0",
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
       "label": "crickets / awkward silence"
     },
     "applause": {
-      "have_assets": false,
-      "via": "needs CC0",
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
       "label": "applause"
     },
     "boing": {
@@ -236,8 +236,8 @@
       "label": "percussive pop/beep"
     },
     "bruh": {
-      "have_assets": false,
-      "via": "needs CC0",
+      "have_assets": true,
+      "via": "myinstants 2026-07-11",
       "label": "'bruh' vocal"
     }
   }

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "file": "sad_trombone_1.mp3",
+      "source": "myinstants.com (meme-SFX host; owner-directed precedent = ddg_boom 2026-07-09)",
+      "note": "sad-trombone (classic wah-wah)",
+      "added": "2026-07-11 (owner req: more SFX for the density lever)"
+    },
+    {
+      "file": "sad_trombone_2.mp3",
+      "source": "myinstants.com (meme-SFX host; owner-directed precedent = ddg_boom 2026-07-09)",
+      "note": "fail-horns variant (trimmed 4s+fade)",
+      "added": "2026-07-11 (owner req: more SFX for the density lever)"
+    }
+  ]
+}
