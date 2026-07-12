@@ -67,6 +67,11 @@ pipeline_process = None
 pipeline_lock = threading.Lock()
 pipeline_vod_name = None
 
+# Reference Lab (R6) background job handle: {"name", "proc", "started", "log", "_lf"}
+# or None. One at a time, mutually exclusive with the clip pipeline (GPU/LM Studio
+# contention). See dashboard/routes/reference_routes.py + pipeline_runner.is_reference_running.
+reference_job = None
+
 # --- Default configuration constants ---
 DEFAULT_ORIGINALITY = {
     "framing": "blur_fill",

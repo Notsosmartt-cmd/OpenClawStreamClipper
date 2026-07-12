@@ -236,6 +236,23 @@ Approve / Reject / Later controls. No external CDNs (dashboard is local-only).
 **Effort:** ~one session once R0–R3 tools exist (the tab only shells to them). **Gate:** none
 beyond the R1/R3 gates it surfaces — it's a control surface, not new behavior.
 
+> [!note] R6 SHIPPED 2026-07-12 — replaced the old Clip Forensics tab
+> The **Reference Lab** tab now drives the whole loop from the dashboard. Built:
+> `dashboard/routes/reference_routes.py` (10 endpoints: corpus, decompose, cards, our-cards,
+> diff, stop, job, card, report, approve) + `scripts/research/decompose_corpus.py` (R0 batch —
+> the dashboard can't run a shell loop) + `dashboard/static/modules/reference-panel.js` + the
+> tab markup (reuses the `.fx-*` styles). The old `forensics_routes.py`/`forensics-panel.js`
+> were **deleted** (the single-clip decompose is subsumed by the corpus "Decompose" button).
+> **Job model:** one background subprocess at a time, streamed to `reference_job.log` the UI
+> polls; mutual-exclusion 409 BOTH ways with the clip pipeline via `is_reference_running()`
+> (added to `pipeline_runner`) + `_state.reference_job`; bare-metal only; Stop button (taskkill
+> tree). **Approve/reject** writes verdicts straight into the R4 queue `diff_approvals.json` —
+> the report viewer joins each gap item to its current verdict; nothing auto-applies (an agent
+> works the queue into config commits). **Verified live** (booted on :5099): corpus 60 clips /
+> 59 carded, the newest gap report loads with the already-approved SFX items showing "approved",
+> job idle, tab served. Owner UX: open Reference Lab → 1·Decompose → 2·Build cards → pick a clip
+> run → 3·Card our clips → 4·Gap report → approve/reject each lever — no CLI.
+
 ---
 
 ## Sequencing, effort, gates

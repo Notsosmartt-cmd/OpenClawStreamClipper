@@ -15,18 +15,18 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 - `dashboard/_state.py` — shared mutable state (paths, defaults, pipeline_process)
 - `dashboard/config_io.py` — load/save helpers for config/{models,hardware,paths,originality}.json
 - `dashboard/pipeline_runner.py` — DetachedDockerPipeline class, spawn/kill/poll, LM Studio reachability
-- `dashboard/routes/{pipeline,vods,models,hardware,paths,originality,music,assets,library,forensics}_routes.py` — one Flask blueprint per URL domain
-- `dashboard/templates/index.html` — **tabbed** single-page UI (Clipper | Clip Forensics); uses `<script type="module">`
+- `dashboard/routes/{pipeline,vods,models,hardware,paths,originality,music,assets,library,reference}_routes.py` — one Flask blueprint per URL domain (`reference_routes` replaced `forensics_routes` 2026-07-12)
+- `dashboard/templates/index.html` — **tabbed** single-page UI (Clipper | **Reference Lab**); uses `<script type="module">`
 - `dashboard/static/app.js` — entry module wiring window.* handlers + DOMContentLoaded + tab switching
-- `dashboard/static/modules/*.js` — ES modules (util, state, pipeline-ui, vods-panel, models-panel, hardware-panel, folders-panel, assets-panel, **forensics-panel**)
+- `dashboard/static/modules/*.js` — ES modules (util, state, pipeline-ui, vods-panel, models-panel, hardware-panel, folders-panel, assets-panel, **reference-panel**)
 - `dashboard/static/style.css` — Studio theme (~420 lines), teal/zinc, written to match the existing JS class names
 
 > [!note] Studio theme redesign (2026-06-06)
 > `templates/index.html` + `static/style.css` were replaced from an imported design package (Anthropic design artifact → `_design_handoff/`, git-ignored). The HTML was **merged, not overwritten** — every functional `id`/handler was preserved (all `btn-*` `addEventListener` targets, `vod-select-all` + the multi-VOD checkbox column, `chk-arc-stitch`, the originality controls, models/hardware/folders/assets panels, stage dots, SSE log). Verified all 11 `app.js` wired IDs exist and no statically-referenced JS id is missing. Retained on top of the design: the detailed **Pass B gate** option labels + tooltip, and hover **tooltips** on the originality controls. Emoji `iconMap` in `models-panel.js` blanked (the theme hides `.model-card-icon`). Fonts load via Google `@import` (graceful fallback to `system-ui`/monospace offline). A green-terminal alternative theme also shipped in the package but the Studio (teal) variant is the one implemented.
 
-### Clip Forensics tab (added 2026-06-21)
+### Reference Lab tab (2026-07-12 — replaced the Clip Forensics tab)
 
-The dashboard is now **tabbed** — a top nav (`.tabs` / `.tab-btn` in `index.html`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (everything above, wrapped in `#view-clipper`) and a new **Clip Forensics** view (`#view-forensics`). Tab state is client-side only (CSS `.view`/`.view.active` show/hide); the forensics clip list lazy-loads on first open.
+The dashboard is **tabbed** — a top nav (`.tabs` / `.tab-btn`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (`#view-clipper`) and the **Reference Lab** view (`#view-reference`, lazy-loaded on first open). The old single-clip **Clip Forensics** tab (2026-06-21, `forensics_routes.py`/`forensics-panel.js`) was **deleted** and superseded — its decompose capability is now the Reference Lab's "Decompose" button. The Reference Lab drives the full reverse-engineering loop ([[concepts/plan-reference-deconstruction-2026-07]] R6): decompose → attribute cards → card-our-clips → gap report → approve/reject, each heavy step a bounded background job (`reference_routes.py`, 10 endpoints; `reference-panel.js`), one at a time and mutually 409-excluded with the clip pipeline via `is_reference_running()` + `_state.reference_job`. Approvals write to `clips/.diagnostics/diff_approvals.json` (the R4 queue); nothing auto-applies.
 
 The Forensics tab drives the offline decomposer `scripts/research/clip_forensics.py` ([[concepts/plan-clip-forensics]], [[entities/audio-sense-module]], [[entities/visual-sense-module]]) so the owner can iterate without the CLI. Backend `routes/forensics_routes.py`:
 
