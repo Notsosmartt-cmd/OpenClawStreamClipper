@@ -151,6 +151,22 @@ Primary/licensing (best verified): [Pixabay SFX](https://pixabay.com/sound-effec
 Convention/practitioner: [Epidemic Sound — meme SFX](https://www.epidemicsound.com/youtube/meme-sound-effects/), [Epidemic Sound — TikTok SFX](https://www.epidemicsound.com/tiktok/tik-tok-sound-effects/), [Uppbeat meme SFX](https://uppbeat.io/blog/sound-effects/meme-sound-effects), [Voicy meme sounds](https://blog.voicy.network/memes/sounds/top-meme-sound-effects-for-editing/), [KnowYourMeme — Vine boom](https://knowyourmeme.com/memes/vine-thud-boom-sound-effect), [SFXEngine timing](https://sfxengine.com/blog/sound-effects-timing-in-comedy-videos), [FlexClip transitions](https://www.flexclip.com/learn/transition-sound-effects.html), [Krotos mix balance](https://krotos.studio/blog/how-to-balance-music-and-sound-effects), [WeVideo audio levels](https://www.wevideo.com/blog/how-to-set-audio-levels).
 Academic: [FunnyNet (ACCV 2022)](https://openaccess.thecvf.com/content/ACCV2022/papers/Liu_FunnyNet_Audiovisual_Learning_of_Funny_Moments_in_Videos_ACCV_2022_paper.pdf), [FunnyNet-W (arXiv 2401.04210)](https://arxiv.org/pdf/2401.04210).
 
+## Streamer-soundboard pack (2026-07-11, owner req: "funny streamer soundboard sounds")
+
+11 niche staples added (myinstants CDN, same curl route), mapped by beat semantics:
+- **boom** (punchline — fires every funny/reactive clip) += **metal_pipe** (the jixaw meme) →
+  rotation of 3 with ddg/vine. *The one bold change to an owner-curated pool — one manifest
+  line to remove if it doesn't land.*
+- **pop** (punchline_light — the 3×/clip secondary-peak lane) += **boowomp**, **taco_bong** →
+  6-file rotation. **Placement doctrine: NO vocal memes in this lane** (it fires often and is
+  ducked under speech — vocal sounds would fight the streamer's words).
+- **bruh** (disbelief beat) += **AYO?!**, **nuh_uh**, **EMOTIONAL DAMAGE**, **sheesh** (trimmed)
+  → 5-file pool, ready the moment the disbelief beat is wired to a category.
+- **applause** (reveal — LIVE on storytime) += **anime_wow** → 3-file rotation.
+- NEW **meme_scream** kind (inventory): **AUGHHH**, **he_needs_some_milk** (slap+line),
+  **why_are_you_running** — appended as later options on the fail/disbelief beats
+  (never auto-picked while scratch/bruh are stocked; wiring those beats = config edit).
+
 ## Taxonomy fully stocked (2026-07-11, owner req: "find more sound effects")
 
 Five NEW kinds seeded from myinstants direct CDN URLs (curl w/ browser UA; the HTML pages 403

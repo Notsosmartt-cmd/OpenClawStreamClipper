@@ -1,19 +1,35 @@
 {
   "version": 2,
-  "_note": "Vine-boom / deep-thud kind for the punchline beat. LOADER SEMANTICS (sfx_inject._candidates_for_kind): when this manifest exists, ONLY its entries form the pick pool — new files MUST be added here. 2026-07-09 owner direction: seeded with the DDG boom (trimmed to a 2.5s hit) + the vine boom from the owner's reference set, alongside the CC0 impact aliases; per-seed pick rotates across all five.",
+  "_note": "Vine-boom / deep-thud kind for the punchline beat. LOADER SEMANTICS (sfx_inject._candidates_for_kind): when this manifest exists, ONLY its entries form the pick pool \u2014 new files MUST be added here. 2026-07-09 owner direction: seeded with the DDG boom (trimmed to a 2.5s hit) + the vine boom from the owner's reference set, alongside the CC0 impact aliases; per-seed pick rotates across all five.",
   "entries": [
     {
       "file": "ddg_boom.mp3",
-      "tags": ["boom", "ddg", "meme", "bass"],
+      "tags": [
+        "boom",
+        "ddg",
+        "meme",
+        "bass"
+      ],
       "license": "meme sound, owner-directed 2026-07-09",
       "source": "https://www.myinstants.com/media/sounds/ddg-boom.mp3 (trimmed 2.5s + fade)"
     },
     {
       "file": "vine_boom.mp3",
-      "tags": ["boom", "vine", "meme", "thud"],
+      "tags": [
+        "boom",
+        "vine",
+        "meme",
+        "thud"
+      ],
       "license": "meme sound, owner-directed 2026-07-09",
       "source": "reference_clips/sfx_reference/vine_boom.mp3 (owner's set)"
+    },
+    {
+      "file": "metal_pipe.mp3",
+      "source": "myinstants.com (streamer-soundboard staples, owner req 2026-07-11)",
+      "note": "jixaw metal pipe falling - THE meme punchline hit",
+      "added": "2026-07-11"
     }
   ],
-  "_removed_2026_07_09": "The 3 CC0 impact aliases (cannon / explosion_ls100155 / muffled_distant_explosion) were dropped from the rotation per owner review of run 20260710_005533: the Foot Bag clip drew explosion_ls100155 and the owner found it 'a tad bit quiet — the vine boom or ddg boom should probably replace it for better engagement'. Pool is now the two meme booms only; the CC0 files remain in assets/sfx/impact/ if ever needed."
+  "_removed_2026_07_09": "The 3 CC0 impact aliases (cannon / explosion_ls100155 / muffled_distant_explosion) were dropped from the rotation per owner review of run 20260710_005533: the Foot Bag clip drew explosion_ls100155 and the owner found it 'a tad bit quiet \u2014 the vine boom or ddg boom should probably replace it for better engagement'. Pool is now the two meme booms only; the CC0 files remain in assets/sfx/impact/ if ever needed."
 }
