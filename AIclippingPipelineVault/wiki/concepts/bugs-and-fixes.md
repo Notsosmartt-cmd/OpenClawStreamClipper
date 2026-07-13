@@ -1768,6 +1768,36 @@ corrupt audio (valid 360 MB WAV), the resampler (already the fast polyphase path
 > a long file's duration is needed — the librosa call is convenient but can hang on multi-hour
 > audio.
 
+### BUG 71b — the SECOND bottleneck: pathological 16 kHz→22.05 kHz resample (~20 min per 3 h VOD)
+
+> [!success] Status: FIXED + VERIFIED 2026-07-13 (`audio_events.py` keeps the native rate when ≥16 kHz). Load time on the exact 3 h file: **~20 min → 0.3 s** (measured live).
+
+After the `soundfile.info` fix (above) removed the get_duration hang, a **fresh owner-launched
+run stalled AGAIN** at the same visible point — but now *past* get_duration, pinned at **1 core
+for 17+ min** in `_load_audio_fast`'s resample step (the `[AUDIO_EVENTS] loaded …` line never
+printed; `[AUDIO_EVENTS] loading …` did). Root cause: `SAMPLE_RATE = 22050` but Stage 2 extracts
+the WAV at **16000 Hz** (for Whisper), so the scan resampled 16000→22050 via
+`librosa.resample(res_type="polyphase")`. That ratio is **up=441/down=320** (gcd 50), and
+`scipy.signal.resample_poly`'s FIR cost scales with the **up-factor** — so up=441 on 180 M samples
+is ~441× the work of a trivial ratio, ≈20 min single-threaded on a 3 h VOD. (The old "~7-10 s"
+code comment was simply wrong for this ratio; it must have been measured on a matching-rate file
+that hit the early-return.)
+
+**Fix:** the audio-event detectors (HPSS / onset / RMS / crowd) are **sample-rate-agnostic** —
+they take `sr` as a parameter and every downstream consumer (`_build_window_tasks`, the detectors)
+uses the RETURNED sr. So `_load_audio_fast` now **keeps the native rate when it's already ≥16 kHz
+and skips the resample entirely** (the 22050 target only ever existed for opportunistic
+`scan_music.py` cache reuse, not correctness). The `librosa.load` fallback likewise switched to
+`sr=None`. **Verified live:** the exact file that took ~20 min now loads in **0.3 s** and proceeds
+straight into the 4-thread window scan. This is the change that actually makes 9-VOD `--force`
+batches practical (each VOD's audio scan: ~20 min → seconds-of-load + a few-min threaded scan).
+
+> [!note] Combined lesson (71 + 71b)
+> One "Stage 2 never finishes" symptom hid **two independent slow steps stacked** — a hanging
+> `get_duration` AND a pathological resample. Fixing one revealed the other. When a stage is
+> silent, bisect with a staged probe and don't assume a single cause; and be suspicious of any
+> resample whose rate ratio has a large numerator after gcd reduction.
+
 ---
 
 ## BUG 70 — Stale dashboard process: NEW frontend + OLD routes looks like "missing data" (+ parent/child double-launch)
