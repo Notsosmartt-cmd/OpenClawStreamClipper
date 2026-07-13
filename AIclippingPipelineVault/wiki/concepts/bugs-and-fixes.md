@@ -1720,59 +1720,53 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 
 ---
 
-## BUG 71 — Dashboard-launched pipeline runs missing `KMP_DUPLICATE_LIB_OK` — Stage 2 audio-events scan can silently stall (no crash, no output, ~1 core spinning)
+## BUG 71 — `librosa.get_duration(path=...)` hangs indefinitely on long WAVs → Stage 2 audio-events scan never starts on 3 h+ VODs (silent, ~1 core spinning)
 
-> [!warning] Status: defensive fix SHIPPED 2026-07-13 (`dashboard/pipeline_runner.py`); NOT YET CONFIRMED as root cause — the stalled run diagnosed below predates the fix (env can't be injected into an already-running process); needs a fresh run to confirm resolution
+> [!success] Status: ROOT CAUSE FOUND + FIXED 2026-07-13 (`scripts/lib/audio_events.py` — use `soundfile.info` for duration, not `librosa.get_duration`). Empirically reproduced AND verified fixed on the exact stalling file.
 
-**Symptom:** owner ran a 9-VOD `--force` batch from the dashboard. Stage 1 (Discovery) and
-Stage 2's Whisper transcription completed normally and were logged/cached correctly (3.1 h VOD,
-6039 segments, ~6.3 min). The very next step — Stage 2's audio-events scan (Tier-2 M2,
-`audio_events.py`) — then sat for **18+ minutes producing zero log output**, while the child
-process consumed a **steady ~1 CPU core** (not 0 — not a hard freeze) and the GPU stayed idle.
-The owner saw no resource usage and assumed the run was dead.
+> [!warning] First diagnosis was WRONG — kept as a lesson. The initial theory (missing
+> `KMP_DUPLICATE_LIB_OK` / OpenMP double-init) was **disproven by isolation testing**: the hang
+> reproduces identically WITH the flag set. The `env.setdefault("KMP_DUPLICATE_LIB_OK","TRUE")`
+> added to `pipeline_env()` was left in place (harmless, matches `reference_routes.py`) but it is
+> NOT this bug's fix. Lesson: reproduce + bisect before shipping a fix — a plausible theory that
+> pattern-matches a known failure class ("torch+librosa OpenMP on Windows") was simply wrong here.
 
-**Diagnosis (live, via process inspection — not guessed):**
-1. `/api/status` + `Get-CimInstance Win32_Process` confirmed a REAL, non-zombie process tree
-   (dashboard → `run_pipeline.py` → `audio_events.py`), both `Responding: True`.
-2. The persistent log's last line was the `[PIPELINE]` announcement printed **before** spawning
-   `audio_events.py` — nothing from inside that subprocess followed.
-3. `audio_events.py`'s own startup line (`"[AUDIO_EVENTS] loading Ns of audio..."`,
-   `scripts/lib/audio_events.py` ~line 815) is **always printed within seconds of entry and
-   explicitly `sys.stderr.flush()`ed** — `common.run_module` streams the child's combined
-   stdout/stderr line-by-line, so a flushed line reaches the log almost instantly under normal
-   operation. Its total absence for 18+ min means the child never reached that line — the stall
-   is in Python/library import, before any of the instrumented code runs.
-4. Sampled CPU over an 8 s window: **0.99 effective cores** out of 32 logical cores — consistent
-   with a single-threaded stall, not the expected 3–4-thread scan (`_resolve_thread_count()`
-   would pick `min(4, cores-2)=4` on this machine).
-5. Ruled out: HF network stall (huggingface.co reachable in 81 ms, CLAP checkpoint already
-   cached locally), corrupt/incomplete audio (`audio.wav` was 360 MB, exactly matching a
-   16 kHz mono WAV for the VOD's 11,223 s duration, `mtime` well before the subprocess started),
-   the slow-resampler path (`_load_audio_fast`'s polyphase resample is already the shipped
-   default, ~7-10 s expected for a VOD this length), and no watchdog/timeout exists around this
-   specific `common.run_module` call to have force-killed it.
+**Symptom:** owner ran a 9-VOD `--force` batch from the dashboard. Stage 1 + Stage 2's Whisper
+transcription completed and cached normally (3.1 h VOD, 6039 segments, ~6.3 min). The next step —
+Stage 2's audio-events scan (Tier-2 M2, `audio_events.py`) — then sat for **18+ minutes with zero
+log output**, ~1 CPU core spinning, GPU idle. Reproduced across two independent runs (both froze
+at the identical line) → deterministic, not transient.
 
-**Likely cause:** `dashboard/pipeline_runner.py::pipeline_env()` (the env builder for the
-bare-metal native spawn — confirmed this run's path via `/api/status` `"mode":"local"`) never
-set `KMP_DUPLICATE_LIB_OK`. `audio_events.py` imports both `torch` (transcription/CLAP,
-MKL-linked OpenMP) and `librosa`/`numba` (HPSS/onset detection, its own OpenMP runtime) —
-loading two OpenMP runtimes in one process without this flag is a known Windows failure mode
-that manifests as a **silent stall**, not a crash (`OMP: Error #15` when it errors loudly; a
-silent hang is the documented worse case). `dashboard/routes/reference_routes.py` already sets
-`KMP_DUPLICATE_LIB_OK=TRUE` for Reference Lab background jobs — the main clip pipeline spawn
-path never had the equivalent.
+**Root cause (bisected, not guessed):** a staged probe on the exact 360 MB / 11,264 s 16 kHz WAV
+showed every step completing **instantly** — `import numpy`, `import soundfile`, `soundfile.info`
+(returned `16000 Hz, 180221611 frames = 11264 s` immediately from the header), `import librosa` —
+and then **`librosa.get_duration(path=audio_path)` hung forever** (killed at 90 s, and separately
+at 120 s / 150 s in the full script). That call is `audio_events.py`'s duration resolver when the
+caller passes no `--duration` (Stage 2 doesn't). On a long WAV, librosa's `get_duration(path=…)`
+does NOT reliably use the cheap header path — it can fall through to loading/decoding the whole
+file (or an O(n) internal path) that never returns in practical time for a 3-hour clip. The
+scan's own first `print` sits AFTER this call, which is why nothing ever reached the log.
 
-**Fix:** `pipeline_env()` now sets `env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")` right after
-`os.environ.copy()`, matching the Reference Lab's job env. Additive and safe (a `setdefault`,
-so it never overrides an operator's own setting) — cannot regress a currently-working run.
-**Caveat:** this could NOT be applied retroactively to the already-running stalled process (env
-vars are fixed at process launch); the owner's in-flight run needed a manual decision
-(stop + restart, since Whisper's transcription for the affected VOD was already cached to
-`vods/.transcriptions/` and would not be redone). **Open:** the next dashboard-launched run
-should be watched to confirm the stall doesn't recur — if it does, the OpenMP theory is wrong
-and the real cause is still unknown (candidates: Windows Defender real-time scan on a cold
-torch/transformers import, or a genuine `librosa.get_duration`/import slowdown specific to
-this VOD).
+**Fix:** `audio_events.py` now resolves duration from the WAV **header via `soundfile.info`**
+(`frames / samplerate`) FIRST, only falling back to `librosa.get_duration` if soundfile can't
+open the file. `soundfile.info` is header-only and returns in microseconds regardless of length.
+
+**Verified:** re-ran the FULL `audio_events.py` on the exact file that hung forever — it now
+prints `[AUDIO_EVENTS] loading 11264s of audio into memory for 1124 windows...` within seconds
+and proceeds into the scan (vs. never printing before). The KMP flag was tested and made **no
+difference** (hung with it set), confirming it was a red herring.
+
+**Diagnosis trail (for similar future symptoms):** the tell was that `audio_events.py`'s startup
+`print` is `sys.stderr.flush()`ed and `common.run_module` streams child output line-by-line, so
+its *total absence* meant the child never reached that line → the stall is BEFORE the first
+instrumented statement → bisect the pre-print imports/calls with a staged probe (the technique
+that found it in minutes). Also correctly ruled out earlier: HF network (reachable, CLAP cached),
+corrupt audio (valid 360 MB WAV), the resampler (already the fast polyphase path).
+
+> [!note] Any long-WAV duration lookup is suspect
+> Prefer `soundfile.info(path).frames / .samplerate` over `librosa.get_duration(path=…)` anywhere
+> a long file's duration is needed — the librosa call is convenient but can hang on multi-hour
+> audio.
 
 ---
 
