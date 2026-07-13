@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-07-09
+updated: 2026-07-13
 ---
 
 # Bugs and Fixes
@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 70 bugs (highest number BUG 70) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 71 bugs (highest number BUG 71) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1717,6 +1717,62 @@ The same mechanism affects Stage 6: `VISION_PER_MOMENT_TIMEOUT=90` was too short
 > [!warning] Recurred (6/6 13:57 run) → central fix
 > The per-module patch wasn't enough: the next run hit the SAME failure in a **third** process — `[MMR] sentence-transformers unavailable (Could not load libtorchcodec ...)`. MMR diversity ranking lives in `scripts/lib/stages/stage4_diversity.py`, its own subprocess, which also imports the torch stack and didn't have the bootstrap. (`transformers`/`sentence-transformers` eagerly probe torchcodec on import, so ANY torch-stack stage breaks without the FFmpeg DLLs.)
 > **Central fix:** added `scripts/lib/sitecustomize.py` (just calls `ffmpeg_dll.enable_ffmpeg_dll_dir()`). `PATHS.child_env()` already puts `scripts/lib` on `PYTHONPATH` for every stage subprocess, so Python's `site` machinery **auto-imports this sitecustomize at startup in every stage process** — before any heavy import — covering M3, MMR, pyannote, and any future torch-stack stage in one place. Verified: with only `PYTHONPATH=scripts/lib`, a fresh interpreter auto-runs the hook and `import sentence_transformers` / `torchcodec` succeed with no explicit call. The explicit calls in speech.py/stage4_moments.py stay as idempotent belt-and-suspenders.
+
+---
+
+## BUG 71 — Dashboard-launched pipeline runs missing `KMP_DUPLICATE_LIB_OK` — Stage 2 audio-events scan can silently stall (no crash, no output, ~1 core spinning)
+
+> [!warning] Status: defensive fix SHIPPED 2026-07-13 (`dashboard/pipeline_runner.py`); NOT YET CONFIRMED as root cause — the stalled run diagnosed below predates the fix (env can't be injected into an already-running process); needs a fresh run to confirm resolution
+
+**Symptom:** owner ran a 9-VOD `--force` batch from the dashboard. Stage 1 (Discovery) and
+Stage 2's Whisper transcription completed normally and were logged/cached correctly (3.1 h VOD,
+6039 segments, ~6.3 min). The very next step — Stage 2's audio-events scan (Tier-2 M2,
+`audio_events.py`) — then sat for **18+ minutes producing zero log output**, while the child
+process consumed a **steady ~1 CPU core** (not 0 — not a hard freeze) and the GPU stayed idle.
+The owner saw no resource usage and assumed the run was dead.
+
+**Diagnosis (live, via process inspection — not guessed):**
+1. `/api/status` + `Get-CimInstance Win32_Process` confirmed a REAL, non-zombie process tree
+   (dashboard → `run_pipeline.py` → `audio_events.py`), both `Responding: True`.
+2. The persistent log's last line was the `[PIPELINE]` announcement printed **before** spawning
+   `audio_events.py` — nothing from inside that subprocess followed.
+3. `audio_events.py`'s own startup line (`"[AUDIO_EVENTS] loading Ns of audio..."`,
+   `scripts/lib/audio_events.py` ~line 815) is **always printed within seconds of entry and
+   explicitly `sys.stderr.flush()`ed** — `common.run_module` streams the child's combined
+   stdout/stderr line-by-line, so a flushed line reaches the log almost instantly under normal
+   operation. Its total absence for 18+ min means the child never reached that line — the stall
+   is in Python/library import, before any of the instrumented code runs.
+4. Sampled CPU over an 8 s window: **0.99 effective cores** out of 32 logical cores — consistent
+   with a single-threaded stall, not the expected 3–4-thread scan (`_resolve_thread_count()`
+   would pick `min(4, cores-2)=4` on this machine).
+5. Ruled out: HF network stall (huggingface.co reachable in 81 ms, CLAP checkpoint already
+   cached locally), corrupt/incomplete audio (`audio.wav` was 360 MB, exactly matching a
+   16 kHz mono WAV for the VOD's 11,223 s duration, `mtime` well before the subprocess started),
+   the slow-resampler path (`_load_audio_fast`'s polyphase resample is already the shipped
+   default, ~7-10 s expected for a VOD this length), and no watchdog/timeout exists around this
+   specific `common.run_module` call to have force-killed it.
+
+**Likely cause:** `dashboard/pipeline_runner.py::pipeline_env()` (the env builder for the
+bare-metal native spawn — confirmed this run's path via `/api/status` `"mode":"local"`) never
+set `KMP_DUPLICATE_LIB_OK`. `audio_events.py` imports both `torch` (transcription/CLAP,
+MKL-linked OpenMP) and `librosa`/`numba` (HPSS/onset detection, its own OpenMP runtime) —
+loading two OpenMP runtimes in one process without this flag is a known Windows failure mode
+that manifests as a **silent stall**, not a crash (`OMP: Error #15` when it errors loudly; a
+silent hang is the documented worse case). `dashboard/routes/reference_routes.py` already sets
+`KMP_DUPLICATE_LIB_OK=TRUE` for Reference Lab background jobs — the main clip pipeline spawn
+path never had the equivalent.
+
+**Fix:** `pipeline_env()` now sets `env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")` right after
+`os.environ.copy()`, matching the Reference Lab's job env. Additive and safe (a `setdefault`,
+so it never overrides an operator's own setting) — cannot regress a currently-working run.
+**Caveat:** this could NOT be applied retroactively to the already-running stalled process (env
+vars are fixed at process launch); the owner's in-flight run needed a manual decision
+(stop + restart, since Whisper's transcription for the affected VOD was already cached to
+`vods/.transcriptions/` and would not be redone). **Open:** the next dashboard-launched run
+should be watched to confirm the stall doesn't recur — if it does, the OpenMP theory is wrong
+and the real cause is still unknown (candidates: Windows Defender real-time scan on a cold
+torch/transformers import, or a genuine `librosa.get_duration`/import slowdown specific to
+this VOD).
 
 ---
 

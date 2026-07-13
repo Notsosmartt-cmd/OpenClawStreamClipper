@@ -136,6 +136,14 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     `stage4_moments.py`'s own default kicks in (``off``).
     """
     env = os.environ.copy()
+    # OpenMP double-init guard (2026-07-13): torch + numba/librosa (audio_events.py's
+    # CLAP/HPSS path) can each load their own OpenMP runtime; on Windows without this,
+    # that can silently STALL a subprocess before it prints anything (no crash, no
+    # error — just ~1 core spinning forever). reference_routes.py already sets this
+    # for Reference Lab jobs; the main clip pipeline never did. Diagnosed live: a
+    # 9-VOD --force batch run sat in Stage 2's audio-events scan for 18+ min with
+    # zero output past the always-flushed "loading audio..." line.
+    env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     env["CLIP_VODS_DIR"] = str(_state.VODS_DIR)
     env["CLIP_CLIPS_DIR"] = str(_state.CLIPS_DIR)
     env["CLIP_WORK_DIR"] = str(_state.TEMP_DIR)
