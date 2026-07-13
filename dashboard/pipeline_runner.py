@@ -136,14 +136,21 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     `stage4_moments.py`'s own default kicks in (``off``).
     """
     env = os.environ.copy()
-    # OpenMP double-init guard (2026-07-13): torch + numba/librosa (audio_events.py's
-    # CLAP/HPSS path) can each load their own OpenMP runtime; on Windows without this,
-    # that can silently STALL a subprocess before it prints anything (no crash, no
-    # error — just ~1 core spinning forever). reference_routes.py already sets this
-    # for Reference Lab jobs; the main clip pipeline never did. Diagnosed live: a
-    # 9-VOD --force batch run sat in Stage 2's audio-events scan for 18+ min with
-    # zero output past the always-flushed "loading audio..." line.
+    # OpenMP double-init guard: harmless belt-and-suspenders (matches the
+    # Reference Lab job env). NOTE: this was NOT the cause of the 2026-07-13
+    # Stage-2 stall — that was BUG 71c (numba JIT cache unwritable under the
+    # Program-Files interpreter; see NUMBA_CACHE_DIR below, the real fix).
     env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    # BUG 71c: writable numba JIT cache — without it, any librosa-importing
+    # child (audio_events, scan_music, …) spins ~minutes-to-hours at 1 core in
+    # numba's cache-writability probe when Python lives under C:\Program Files.
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(_state.PROJECT_DIR / "scripts" / "lib"))
+        from paths import ensure_numba_cache_env as _ence
+        _ence(env)
+    except Exception:
+        pass
     env["CLIP_VODS_DIR"] = str(_state.VODS_DIR)
     env["CLIP_CLIPS_DIR"] = str(_state.CLIPS_DIR)
     env["CLIP_WORK_DIR"] = str(_state.TEMP_DIR)
@@ -452,6 +459,15 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
         return proc
 
     # Inside Docker — run directly
+    # BUG 72: before a fresh native launch, clear any orphaned stage children a
+    # previous non-tree stop / crash left behind — they still write into the
+    # shared work dir and corrupt this run's Stage-2 artifacts.
+    try:
+        _n = sweep_orphan_stage_children()
+        if _n:
+            print(f"[SWEEP] killed {_n} orphaned pipeline stage child(ren) before launch")
+    except Exception:
+        pass
     kwargs = dict(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -471,10 +487,17 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
 
 
 def kill_pipeline(proc) -> None:
-    """Kill pipeline process tree across platforms."""
+    """Kill pipeline process tree across platforms.
+
+    BUG 72 (2026-07-13): on Windows this used ``proc.terminate()``, which kills
+    ONLY run_pipeline.py — its stage children (audio_events.py, stage4_moments.py,
+    …) survived as orphans that kept spinning AND kept writing into the SHARED
+    work dir, colliding with the next launch's Stage-2 artifacts. taskkill /T
+    takes the whole tree (same as the marker-pid path below always did)."""
     try:
         if os.name == "nt":
-            proc.terminate()
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=15)
             if use_docker_exec():
                 container = get_docker_container()
                 if container:
@@ -560,6 +583,45 @@ def _marker_pid() -> int | None:
     return None
 
 
+def sweep_orphan_stage_children() -> int:
+    """BUG 72: kill leftover pipeline STAGE children whose run_pipeline parent is
+    dead (a pre-fix non-tree stop, or a crash, left audio_events.py / stage*.py
+    orphans spinning — and worse, still WRITING into the shared work dir, which
+    corrupts the next run's Stage-2 artifacts). Called before every native spawn
+    and after every stop. Conservative: only kills python processes running
+    scripts/lib/** or scripts/pipeline/** of THIS repo whose parent pid is gone
+    (Reference Lab jobs live under scripts/research/ and are never touched).
+    Failure-soft; returns the number killed."""
+    n = 0
+    try:
+        import psutil
+        repo = str(_state.PROJECT_DIR).lower()
+        child_markers = ("scripts\\lib\\", "scripts/lib/", "scripts\\pipeline\\", "scripts/pipeline/")
+        for p in psutil.process_iter(["pid", "ppid", "name", "cmdline"]):
+            try:
+                name = (p.info["name"] or "").lower()
+                if not name.startswith("python"):
+                    continue
+                cmd = " ".join(p.info["cmdline"] or [])
+                cl = cmd.lower()
+                if repo not in cl:
+                    continue
+                if "run_pipeline.py" in cl or "app.py" in cl or "scripts\\research" in cl or "scripts/research" in cl:
+                    continue
+                if not any(m in cl for m in (mm.lower() for mm in child_markers)):
+                    continue
+                ppid = p.info["ppid"]
+                if ppid and psutil.pid_exists(ppid):
+                    continue          # parent alive (a healthy run) — leave it
+                p.kill()
+                n += 1
+            except Exception:
+                continue
+    except Exception:
+        return n
+    return n
+
+
 def is_reference_running() -> bool:
     """True if a Reference Lab (R6) background job is active. Consulted by the clip
     routes so the two never contend for the GPU / LM Studio; the Reference Lab
@@ -599,6 +661,15 @@ def stop_running_pipeline() -> bool:
             stopped = True
         except Exception:
             pass
+    # BUG 72: final hygiene pass — anything the tree-kills missed (e.g. a child
+    # re-parented after its parent died pre-kill) gets swept so a Stop always
+    # leaves the machine clean for the next launch.
+    try:
+        _n = sweep_orphan_stage_children()
+        if _n:
+            print(f"[SWEEP] killed {_n} orphaned pipeline stage child(ren) after stop")
+    except Exception:
+        pass
     return stopped
 
 
