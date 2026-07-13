@@ -3,7 +3,7 @@ title: "Plan — Reference-Clip Deconstruction: Cards → Diff → Apply (learni
 type: concept
 tags: [plan, learning, reference-clips, forensics, attribute-cards, diff, few-shot, stage6]
 status: in-progress
-updated: 2026-07-11
+updated: 2026-07-13
 ---
 
 > [!note] R0 + R1 IN PROGRESS (2026-07-11)
@@ -269,6 +269,26 @@ beyond the R1/R3 gates it surfaces — it's a control surface, not new behavior.
 > held mid-job, test instance shut down clean, owner's dashboard restarted (BUG 70 rule).
 > Note: a re-run of Compare mints a NEW report date, so verdicts start fresh (history persists
 > under the old date in `diff_approvals.json`).
+
+> [!note] R6 v2.1 — Analysis-model picker + judged-report export (2026-07-13, owner req)
+> Two additions after the owner asked "does the Lab use an LLM like the pipeline?" (yes — one
+> vision call per card + one text call for the report narrative; decompose is CPU-only) and
+> "can I copy the judged diff_approvals report?" (didn't exist yet). (1) **Analysis model
+> dropdown** — same selection experience as the Clipper's Models panel: populated from
+> `/api/models/available`, default "pipeline default — `<text_model>`" (surfaced as
+> `default_model` on `/corpus`); a non-default pick rides the analyze/compare POST as `model`
+> and becomes a **job-scoped `CLIP_TEXT_MODEL`** (`_model_env` → `_start_job(env_extra)`),
+> which `cf._llm_config()` already resolves first — no config file touched, override dies with
+> the job. Proven end-to-end: rebuilding one card under `qwen/qwen3.5-9b` stamped
+> `_model: qwen3.5-9b` AND changed its category (`story` vs the 35B's `irl_moment`) — model
+> choice measurably changes card judgment; restored on the default. (2) **Copy judged report**
+> (`GET /api/reference/approvals-export?date=`) — joins the report items with their
+> `diff_approvals.json` verdicts into one humanized markdown doc grouped
+> ✅ approved / ❌ rejected / ➖ no-action / ❓ unjudged, writes
+> `clips/.diagnostics/corpus_diff_<date>_judged.md`, and the UI button copies it to the
+> clipboard with a `✓ copied (5✓ 0✗ 2?)` flash. Verified on 20260711: counts
+> {approved 5, no-action 4, unjudged 2}, file written; the `/report` glob excludes `_judged`
+> stems so exports never shadow real reports. Owner guide for all of this: [[concepts/reference-lab]].
 
 ---
 

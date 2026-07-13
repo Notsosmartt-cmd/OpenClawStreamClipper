@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub, forensics, tabs]
 sources: 3
-updated: 2026-07-09
+updated: 2026-07-13
 ---
 
 # Web Dashboard
@@ -26,19 +26,22 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 
 ### Reference Lab tab (2026-07-12 — replaced the Clip Forensics tab)
 
-The dashboard is **tabbed** — a top nav (`.tabs` / `.tab-btn`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (`#view-clipper`) and the **Reference Lab** view (`#view-reference`, lazy-loaded on first open). The old single-clip **Clip Forensics** tab (2026-06-21, `forensics_routes.py`/`forensics-panel.js`) was **deleted** and superseded — its decompose capability is now the Reference Lab's "Decompose" button. **v2 (2026-07-12): Clipper-style UX** — checkbox table + `Analyze Selected (N)` / `Analyze New` / `Compare → Gap Report` (each one chained background job; `/api/reference/analyze` + `/compare` replaced the 4 step endpoints); plain-language findings with ✓ Fix it / ✗ Not a problem. The Reference Lab drives the full reverse-engineering loop ([[concepts/plan-reference-deconstruction-2026-07]] R6): decompose → attribute cards → card-our-clips → gap report → approve/reject, each heavy step a bounded background job (`reference_routes.py`, 10 endpoints; `reference-panel.js`), one at a time and mutually 409-excluded with the clip pipeline via `is_reference_running()` + `_state.reference_job`. Approvals write to `clips/.diagnostics/diff_approvals.json` (the R4 queue); nothing auto-applies.
+The dashboard is **tabbed** — a top nav (`.tabs` / `.tab-btn`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (`#view-clipper`) and the **Reference Lab** view (`#view-reference`, lazy-loaded on first open). The old single-clip **Clip Forensics** tab (2026-06-21, `forensics_routes.py`/`forensics-panel.js`) was **deleted** and superseded — its decompose capability is now the Reference Lab's "Decompose" button. **v2 (2026-07-12): Clipper-style UX** — checkbox table + `Analyze Selected (N)` / `Analyze New` / `Compare → Gap Report` (each one chained background job; `/api/reference/analyze` + `/compare` replaced the 4 step endpoints); plain-language findings with ✓ Fix it / ✗ Not a problem. The Reference Lab drives the full reverse-engineering loop ([[concepts/plan-reference-deconstruction-2026-07]] R6): decompose → attribute cards → card-our-clips → gap report → approve/reject, each heavy step a bounded background job (`reference_routes.py`, 11 endpoints; `reference-panel.js`), one at a time and mutually 409-excluded with the clip pipeline via `is_reference_running()` + `_state.reference_job`. Approvals write to `clips/.diagnostics/diff_approvals.json` (the R4 queue); nothing auto-applies. **Owner-facing guide: [[concepts/reference-lab]].**
+
+**v2.1 (2026-07-13, owner req):** an **Analysis model** dropdown (`ref-model`, populated from `/api/models/available` like the Clipper's Models panel, embedding models filtered out; default option = "pipeline default — `<config/models.json::text_model>`") — a non-default pick is sent as `model` in the analyze/compare POST and applied as a **job-scoped `CLIP_TEXT_MODEL`** env override (`_model_env()` → `_start_job(env_extra)`), which `clip_forensics._llm_config()` resolves first; each card stamps `_model` for provenance. And a **Copy judged report** button (`btn-ref-copy-judged`) in the Gap report header → `GET /api/reference/approvals-export` → clipboard + `corpus_diff_<date>_judged.md` on disk.
 
 Current Reference Lab routes (`routes/reference_routes.py`):
 
 | Route | Does |
 |---|---|
-| `GET /api/reference/corpus` | Reference-clip table (decomposed/carded/category/notes state) + the clip-run picker list |
-| `POST /api/reference/analyze` | `{stems:[…]}` = re-analyze the checked clips (decompose-if-missing + rebuild card); `{}` = only clips without a card (`reference_analyze.py`) |
-| `POST /api/reference/compare` | `{run}` = card OUR clips for that run (missing only) + generate the gap report (`reference_compare.py`) |
+| `GET /api/reference/corpus` | Reference-clip table (decomposed/carded/category/notes state) + the clip-run picker list + `default_model` (for the model dropdown's default label) |
+| `POST /api/reference/analyze` | `{stems:[…]}` = re-analyze the checked clips (decompose-if-missing + rebuild card); `{}` = only clips without a card (`reference_analyze.py`). Optional `model` → job-scoped `CLIP_TEXT_MODEL` |
+| `POST /api/reference/compare` | `{run}` = card OUR clips for that run (missing only) + generate the gap report (`reference_compare.py`). Optional `model` as above |
 | `GET /api/reference/job` · `POST /stop` | Poll the single background job's status/log tail · kill its process tree |
 | `GET /api/reference/card?stem=` | One clip's attribute card (the "card" button) |
-| `GET /api/reference/report?date=latest` | Newest gap report + each item's current approve/reject verdict |
+| `GET /api/reference/report?date=latest` | Newest gap report + each item's current approve/reject verdict (glob skips `_judged` exports) |
 | `POST /api/reference/approve` | `{date,item,verdict}` → written into `diff_approvals.json` (the R4 queue) |
+| `GET /api/reference/approvals-export?date=` | Joins the report's items with their verdicts → one humanized markdown doc grouped ✅/❌/➖/❓; writes `clips/.diagnostics/corpus_diff_<date>_judged.md` and returns `{markdown, counts}` for the clipboard |
 
 *(Historical: the pre-2026-07-12 Forensics tab exposed `/api/forensics/{clips,run,result}` via the now-deleted `forensics_routes.py`/`forensics-panel.js` — single-clip decompose + timeline/style-profile viewer. See git history if ever needed.)*
 
@@ -194,4 +197,5 @@ Saving hardware config requires a container restart to take effect. The **Restar
 - [[entities/openclaw]] — the other interface (Discord bot)
 - [[entities/discord-bot]] — primary interface for normal use
 - [[concepts/clipping-pipeline]] — the 8 stages the dashboard monitors
+- [[concepts/reference-lab]] — owner's guide to the Reference Lab tab
 - [[concepts/deployment]] — GPU backend setup and hardware config schema
