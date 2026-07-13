@@ -33,13 +33,14 @@ import {
 } from "./modules/assets-panel.js";
 
 import {
-    fetchReferenceCorpus, runDecompose, runCards, runOurCards, runDiff,
-    stopReferenceJob, loadReport, initReferenceTab,
+    fetchReferenceCorpus, analyzeSelected, analyzeNew, runCompare,
+    stopReferenceJob, initReferenceTab, toggleRef, toggleAllRefs,
 } from "./modules/reference-panel.js";
 
 // Inline onclick= handlers in HTML need these on window.
 Object.assign(window, {
     toggleVod, toggleAllVods,
+    toggleRef, toggleAllRefs,
     onModelChange, resetModel, applyRecommendedContext,
     onHardwareDropdown,
     onFoldersChange, browseFolderFor, saveFolders,
@@ -87,11 +88,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".tab-btn").forEach(b =>
         b.addEventListener("click", () => switchView(b.dataset.view)));
 
-    // --- Reference Lab tab controls ---
+    // --- Reference Lab tab controls (Clipper-style: select rows -> one button) ---
     document.getElementById("btn-ref-refresh")?.addEventListener("click", fetchReferenceCorpus);
-    document.getElementById("btn-ref-decompose")?.addEventListener("click", runDecompose);
-    document.getElementById("btn-ref-cards")?.addEventListener("click", runCards);
-    document.getElementById("btn-ref-our-cards")?.addEventListener("click", runOurCards);
-    document.getElementById("btn-ref-diff")?.addEventListener("click", runDiff);
+    document.getElementById("btn-ref-analyze")?.addEventListener("click", analyzeSelected);
+    document.getElementById("btn-ref-analyze-new")?.addEventListener("click", analyzeNew);
+    document.getElementById("btn-ref-compare")?.addEventListener("click", runCompare);
     document.getElementById("btn-ref-stop")?.addEventListener("click", stopReferenceJob);
 });
