@@ -792,14 +792,26 @@ def scan_audio_events(
         return {"windows": 0, "backend": "none"}
 
     # Resolve total duration so we can stop the slide at end-of-audio.
+    # BUG 71 (2026-07-13): librosa.get_duration(path=...) can HANG INDEFINITELY on a
+    # long WAV — verified: it stalled forever on a 3 h / 360 MB 16 kHz mono WAV while
+    # soundfile.info() returned the exact duration from the header instantly. That was
+    # the real cause of the "Stage 2 audio-events scan never starts" freeze on 3 h VODs
+    # (the KMP_DUPLICATE_LIB_OK theory was WRONG — the flag did not fix it). Read the
+    # duration from the header via soundfile FIRST; only fall back to librosa if that
+    # fails (e.g. a codec soundfile can't open but librosa can).
     if duration_hint is None:
         try:
-            duration_hint = float(librosa.get_duration(path=audio_path))
+            import soundfile as _sf
+            _inf = _sf.info(audio_path)
+            duration_hint = float(_inf.frames) / float(_inf.samplerate)
         except Exception:
             try:
-                duration_hint = float(librosa.get_duration(filename=audio_path))
+                duration_hint = float(librosa.get_duration(path=audio_path))
             except Exception:
-                duration_hint = 0.0
+                try:
+                    duration_hint = float(librosa.get_duration(filename=audio_path))
+                except Exception:
+                    duration_hint = 0.0
     if not duration_hint or duration_hint <= 0:
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         Path(out_path).write_text(
