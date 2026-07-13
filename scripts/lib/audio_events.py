@@ -29,6 +29,25 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# BUG 71c: numba writes its JIT cache NEXT TO librosa inside site-packages by
+# default — read-only under C:\Program Files, where numba's writability probe
+# then spins through thousands of tempfile PermissionError retries per jitted
+# function while holding the GIL (the "scan pinned at 1 core for 20+ min doing
+# nothing" failure). Point the cache somewhere writable BEFORE the lazy librosa
+# import below. child_env() also sets this; this guard covers direct CLI runs.
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from paths import ensure_numba_cache_env as _ence
+    _ence()
+except Exception:
+    import tempfile as _tf
+    _nb = Path(os.environ.get("LOCALAPPDATA", _tf.gettempdir())) / "OpenClawClipper" / "numba_cache"
+    try:
+        _nb.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    os.environ.setdefault("NUMBA_CACHE_DIR", str(_nb))
+
 WINDOW_SIZE_DEFAULT = 30
 STEP_DEFAULT = 10
 SAMPLE_RATE = 22050  # matches scan_music.py for cache reuse opportunities

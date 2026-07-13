@@ -101,6 +101,37 @@ def _default_work_dir() -> Path:
     return Path(tempfile.gettempdir()) / "clipper"
 
 
+def numba_cache_dir() -> Path:
+    """Writable, persistent numba JIT-cache dir (BUG 71c).
+
+    numba's DEFAULT cache location is next to the decorated source — i.e.
+    site-packages/librosa/**/__pycache__. When Python lives under
+    C:\\Program Files (the dashboard's interpreter), that location is
+    admin-protected, and numba's ensure_cache_path() writability probe spins
+    through thousands of tempfile PermissionError retries PER JITTED FUNCTION
+    PER PROCESS — while holding the GIL. Observed live as the Stage-2
+    audio-events scan pinned at ~1 core for 20+ minutes before doing any real
+    work (py-spy stack: tempfile._mkstemp_inner ← numba ensure_cache_path ←
+    librosa module import). Pointing NUMBA_CACHE_DIR here makes the compile
+    happen once, persist, and load in milliseconds for every later process."""
+    base = os.environ.get("LOCALAPPDATA")
+    d = (Path(base) / "OpenClawClipper" / "numba_cache") if base else \
+        (Path(tempfile.gettempdir()) / "clipper_numba_cache")
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def ensure_numba_cache_env(env: dict | None = None) -> dict:
+    """setdefault NUMBA_CACHE_DIR into ``env`` (or os.environ). Must run before
+    the first librosa/numba import in the target process. Returns the dict."""
+    target = env if env is not None else os.environ
+    target.setdefault("NUMBA_CACHE_DIR", str(numba_cache_dir()))
+    return target
+
+
 @dataclass(frozen=True)
 class Paths:
     """Resolved filesystem layout for one pipeline run / dashboard session."""
@@ -202,6 +233,7 @@ class Paths:
         more config env vars.
         """
         env = dict(base if base is not None else os.environ)
+        ensure_numba_cache_env(env)   # BUG 71c: every librosa-importing child needs this
         env["CLIP_WORK_DIR"] = str(self.work_dir)
         env["CLIP_TEMP_DIR"] = str(self.work_dir)   # alias (moment_groups.py)
         env["TEMP_DIR"] = str(self.work_dir)         # alias (profile_render.py)

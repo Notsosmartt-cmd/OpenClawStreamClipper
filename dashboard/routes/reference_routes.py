@@ -123,6 +123,15 @@ def _start_job(name: str, script: str, args: list[str], env_extra: dict | None =
     env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE",
            "HF_HUB_DISABLE_SYMLINKS_WARNING": "1", "PYTHONUNBUFFERED": "1",
            **(env_extra or {})}
+    # BUG 71c: writable numba JIT cache (librosa-importing jobs spin at 1 core
+    # for minutes without it when Python lives under C:\Program Files).
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(REPO / "scripts" / "lib"))
+        from paths import ensure_numba_cache_env as _ence
+        _ence(env)
+    except Exception:
+        pass
     cmd = [sys.executable, str(RESEARCH / script), *args]
     kwargs = {"stdout": lf, "stderr": subprocess.STDOUT, "cwd": str(REPO), "env": env}
     if os.name == "nt":
