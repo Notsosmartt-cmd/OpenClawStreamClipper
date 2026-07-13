@@ -32,6 +32,7 @@ bp = Blueprint("reference_routes", __name__)
 REPO = _state.PROJECT_DIR
 REF_DIR = REPO / "reference_clips"
 CACHE = REF_DIR / ".cache"
+NOTES_DIR = REF_DIR / "notes"   # owner notes grouped here (2026-07-13 reorg); legacy sidecars still read
 DIAG = _state.CLIPS_DIR / ".diagnostics"
 RESEARCH = REPO / "scripts" / "research"
 EFFECTS_LOG = DIAG / "effects_log.jsonl"
@@ -53,9 +54,10 @@ def _corpus() -> list[dict]:
         stem = f.stem
         tl = CACHE / f"{stem}.timeline.json"
         card = CACHE / f"{stem}.card.json"
-        notes = f.with_suffix(".notes.json")
-        if not notes.exists():
-            notes = REF_DIR / f"{stem}.notes.json"
+        notes = NOTES_DIR / f"{stem}.notes.json"   # canonical grouped location
+        if not notes.exists():                      # fall back to a legacy top-level sidecar
+            legacy = f.with_suffix(".notes.json")
+            notes = legacy if legacy.exists() else (REF_DIR / f"{stem}.notes.json")
         notes_state = "none"
         if notes.exists():
             try:

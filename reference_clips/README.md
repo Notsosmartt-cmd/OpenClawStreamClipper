@@ -15,19 +15,28 @@ style profile.
 reference_clips/
 ├── README.md                      ← this file (tracked)
 ├── <name>.mp4                     ← a curated clip (gitignored — binary/large)
-├── <name>.notes.json              ← OPTIONAL human annotations (tracked)
-└── example.notes.json             ← sidecar template (tracked)
+├── notes/                         ← ALL human annotations live here (tracked)
+│   ├── <name>.notes.json          ← one per clip, matched by stem
+│   └── example.notes.json         ← annotation template
+├── .cache/                        ← machine-generated timelines + cards (gitignored)
+└── sfx_reference/                 ← reference SFX samples
 ```
 
-- Put the video files here (`.mp4`/`.mov`/`.webm`). They are **gitignored** (large binaries).
-- For each clip you can add a `<name>.notes.json` sidecar with your own notes on
-  what works — this becomes the **ground truth** the forensics output is checked
-  against (e.g. "music swell in at 0:04, quack censor at 0:09, vine boom on the
-  punchline at 0:12"). Sidecars **are tracked** so the annotations persist.
+- Put the video files here at the top level (`.mp4`/`.mov`/`.webm`). They are
+  **gitignored** (large binaries). Keeping only clips at the top level means you can
+  add/rename/remove them without wading through the annotation files.
+- Annotations go in **`notes/<name>.notes.json`** (grouped 2026-07-13 — they used to
+  sit next to each clip and cluttered the folder). The filename **stem must match the
+  clip** (`ReemKnocksClip.MP4` → `notes/ReemKnocksClip.notes.json`); that's how the
+  tools pair them. These are the **ground truth** the forensics output is scored
+  against (e.g. "music swell at 0:04, quack censor at 0:09, vine boom on the punchline
+  at 0:12"). Notes **are tracked** so annotations persist.
+- Back-compat: a legacy top-level `<name>.notes.json` sidecar is still READ if present,
+  but every tool now WRITES into `notes/`. Move any stragglers into `notes/`.
 
-## Sidecar schema (`<name>.notes.json`)
+## Notes schema (`notes/<name>.notes.json`)
 
-See `example.notes.json`. Fields are all optional; fill what you noticed:
+See `notes/example.notes.json`. Fields are all optional; fill what you noticed:
 
 ```json
 {
@@ -48,4 +57,5 @@ See `example.notes.json`. Fields are all optional; fill what you noticed:
 The forensics tool will try to recover these automatically; your notes let it
 score how well it did.
 
-> Naming: keep filenames short and slug-like (`reemknocks_bus.mp4`), no spaces.
+> Naming: keep clip filenames short and slug-like (`reemknocks_bus.mp4`), no spaces;
+> the note file mirrors the stem in `notes/` (`notes/reemknocks_bus.notes.json`).

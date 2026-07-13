@@ -67,8 +67,8 @@ Both consumers share one `scripts/lib/audio_sense.py` (semantic sensing) + a `sc
 ## Reference-clip corpus (this phase's input)
 
 - **Folder:** `reference_clips/` at repo root (scaffolded 2026-06-13 with a README). The owner drops curated competitor clips here. **Not** `vods/` (that's clip-input, Stage 1 scans it) and **not** `assets/` (that's injection material).
-- **Per-clip annotation sidecar** (optional, owner-authored): `reference_clips/<name>.notes.json` — what the owner thinks works ("suspense music in at 0:04; quack censor 0:09; vine boom on punchline 0:12"). Gives the forensics output a human ground-truth to validate against.
-- **Git:** media gitignored (binary, large); README + `.notes.json` sidecars tracked.
+- **Per-clip annotation file** (optional, owner-authored): `reference_clips/notes/<name>.notes.json` — what the owner thinks works ("suspense music in at 0:04; quack censor 0:09; vine boom on punchline 0:12"). Gives the forensics output a human ground-truth to validate against. **Grouped into `notes/` 2026-07-13** (was a top-level `reference_clips/<name>.notes.json` sidecar; the clutter of clips + notes interleaved made curating the clip files harder). Stem must match the clip; resolution is centralized in `clip_forensics.notes_path()` / `iter_notes()` with a legacy top-level-sidecar READ fallback. See [[concepts/reference-lab]].
+- **Git:** media gitignored (binary, large); README + `notes/*.notes.json` tracked.
 - yt-dlp URL ingestion is deferred — the corpus is hand-curated for now.
 
 ---
