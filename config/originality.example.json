@@ -4,6 +4,7 @@
   "stitch": false,
   "arc_stitch": false,
   "jump_cuts": "off",
+  "cut_style": "auto",
   "flash_cuts": false,
   "narrative": true,
   "camera_pan": false,

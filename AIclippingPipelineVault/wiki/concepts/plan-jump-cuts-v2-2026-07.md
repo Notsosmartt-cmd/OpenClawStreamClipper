@@ -2,9 +2,58 @@
 title: "Plan: jump cuts v2 — beat-aware smart+silence (unify cut timing with the SFX/VFX beat machinery)"
 type: concept
 tags: [plan, jump-cut, transitions, sfx, beat-map, stage-7, rendering, llm, categories]
-status: planned
+status: shipped
 updated: 2026-07-13
 ---
+
+# Plan: jump cuts v2 — beat-aware smart+silence
+
+> [!note] SHIPPED 2026-07-13 (J0–J6 built + unit/integration-tested; global default still OFF pending the owner's live gaps run)
+> All six phases landed in one session. What's live (all failure-soft, kill-switch = shipped v1 behavior):
+> - **J0** `scripts/lib/beat_map.py` — the tuned SFX timing primitives (`refined_payoff`,
+>   `laughter_times`, `prominent_transients`, NEW `breath_points`, `build`) extracted from
+>   `sfx_cues.py`; sfx_cues now DELEGATES (byte-identical — its cue output is the gate, verified).
+> - **J1** `clip_cuts.py`: refined-payoff no-cut **halo** (`CLIP_CUT_PROTECT_PAYOFF_S`=2.0),
+>   laughter/transient **veto** + **leave-a-beat** (0.45 s residual), **effect-aware joins**
+>   (`JOIN_CLEAR` halo round placed SFX + `sfx_cues_remapped`/`sfx_cues_dropped_by_cut` in the
+>   effects log so the Lab ground truth stays true), **category fixes** (`CATEGORY_MAX_DROP`
+>   gained controversial 0.25 + dancing 0.0, emotional 0.40→0.20; NEW `CATEGORY_CUT_POLICY`:
+>   dancing=off, controversial+emotional=silence-only), breath-point edge snapping. `compute_keep_spans`
+>   gained `protect_spans` (interval-subtracted) + `veto_times`.
+> - **J2** `scripts/lib/cut_inference.py` — text-only micro-call: the model QUOTES verbatim
+>   substrings, mapped to time deterministically (char-interp, self-verifying). Replaced the
+>   Stage-6 vision-prompt cuts field (`stage6_vision.py`; the mega-prompt now infers flashes only).
+> - **J3** coherence gate (payoff content-words must survive) + optional LLM fidelity judge
+>   (`CLIP_CUT_JUDGE`) — both in `cut_inference`, run in Stage 6 where the model is loaded.
+> - **J4** `CLIP_CUT_STYLE=auto|hard|fadewhite` (default **auto** = hard cuts + alternating ±5%
+>   punch-in via concat, no white-flash template tell); `_build_filter`/`apply_transitions` rewritten.
+> - **J5** `CLIP_CUT_FILLERS` (default off) pause-adjacent filler micro-lane (`cut_inference.filler_cuts`
+>   + `load_word_srt` off the per-clip word SRT).
+> - **J6** `CLIP_AB_CUTS_EXPERIMENT` (Stage 7d.6 — compress the **B** variant only → labelable
+>   A-vs-B pair); Lab `duration_med` metric promoted in `corpus_diff.py`; dashboard **Editing style**
+>   dropdown + rewritten jump-cut tooltip.
+>
+> **Deviations from the plan (deliberate):**
+> - **`CLIP_CUT_JUDGE` defaults OFF**, not "on when llm" — the judge would run in Stage 7 where the
+>   model is UNLOADED (a ~1.5–2 min reload per call). The judge instead lives in `cut_inference`
+>   (Stage 6, model loaded) and is opt-in; the **deterministic** coherence gate is the always-on line.
+> - **Category-gated default flip DEFERRED** — the global `CLIP_JUMP_CUTS` default stays `off`
+>   (RED rubric: default-off = not promoted). Flipping it to gaps-for-storytime/informational is the
+>   owner's decision AFTER the live gaps run + eyeball (the standing J1 gate). The A/B experiment lane
+>   is the measurement path to that decision.
+> - **Join-time whoosh (`CLIP_CUT_WHOOSH`) NOT built** — the visual punch-in is what hides the seam;
+>   mixing a whoosh at N joins needed audio-input plumbing out of proportion to its value. Left as a
+>   one-item follow-up (the `transition` beat is already stocked in `sfx_cues.json`).
+> - **J1 effect-aware "dropped_by_cut"** in practice stays empty when cues sit on protected beats
+>   (they do — SFX anchors on payoff/laughter/transient) — the field + remap are logged regardless
+>   so the Lab is correct if a cue ever is swallowed.
+>
+> **Validation:** all three module selftests PASS (beat_map incl. the byte-identical sfx_cues
+> delegation gate; clip_cuts J1/J4; cut_inference J2/J3/J5). A bounded **real-ffmpeg integration
+> test** (on a reference clip) PASSED: HARD concat+punch-in keeps 720×1280 @ ~18 s; FADEWHITE xfade
+> ~17.6 s; full `process_clip_transitions` gaps mode 40 s→36 s with the SFX cue remapped (1 kept/0
+> dropped); dancing policy = off. **Remaining gate: the owner's live `CLIP_JUMP_CUTS=gaps` pipeline
+> run + eyeball** before any default flip.
 
 # Plan: jump cuts v2 — beat-aware smart+silence
 

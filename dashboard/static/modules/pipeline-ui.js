@@ -19,6 +19,7 @@ export function collectOriginality() {
         stitch:         !!q("chk-stitch")?.checked,
         arc_stitch:     !!q("chk-arc-stitch")?.checked,
         jump_cuts:      q("sel-jump-cuts")?.value || "off",
+        cut_style:      q("sel-cut-style")?.value || "auto",
         flash_cuts:     !!q("chk-flash-cuts")?.checked,
         narrative:      !!q("chk-narrative")?.checked,
         // The framing dropdown is the single source of truth — picking
@@ -52,6 +53,7 @@ export async function fetchOriginality() {
         if (q("chk-stitch")) q("chk-stitch").checked = !!cfg.stitch;
         if (q("chk-arc-stitch")) q("chk-arc-stitch").checked = !!cfg.arc_stitch;
         if (q("sel-jump-cuts")) q("sel-jump-cuts").value = cfg.jump_cuts || "off";
+        if (q("sel-cut-style")) q("sel-cut-style").value = cfg.cut_style || "auto";
         if (q("chk-flash-cuts")) q("chk-flash-cuts").checked = !!cfg.flash_cuts;
         if (q("chk-tts-vo")) q("chk-tts-vo").checked = !!cfg.tts_vo;
         if (q("inp-music-bed")) q("inp-music-bed").value = cfg.music_bed || "";

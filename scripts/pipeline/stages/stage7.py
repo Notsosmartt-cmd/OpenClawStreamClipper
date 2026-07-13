@@ -835,6 +835,29 @@ def run(ctx) -> None:
                 int(round(float(_m.get("timestamp", -1)))): _m
                 for _m in json.loads(p.scored_moments.read_text(encoding="utf-8"))
             }
+            # v2 J1: the SFX cue times already placed on each clip (clip-relative),
+            # so a cut keeps its joins clear of them and the effects-log ground truth
+            # can be remapped onto the compressed timeline. Read this run's render_plan
+            # rows once; failure-soft (no map -> no effect-aware protection, still safe).
+            _run_stamp = os.environ.get("CLIP_RUN_STAMP", "")
+            _cues_by_title: dict[str, list[float]] = {}
+            try:
+                import effects_log as _efl
+                for _r in _efl.read_effects(last=1000000):
+                    if _r.get("run") != _run_stamp or _r.get("type") != "render_plan":
+                        continue
+                    _ts: list[float] = []
+                    for _c in (_r.get("data") or {}).get("sfx_cues") or []:
+                        _v = _c.get("t", _c.get("at")) if isinstance(_c, dict) else None
+                        try:
+                            if _v is not None:
+                                _ts.append(float(_v))
+                        except (TypeError, ValueError):
+                            pass
+                    if _ts:
+                        _cues_by_title[str(_r.get("clip"))] = _ts
+            except Exception:
+                _cues_by_title = {}
             _n_mod = 0
             for row in rows:
                 clip_file = p.clips_dir / f"{row['title']}.mp4"
@@ -848,18 +871,64 @@ def run(ctx) -> None:
                     continue
                 _plan = _ep.normalize(
                     _moments_by_t.get(int(round(float(row["t"]))), {}).get("edit_plan") or {})
+                # v2 J5: word-level items for the (opt-in) filler micro-lane. The
+                # per-clip word SRT (stage7_transcribe) is clip-relative → offset by cs.
+                _words = []
+                if os.environ.get("CLIP_CUT_FILLERS", "0").strip().lower() in ("1", "true", "on", "yes"):
+                    try:
+                        import cut_inference as _ci
+                        _words = _ci.load_word_srt(str(p.work(f"clip_{row['t']}.srt")), offset=cs)
+                    except Exception:
+                        _words = []
                 if clip_cuts.process_clip_transitions(
                         str(clip_file), cuts=_plan.get("cuts", []),
                         flashes=_plan.get("flashes", []), clip_start=cs, duration=dur,
                         temp_dir=str(p.work_dir), jump_mode=_jump_mode,
                         flash_mode=_flash_mode, seed=int(round(float(row["t"]))),
-                        category=row["category"], log=log.log):
+                        category=row["category"], payoff_abs=float(row["t"]),
+                        effect_cues=_cues_by_title.get(row["title"], []),
+                        run_stamp=_run_stamp, clip_title=row["title"],
+                        word_items=_words, log=log.log):
                     _n_mod += 1
             if _n_mod:
                 log.log(f"  [transitions] applied to {_n_mod}/{len(rows)} clip(s) "
                         f"(jump={_jump_mode} flash={_flash_mode})")
         except Exception as e:  # noqa: BLE001
             log.warn(f"transitions pass failed (clips unaffected): {e}")
+
+    # 7d.6 — A/B CUTS EXPERIMENT (owner measurement lane, opt-in, default off).
+    # Independent of CLIP_JUMP_CUTS: compress ONLY the (B) variant with silence-gap
+    # cuts, leaving A uncompressed, so A-vs-B is a labelable pair — the owner's
+    # GOOD/BAD labels then measure whether compression actually helps BEFORE any
+    # default flip. Gaps-only (no LLM) for a clean, safe comparison. See
+    # concepts/plan-jump-cuts-v2-2026-07 J6.
+    if os.environ.get("CLIP_AB_CUTS_EXPERIMENT", "0").strip().lower() in ("1", "true", "on", "yes"):
+        try:
+            import clip_cuts
+            _run_stamp = os.environ.get("CLIP_RUN_STAMP", "")
+            _nb = 0
+            for row in rows:
+                b_file = p.clips_dir / f"{row['title']} (B).mp4"
+                if not b_file.exists():
+                    continue
+                try:
+                    cs = (float(row["clip_start"]) if row["clip_start"] != ""
+                          else max(0.0, float(row["t"]) - 15))
+                    dur = float(row["clip_duration"]) if row["clip_duration"] != "" else 30.0
+                except (TypeError, ValueError):
+                    continue
+                if clip_cuts.process_clip_transitions(
+                        str(b_file), cuts=[], flashes=[], clip_start=cs, duration=dur,
+                        temp_dir=str(p.work_dir), jump_mode="gaps", flash_mode="off",
+                        seed=int(round(float(row["t"]))), category=row["category"],
+                        payoff_abs=float(row["t"]), run_stamp=_run_stamp,
+                        clip_title=f"{row['title']} (B)", log=log.log):
+                    _nb += 1
+            if _nb:
+                log.log(f"  [ab-cuts-experiment] compressed {_nb} (B) variant(s) — "
+                        f"A (uncut) vs B (jump-cut) is now a labelable pair")
+        except Exception as e:  # noqa: BLE001
+            log.warn(f"A/B cuts experiment failed (clips unaffected): {e}")
 
     # 7e — stitch groups (regular stitch + Fix 3 arc-stitch share this renderer)
     groups_file = p.work("moment_groups.json")

@@ -219,7 +219,16 @@ exempt storytime/emotional; news selection actively BOOSTS storytime ×1.2 / emo
 controversial ×1.35. SFX density is a Stage-7 render decision — it cannot affect which moments
 Stage 4 finds.
 
+> [!note] Timing primitives shared with jump cuts (2026-07-13, J0)
+> The tuned payoff/laughter/transient timing logic (`_refine_payoff`, `_laughter_times`,
+> `_secondary_peaks`) was extracted into `scripts/lib/beat_map.py`; `sfx_cues.py` now DELEGATES
+> to it (byte-identical — the cue output is the extraction gate). The jump-cut compressor
+> ([[concepts/plan-jump-cuts-v2-2026-07]]) reuses the SAME primitives so cuts protect the real
+> payoff, never cut a laughter/reaction beat, and land joins on natural breaths — the SFX placer
+> and the cutter now share one beat map instead of the cutter snapping only to Whisper segments.
+
 ## Related
+- [[concepts/plan-jump-cuts-v2-2026-07]] — reuses these timing primitives (via `beat_map`) for beat-aware cuts
 - [[concepts/plan-unoriginality-audio-layer]] — the plan this research feeds (P1 punchline-anchored SFX)
 - [[concepts/case-incongruity-comedy]] — the reference clips that need boom/crickets/trombone cues
 - [[concepts/style-profiles]] / [[concepts/asset-libraries]] — where SFX assets + the injector live

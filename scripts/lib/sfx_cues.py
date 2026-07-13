@@ -27,8 +27,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+import beat_map  # shared timing primitives (J0 extraction — the DSP lives there now)
+
 # Laughter / crowd markers scanned in the transcript text (lowercased).
-_LAUGH_MARKERS = ("[laughter]", "hahaha", "haha", "lmfao", "lmao", "lol")
+# Kept as an alias for any external reference; the source of truth is beat_map.
+_LAUGH_MARKERS = beat_map.LAUGH_MARKERS
 
 # In-code fallback used when config/sfx_cues.json is missing/unreadable. Mirrors
 # the shipped config so the feature degrades to sane defaults, never to a crash.
@@ -137,173 +140,40 @@ def _pick_kind(beat_type: str, cfg: dict) -> dict | None:
 
 def _laughter_times(temp_dir: str, clip_start: float, clip_end: float) -> list[float]:
     """Absolute VOD timestamps of transcript segments inside the clip that carry
-    a laughter marker — precise punchline anchors. [] on any failure."""
-    try:
-        segs = json.loads(Path(temp_dir, "transcript.json").read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    out: list[float] = []
-    for s in segs or []:
-        try:
-            st = float(s.get("start"))
-        except (TypeError, ValueError):
-            continue
-        if not (clip_start <= st < clip_end):
-            continue
-        txt = str(s.get("text") or "").lower()
-        if any(m in txt for m in _LAUGH_MARKERS):
-            out.append(st)
-    return out
+    a laughter marker — precise punchline anchors. Delegates to beat_map (J0)."""
+    return beat_map.laughter_times(temp_dir, clip_start, clip_end)
 
 
 def _refine_payoff(payoff_rel: float, clip_start: float, clip_duration: float,
                    temp_dir: str, cfg: dict) -> float:
     """Refine the payoff anchor from the (early) detection timestamp to the actual
-    acoustic hit, then to just AFTER the delivered line. Three owner-driven layers:
-
-    1. RESCUE (owner 2026-07-05, 'Hot Cheeto'): when the detected payoff sits at the
-       very START of the clip, the timestamp is the setup, not the payoff — the real
-       beat lands much later (camera pan / reaction at ~18s while the boom fired at
-       ~1s). If payoff_rel < max(3s, 12% of duration), search the WHOLE clip for the
-       dominant RMS transient instead of trusting the timestamp.
-    2. SNAP (owner 2026-07-04): strongest RMS rise within onset_snap_window_s of the
-       (possibly rescued) payoff — the hit itself.
-    3. AFTER-LINE (owner 2026-07-05, 'Shower Bluff'): a 0 dB boom ON the punchline
-       masks the words. Shift the cue into the first speech GAP after the peak
-       (first sustained RMS dip < 35% of peak within boom_gap_window_s) — the meme
-       edit convention: line → breath → boom.
-
-    Plus a floor: never place the payoff cue in the first 2.5 s of a clip > 8 s
-    (nothing to punctuate yet; the cold-open teaser owns that space).
-    Failure-soft at every layer: any problem falls back to the previous layer's
-    value, ultimately payoff + payoff_delay_s clamped to the floor."""
-    delay = float(cfg.get("payoff_delay_s", 0.35) or 0.0)
-    floor = 2.5 if clip_duration > 8 else 0.05
-    fallback = max(floor, min(payoff_rel + delay, clip_duration - 0.2))
-    if not cfg.get("snap_to_onset", True):
-        return fallback
-    try:
-        import numpy as np
-        import soundfile as sf
-        wav = Path(temp_dir, "audio.wav")
-        if not wav.exists():
-            return fallback
-        sr = sf.info(str(wav)).samplerate
-        hop = max(1, int(0.05 * sr))           # 50 ms energy envelope
-
-        def _rms_slice(a_rel: float, b_rel: float):
-            """RMS envelope of clip-relative [a_rel, b_rel); None on any problem."""
-            a_rel = max(0.0, a_rel)
-            frames = int(max(0.0, b_rel - a_rel) * sr)
-            if frames < sr // 4:
-                return None
-            data, _ = sf.read(str(wav), start=max(0, int((clip_start + a_rel) * sr)),
-                              frames=frames, dtype="float32", always_2d=False)
-            if data is None or getattr(data, "size", 0) < sr // 4:
-                return None
-            if getattr(data, "ndim", 1) > 1:
-                data = data.mean(axis=1)
-            n_h = len(data) // hop
-            if n_h < 3:
-                return None
-            return np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
-
-        # --- 1) RESCUE: early payoff -> dominant transient anywhere in the clip ---
-        rescue_floor = max(3.0, 0.12 * clip_duration)
-        if (cfg.get("payoff_rescue", True) and payoff_rel < rescue_floor
-                and clip_duration > 12):
-            r = _rms_slice(2.0, clip_duration - 1.0)
-            if r is not None:
-                flux = np.diff(r)
-                if len(flux) and float(flux.max()) > 0:
-                    cand = 2.0 + (int(np.argmax(flux)) + 1) * hop / sr
-                    if cand > rescue_floor:    # only accept a genuinely later beat
-                        payoff_rel = cand
-
-        # --- 2) SNAP: strongest rise near the payoff ---
-        win = float(cfg.get("onset_snap_window_s", 1.2) or 1.2)
-        peak_rel = payoff_rel + delay
-        r = _rms_slice(payoff_rel - 0.1, payoff_rel + win + 0.3)
-        if r is not None:
-            flux = np.diff(r)
-            if len(flux) and float(flux.max()) > 0:
-                peak_rel = (payoff_rel - 0.1) + (int(np.argmax(flux)) + 1) * hop / sr
-
-        # --- 3) AFTER-LINE: shift into the first speech gap after the peak ---
-        if cfg.get("boom_after_line", True):
-            gapw = float(cfg.get("boom_gap_window_s", 2.5) or 2.5)
-            r2 = _rms_slice(peak_rel, peak_rel + gapw)
-            if r2 is not None and len(r2) > 4:
-                thr = 0.35 * float(r2.max())
-                need = 3                        # 3 × 50 ms = 150 ms of quiet
-                runlen = 0
-                for i, v in enumerate(r2):
-                    runlen = runlen + 1 if float(v) < thr else 0
-                    if runlen >= need:
-                        peak_rel = peak_rel + (i - need + 1) * hop / sr + 0.05
-                        break
-
-        return max(floor, min(peak_rel, clip_duration - 0.2))
-    except Exception:
-        return fallback
+    acoustic hit (RESCUE → SNAP → AFTER-LINE; owner tuning 2026-07-04/05). The DSP
+    lives in beat_map.refined_payoff (J0 extraction); this reads the config knobs
+    and threads them through, preserving byte-identical behavior."""
+    return beat_map.refined_payoff(
+        payoff_rel, clip_start, clip_duration, temp_dir,
+        delay=float(cfg.get("payoff_delay_s", 0.35) or 0.0),
+        snap=cfg.get("snap_to_onset", True),
+        snap_window=float(cfg.get("onset_snap_window_s", 1.2) or 1.2),
+        rescue=cfg.get("payoff_rescue", True),
+        after_line=cfg.get("boom_after_line", True),
+        gap_window=float(cfg.get("boom_gap_window_s", 2.5) or 2.5))
 
 
 def _secondary_peaks(clip_start: float, clip_duration: float, temp_dir: str,
                      cfg: dict, taken: list[float]) -> list[float]:
-    """R4 density apply (corpus_diff report #1, owner-approved 2026-07-11): the
-    reference corpus runs far denser sound furniture than our one-cue clips. Find
-    the clip's strongest OTHER acoustic transients (laughter bursts, exclamations,
-    slams — the beats an editor would also punctuate) and return their clip-relative
-    times, skipping anything near an already-taken anchor. The caller places a
-    DUCKED punchline_light on each (never the hot boom — that stays payoff-only).
-    Failure-soft: [] on any problem."""
+    """R4 density (corpus_diff report #1, owner-approved 2026-07-11): the clip's
+    strongest OTHER acoustic transients, for a ducked secondary hit on each. The
+    config `enabled` gate stays here; the DSP is beat_map.prominent_transients (J0)."""
     sp = cfg.get("secondary_peaks") or {}
     if not sp.get("enabled", False):
         return []
-    try:
-        import numpy as np
-        import soundfile as sf
-        wav = Path(temp_dir, "audio.wav")
-        if not wav.exists() or clip_duration < 10:
-            return []
-        sr = sf.info(str(wav)).samplerate
-        hop = max(1, int(0.05 * sr))
-        a_rel = 2.0
-        frames = int(max(0.0, (clip_duration - 1.0) - a_rel) * sr)
-        if frames < sr:
-            return []
-        data, _ = sf.read(str(wav), start=max(0, int((clip_start + a_rel) * sr)),
-                          frames=frames, dtype="float32", always_2d=False)
-        if data is None or getattr(data, "size", 0) < sr:
-            return []
-        if getattr(data, "ndim", 1) > 1:
-            data = data.mean(axis=1)
-        n_h = len(data) // hop
-        if n_h < 10:
-            return []
-        rms = np.sqrt(np.mean(data[:n_h * hop].reshape(n_h, hop) ** 2, axis=1) + 1e-12)
-        flux = np.diff(rms)
-        if not len(flux) or float(flux.max()) <= 0:
-            return []
-        min_prom = float(sp.get("min_prominence_ratio", 0.55) or 0.55) * float(flux.max())
-        min_gap = float(sp.get("min_gap_from_cues_s", 2.5) or 2.5)
-        max_n = int(sp.get("max", 3) or 3)
-        # strongest-first candidate times
-        order = np.argsort(flux)[::-1]
-        out: list[float] = []
-        for idx in order:
-            if float(flux[idx]) < min_prom:
-                break
-            t = a_rel + (int(idx) + 1) * hop / sr
-            if any(abs(t - p) < min_gap for p in taken) or \
-               any(abs(t - p) < min_gap for p in out):
-                continue
-            out.append(t)
-            if len(out) >= max_n:
-                break
-        return sorted(out)
-    except Exception:
-        return []
+    return beat_map.prominent_transients(
+        clip_start, clip_duration, temp_dir,
+        min_prominence_ratio=float(sp.get("min_prominence_ratio", 0.55) or 0.55),
+        min_gap=float(sp.get("min_gap_from_cues_s", 2.5) or 2.5),
+        max_n=int(sp.get("max", 3) or 3),
+        taken=taken)
 
 
 def build(moment: dict, clip_start: float, clip_duration: float, *,

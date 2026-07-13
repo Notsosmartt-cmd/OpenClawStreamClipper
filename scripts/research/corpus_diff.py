@@ -72,6 +72,12 @@ def _sfx_per_30s(card: dict) -> float | None:
     return _num((card.get("sfx_grammar") or {}).get("count_per_30s"))
 
 
+def _duration(card: dict) -> float | None:
+    """Clip duration (s): ground-truth when ours, else the card facts."""
+    gt = card.get("_ground_truth") or {}
+    return _num(gt.get("clip_duration")) or _num((card.get("_facts") or {}).get("duration_s"))
+
+
 def _agg(cards: list[dict], ours: bool) -> dict:
     """Aggregate one card set into the comparable stat block."""
     def med(vals):
@@ -89,6 +95,7 @@ def _agg(cards: list[dict], ours: bool) -> dict:
         "sfx_per_30s_med": med([(_sfx_per_30s(c) if ours else
                                  _num((c.get("sfx_grammar") or {}).get("count_per_30s"))) for c in cards]),
         "sfx_offset_ms_med": med([_num((c.get("sfx_grammar") or {}).get("offset_from_payoff_ms")) for c in cards]),
+        "duration_med": med([_duration(c) for c in cards]),
         "zooms_med": med([_num((c.get("edit_grammar") or {}).get("zooms")) for c in cards]),
         "caption_wps_med": med([_num((c.get("captions") or {}).get("density_wps")) for c in cards]),
         "pct_text_hook": round(100 * sum(1 for h in hooks if h and h.lower() != "none") / len(cards)) if cards else None,
@@ -109,6 +116,7 @@ def _agg(cards: list[dict], ours: bool) -> dict:
 _LEVERS = {
     "sfx_per_30s_med": ("config/sfx_cues.json", "beat density: category_beats / max_cues / add multi-hit beats (roast-cadence)"),
     "sfx_offset_ms_med": ("config/sfx_cues.json", "payoff_delay_s per beat"),
+    "duration_med": ("stage4_moments max_dur + CLIP_JUMP_CUTS", "clip length vs reference — longer keeps more setup; jump-cut compression tightens a clip that over-runs the reference"),
     "cuts_per_30s_med": ("CLIP_JUMP_CUTS + scripts/lib/clip_cuts.py", "jump-cut compression density (gaps/llm modes) + transitions"),
     "zooms_med": ("scripts/lib/style_profiles.py", "zoom_punch_count per category profile"),
     "pct_text_hook": ("config/hook_templates.json + CLIP_HOOK_CAPTION", "hook-card presence/phrasing (voice contract already governs style)"),
@@ -129,7 +137,7 @@ def _gap_items(ref_by_cat: dict, ours_by_cat: dict, ref_all: dict, ours_all: dic
     def _cmp(scope: str, ref: dict, ours: dict):
         for metric in ("sfx_per_30s_med", "cuts_per_30s_med", "zooms_med",
                        "pct_text_hook", "caption_wps_med", "chat_overlay_pct",
-                       "sfx_offset_ms_med"):
+                       "sfx_offset_ms_med", "duration_med"):
             r, o = ref.get(metric), ours.get(metric)
             if r is None or o is None:
                 continue

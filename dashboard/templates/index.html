@@ -197,11 +197,19 @@
                 <label for="chk-flash-cuts" title="White-flash transition beats layered on clips for engagement (deterministic cadence + any model-picked beats). Pattern-interrupt — no content removed.">White-flash transitions</label>
             </div>
             <div class="control-group" style="margin-top: 6px;">
-                <label class="field-label" title="Jump-cut to the payoff with a white fade by DROPPING dead air/rambling. 'Silence' is safe (drops only pauses); 'Smart' adds LLM-inferred cuts of filler (needs AI editing profiles / vision). Captions stay in sync — the cut is applied to the finished clip.">Jump-cut compression</label>
+                <label class="field-label" title="Drop dead air / rambling and jump-cut to the payoff. 'Silence' is safe (drops only pauses; leaves a beat so it doesn't feel robotic). 'Smart' adds a dedicated text-cut pass that quotes filler/false-starts to delete (mapped to exact time, coherence-gated). v2: the REAL payoff and placed sound effects are protected, comedic pauses/laughs are never cut, and per category — controversial/emotional are silence-only, dancing is off. Hard cuts with a slight punch-in by default (Editing style below). Captions stay in sync (applied to the finished clip).">Jump-cut compression</label>
                 <select id="sel-jump-cuts" onchange="onOriginalityChange()">
                     <option value="off" selected>Off</option>
                     <option value="gaps">Silence only (safe)</option>
                     <option value="on">Smart + silence</option>
+                </select>
+            </div>
+            <div class="control-group" style="margin-top: 6px;">
+                <label class="field-label" title="How jump-cut joins look. 'Auto' = hard cuts with an alternating ~5% punch-in (modern short-form look, hides the seam). 'Hard' = plain hard cuts. 'White fade' = the classic white-flash join (a bit of a template tell). Only applies when Jump-cut compression is on.">Editing style</label>
+                <select id="sel-cut-style" onchange="onOriginalityChange()">
+                    <option value="auto" selected>Auto (hard + punch-in)</option>
+                    <option value="hard">Hard cuts</option>
+                    <option value="fadewhite">White fade</option>
                 </select>
             </div>
             <div class="checkbox-group">

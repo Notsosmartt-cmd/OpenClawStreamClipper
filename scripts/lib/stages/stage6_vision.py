@@ -103,13 +103,16 @@ except:
 with open(f"{TEMP_DIR}/hype_moments.json") as f:
     moments = json.load(f)
 
-# Transition-animation inference (gated). Only ask the vision model for
-# cuts/flashes when the matching Stage-7 mode is on; otherwise the prompt is
-# byte-identical to before — zero risk to normal runs. Rule-based modes
-# (CLIP_JUMP_CUTS=gaps, the flash cadence) don't need the model at all.
+# Transition-animation inference (gated). Only ask the vision model for FLASHES
+# when the matching Stage-7 mode is on; otherwise the prompt is byte-identical to
+# before — zero risk to normal runs. Rule-based modes (CLIP_JUMP_CUTS=gaps, the
+# flash cadence) don't need the model at all.
+# v2 (J2): smart CUTS no longer ride the vision mega-prompt (LLMs are poor at
+# word→second math). When CLIP_JUMP_CUTS=llm|on we make a dedicated text-only
+# cut_inference call that returns verbatim QUOTES mapped to time deterministically.
 _EDIT_LLM_CUTS = os.environ.get("CLIP_JUMP_CUTS", "off").strip().lower() in ("llm", "on")
 _EDIT_LLM_FLASH = os.environ.get("CLIP_FLASH_CUTS", "off").strip().lower() in ("on",)
-_EDIT_INFER = _EDIT_LLM_CUTS or _EDIT_LLM_FLASH
+_EDIT_INFER = _EDIT_LLM_FLASH   # the VISION prompt now only infers flashes
 
 # EVERY moment that survived detection WILL be rendered.
 # Vision only enriches with titles/descriptions and can boost the score.
@@ -741,6 +744,7 @@ def _process_moment(moment):
         # clip_end aren't on the moment, e.g. legacy callers.
         local_transcript = ""
         local_transcript_ts = ""
+        window: list = []      # transcript segments in-window (J2: feeds cut_inference)
         try:
             with open(f"{TEMP_DIR}/transcript.json") as _tf:
                 _tr = json.load(_tf)
@@ -866,20 +870,14 @@ def _process_moment(moment):
             edit_directive = ""
             edit_json = ""
             if _EDIT_INFER and local_transcript_ts:
+                # Vision prompt now only infers FLASHES (v2 J2 moved cuts to
+                # cut_inference — a dedicated text call, mapped by quote not seconds).
                 _ed = ["\nEDIT DECISIONS — use the ABSOLUTE-timestamped transcript below:\n",
-                       f'"""{local_transcript_ts}"""\n']
-                _jf = []
-                if _EDIT_LLM_CUTS:
-                    _ed.append("- cuts: spans of DEAD AIR / rambling / false-starts to DROP so the clip "
-                               "reaches the payoff faster. KEEP the setup and the punchline; never drop the "
-                               "last few seconds; total dropped < 40%. Empty list if it's already tight.\n")
-                    _jf.append('"cuts": [{"drop_start": <abs s>, "drop_end": <abs s>}]')
-                if _EDIT_LLM_FLASH:
-                    _ed.append("- flashes: 0-2 absolute timestamps for a quick white-flash beat right before "
-                               "a punchline or a hard topic shift (engagement). Empty list if none fit.\n")
-                    _jf.append('"flashes": [{"t": <abs s>, "style": "soft"}]')
+                       f'"""{local_transcript_ts}"""\n',
+                       "- flashes: 0-2 absolute timestamps for a quick white-flash beat right before "
+                       "a punchline or a hard topic shift (engagement). Empty list if none fit.\n"]
                 edit_directive = "".join(_ed)
-                edit_json = (",\n  " + ",\n  ".join(_jf)) if _jf else ""
+                edit_json = ',\n  "flashes": [{"t": <abs s>, "style": "soft"}]'
             base_prompt = f"""Analyze this sequence of time-ordered frames from a livestream around a detected highlight moment, together with what the streamer is ACTUALLY saying.
 
 Context: {context_hint}
@@ -1218,9 +1216,23 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
                     "tone": str(vo.get("tone", "deadpan") or "deadpan")[:12],
                     "duration_estimate_s": float(vo.get("duration_estimate_s", 3.0) or 3.0),
                 }
-        # Transition animations (jump-cut + flash). Store the model's raw picks
-        # on edit_plan; Stage 7's transition pass normalizes + budget-caps them.
-        _ep_cuts = best_vision_result.get("cuts")
+        # Transition animations (jump-cut + flash). Flashes = the vision model's raw
+        # picks; Stage 7's transition pass normalizes + budget-caps them.
+        # v2 (J2): CUTS come from a dedicated text-only cut_inference call (quotes
+        # mapped to time deterministically), NOT the vision mega-prompt. Skipped for
+        # silence-only/off categories (clip_cuts would strip them anyway) to save a call.
+        _ep_cuts = None
+        if _EDIT_LLM_CUTS and window and (entry.get("category") or "").lower() not in (
+                "controversial", "emotional", "dancing"):
+            try:
+                import cut_inference as _ci
+                _payoff_text = " ".join(str(x) for x in (
+                    entry.get("title", ""), moment.get("why", ""),
+                    entry.get("description", "")) if x)
+                _ep_cuts = _ci.infer_cuts(window, model=VISION_MODEL, url=LLM_URL,
+                                          payoff_text=_payoff_text)
+            except Exception:
+                _ep_cuts = None
         _ep_flashes = best_vision_result.get("flashes")
         if isinstance(_ep_cuts, list) or isinstance(_ep_flashes, list):
             _plan = dict(entry.get("edit_plan") or {})
