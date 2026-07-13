@@ -65,6 +65,54 @@ recorded `_model: qwen3.5-9b` — and notably re-categorized the clip (`story` v
 `irl_moment`), a concrete demonstration that model choice changes card judgment. Each card
 stamps its `_model` for provenance.
 
+## Under the hood: why decompose is CPU-only
+
+Both Lab entry points hardcode `device="cpu"` (`reference_analyze.py:86`,
+`decompose_corpus.py:70`) — deliberate, three reasons:
+1. **The GPU is already spoken for.** The same Analyze job's very next step is the card call,
+   which needs the 35B resident in LM Studio — and LM Studio's Vulkan pool spans BOTH cards,
+   including the 16 GB NVIDIA card that is the *only* device torch/CUDA can see. CUDA
+   CLAP/whisper/EasyOCR would fight the served model on that same card (OOM or unload/reload
+   thrash inside one job). CPU decompose = LM Studio never has to unload.
+2. **Windows-CUDA stability.** CUDA checkpoint loads can hang whisper/PANNs (in-code warning
+   at `clip_forensics.py:567`; the panns torch≥2.9 deadlock landmine) — an uncatchable stall
+   is fatal to an unattended background job. CPU is the always-finishes path; R0 even
+   survived a mid-run PC crash and resumed off cached timelines.
+3. **The economics don't need a GPU.** Decompose is a once-per-clip *cached* cost (~1–3 min
+   on the i9) over 20–60 s clips. Contrast the main pipeline, where whisper DOES run CUDA —
+   but on multi-hour VODs, and before the LLM stages need the card.
+
+Escape hatch: the `clip_forensics.py` CLI has `--cuda` for one-off runs; the Lab never passes it.
+
+## How gap items are minted — and their limits
+
+Gap items are **100% deterministic Python** (`corpus_diff.py`); the LLM writes only the
+narrative prose, and its prompt is fenced with "Do not invent metrics not shown". Three rules:
+1. **Numeric** — 7 hardcoded metrics (`sfx_per_30s`, `cuts_per_30s`, `zooms`,
+   `pct_text_hook`, `caption_wps`, `chat_overlay_pct`, `sfx_offset_ms`): ours ≥25%
+   relative off the reference median → item. Compared at ALL scope, plus per category
+   where both sides have ≥2 cards.
+2. **Categorical** — `caption_casing`, `cut_alignment`: item when the top-1 label differs.
+3. **Coverage** — any reference category (≥3 cards) we produce zero clips in →
+   "missing format" item, lever `feature-card`.
+
+**No count cap** — every breach becomes an item — but the *kind* vocabulary is bounded by
+rules × categories. What's open vs closed:
+- **Open (no code change needed):** the label space. Categories and categorical values are
+  LLM-authored card strings, so a new format appearing in the reference corpus automatically
+  mints a new coverage item — that is exactly how `news_compilation` surfaced and became the
+  news mode.
+- **Closed (needs a small code change):** new *measurable* metrics. A new phenomenon must be
+  captured by decompose/cards, aggregated in `_agg`, added to `_cmp`'s metric tuple, and
+  mapped in `_LEVERS`. The narrative can *mention* an unmeasured pattern and the cards'
+  free-text (`what_to_copy`) can carry it, but it gets no item id, no verdict buttons, and
+  no run-to-run tracking until promoted into the metric set.
+
+Closed-by-design: items must be reproducible for approve → apply → re-run → **re-measure**
+to mean anything (0.88→5.36 works only because the metric is identical run to run), and per
+the no-training doctrine the measurement vocabulary grows by curated reviewed commits, not
+by the model rewriting its own rubric.
+
 ## Verdicts, the queue, and the JUDGED report export
 
 Pressing **✓ Fix it / ✗ Not a problem** writes the verdict into
