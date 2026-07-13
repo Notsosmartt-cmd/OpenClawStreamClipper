@@ -28,6 +28,8 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
+import beat_map  # shared tuned timing primitives (refined payoff, laughter, transients, breaths)
+
 Span = tuple[float, float]
 
 # Defaults (overridable per call / by the caller from env or per-category config)
@@ -37,6 +39,41 @@ GUARANTEE_TAIL = 2.0    # never cut into the last N s (protect the payoff)
 SNAP_WINDOW = 1.0       # snap a cut edge to a transcript boundary within ±N s
 MIN_DROP = 0.6          # ignore drops shorter than this (not worth a cut)
 FADE = 0.22             # white-fade duration at each join (s)
+
+# --- jump-cuts v2 (J1) safety constants ---
+LEAVE_A_BEAT = 0.45     # keep this much of a dropped silence — editors "tighten" a
+                        #   pause, they don't erase it (a hard 0-gap join reads robotic)
+JOIN_CLEAR = 0.5        # keep a join ≥ this from a placed SFX cue so the fade can't
+                        #   chop the cue mid-sound (effect-aware joins)
+PROTECT_PAYOFF_S = 2.0  # no-cut halo around the REFINED payoff (env CLIP_CUT_PROTECT_PAYOFF_S)
+                        #   — the tail guard only covers the END; payoff_rescue proved the
+                        #   real payoff is often mid-clip. beat_map supplies the refined time.
+
+# Per-category compression appetite (P2 tuning). Rambly categories compress more;
+# punchy one-liners barely. v2 (J1) added the two missing categories that were
+# silently getting MAX_DROP_FRAC (0.45 — MORE aggressive than funny), and pulled
+# emotional down (pauses ARE the content there).
+CATEGORY_MAX_DROP = {
+    "storytime": 0.50, "informational": 0.50, "emotional": 0.20,
+    "reactive": 0.35, "funny": 0.30, "hype": 0.25, "hot_take": 0.30,
+    "controversial": 0.25,          # J1: was defaulting to 0.45
+    "dancing": 0.0,                 # J1: cuts chop music/motion continuity → off
+}
+
+# Per-category CUT POLICY (v2 J1) — enforces posture beyond the drop fraction:
+#   "off"     → no jump cuts at all (flashes still allowed)
+#   "silence" → silence-gaps only; strip LLM/"smart" cuts (an LLM cut that drops a
+#               qualifier on a controversial clip = an out-of-context edit = real risk;
+#               on emotional a semantic cut kills the beat)
+# Absent = full behavior per jump_mode. Live Stage-4 vocab:
+#   hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial
+# ("informational" isn't emitted by Stage 4 today — kept in the drop map as a
+#  harmless alias in case the vocabulary gains it.)
+CATEGORY_CUT_POLICY = {
+    "dancing": "off",
+    "controversial": "silence",
+    "emotional": "silence",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +111,25 @@ def _snap(t: float, boundaries: list[float], window: float) -> float:
     return best
 
 
+def _subtract_spans(drop: Span, protect: list[Span]) -> list[Span]:
+    """Interval subtraction: drop minus every protected span → 0..N sub-drops.
+    Used so a drop shrinks/splits AROUND the payoff halo and placed-SFX halos
+    instead of being rejected wholesale (v2 J1)."""
+    pieces = [drop]
+    for p0, p1 in protect:
+        nxt: list[Span] = []
+        for a, b in pieces:
+            if p1 <= a or p0 >= b:          # no overlap
+                nxt.append((a, b))
+                continue
+            if p0 > a:                       # keep the head before the protected zone
+                nxt.append((a, p0))
+            if p1 < b:                       # keep the tail after it
+                nxt.append((p1, b))
+        pieces = nxt
+    return pieces
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Keep-span computation
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,12 +138,22 @@ def compute_keep_spans(cuts: list[dict], clip_start: float, clip_end: float,
                        boundaries: list[float] | None = None, *,
                        min_keep: float = MIN_KEEP, max_drop_frac: float = MAX_DROP_FRAC,
                        guarantee_tail: float = GUARANTEE_TAIL,
-                       snap_window: float = SNAP_WINDOW, min_drop: float = MIN_DROP) -> list[Span]:
+                       snap_window: float = SNAP_WINDOW, min_drop: float = MIN_DROP,
+                       protect_spans: list[Span] | None = None,
+                       veto_times: list[float] | None = None) -> list[Span]:
     """Turn DROP spans into ordered KEEP spans over [clip_start, clip_end].
 
     Snaps cut edges to natural pauses, protects the last ``guarantee_tail`` s
     (the payoff), caps total dropped time at ``max_drop_frac`` (dropping the
     LONGEST dead spans first), and skips keep-slivers under ``min_keep``.
+
+    v2 (J1) additions, both absolute-VOD-second based:
+      * ``protect_spans`` — regions a drop may NOT touch (the refined-payoff halo,
+        each placed-SFX halo). A drop is SUBTRACTED around them (shrinks/splits),
+        not rejected wholesale.
+      * ``veto_times`` — instants a drop may not straddle (laughter markers,
+        prominent non-verbal transients). A resulting sub-drop containing one is
+        dropped from consideration.
     Returns ``[(clip_start, clip_end)]`` (a no-op) when nothing should be cut."""
     clip_start = float(clip_start)
     clip_end = float(clip_end)
@@ -96,6 +162,8 @@ def compute_keep_spans(cuts: list[dict], clip_start: float, clip_end: float,
     if total <= 0 or not cuts:
         return noop
     boundaries = boundaries or []
+    protect_spans = [p for p in (protect_spans or []) if p[1] > p[0]]
+    veto_times = veto_times or []
     keep_end_floor = clip_end - max(0.0, guarantee_tail)
 
     drops: list[Span] = []
@@ -107,8 +175,15 @@ def compute_keep_spans(cuts: list[dict], clip_start: float, clip_end: float,
             b = _snap(b, boundaries, snap_window)
         a = max(clip_start, a)
         b = min(keep_end_floor, b)
-        if b - a >= min_drop:
-            drops.append((a, b))
+        if b - a < min_drop:
+            continue
+        # subtract protected halos (payoff, placed SFX) → sub-drops around them
+        for sa, sb in (_subtract_spans((a, b), protect_spans) if protect_spans else [(a, b)]):
+            if sb - sa < min_drop:
+                continue
+            if any(sa <= vt <= sb for vt in veto_times):   # don't straddle a beat
+                continue
+            drops.append((sa, sb))
     if not drops:
         return noop
 
@@ -341,14 +416,6 @@ def compressed_duration(keep_spans: list[Span], fade: float = FADE) -> float:
 # Rule-based generators (work without the LLM)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Per-category compression appetite (P2 tuning). Rambly categories compress
-# more; punchy one-liners barely at all.
-CATEGORY_MAX_DROP = {
-    "storytime": 0.50, "informational": 0.50, "emotional": 0.40,
-    "reactive": 0.35, "funny": 0.30, "hype": 0.25, "hot_take": 0.30,
-}
-
-
 def load_segments(transcript_path: str, clip_start: float, clip_end: float) -> list[Span]:
     """Absolute speech segments (start,end) overlapping the window, clamped."""
     out: list[Span] = []
@@ -368,17 +435,25 @@ def load_segments(transcript_path: str, clip_start: float, clip_end: float) -> l
 
 
 def gaps_to_cuts(segments: list[Span], clip_start: float, clip_end: float,
-                 min_gap: float = 1.2) -> list[dict]:
+                 min_gap: float = 1.2, leave: float = LEAVE_A_BEAT) -> list[dict]:
     """Drop-spans for SILENCES (gaps between speech). The safest cut — removing
-    dead air never breaks the story; the tail guard protects the payoff."""
+    dead air never breaks the story; the tail guard protects the payoff.
+
+    v2 (J1) 'leave-a-beat': keep ``leave`` s of each pause (split ~lead/tail)
+    rather than erasing it, so the join reads as a deliberate tighten instead of
+    a robotic zero-gap splice."""
+    lead = leave * 0.55
+    tail = leave * 0.45
     cuts: list[dict] = []
     prev_end = clip_start
     for a, b in segments:
         if a - prev_end >= min_gap:
-            cuts.append({"drop_start": round(prev_end + 0.15, 3), "drop_end": round(a - 0.10, 3)})
+            ds, de = prev_end + lead, a - tail
+            if de - ds > 0.05:
+                cuts.append({"drop_start": round(ds, 3), "drop_end": round(de, 3)})
         prev_end = max(prev_end, b)
-    if clip_end - prev_end >= min_gap:
-        cuts.append({"drop_start": round(prev_end + 0.15, 3), "drop_end": round(clip_end, 3)})
+    if clip_end - prev_end >= min_gap:      # trailing gap runs to the (tail-guarded) end
+        cuts.append({"drop_start": round(prev_end + lead, 3), "drop_end": round(clip_end, 3)})
     return cuts
 
 
@@ -400,44 +475,82 @@ def flash_cadence(clip_start: float, clip_end: float, seed: int, *,
 # Unified post-render pass (cuts + flashes on the FINISHED clip)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_filter(keep_rel: list[Span], flash_rel: list[float], fade: float, fps: int) -> str:
-    """filter_complex → [vout][aout] from input 0 (a finished clip). Cuts via
-    trim+xfade(fadewhite); flashes via fade-to-white. Works on the rendered clip
-    so burned captions/effects stay in sync (they're pixels by now)."""
+def _ffprobe_dims(clip: str) -> tuple[int, int] | None:
+    """(w, h) of the first video stream; None on any failure."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", clip],
+                           capture_output=True, text=True, timeout=20)
+        w, h = r.stdout.strip().split("x")
+        return int(w), int(h)
+    except Exception:
+        return None
+
+
+def _build_filter(keep_rel: list[Span], flash_rel: list[float], fade: float, fps: int,
+                  *, style: str = "fadewhite", dims: tuple[int, int] | None = None) -> str:
+    """filter_complex → [vout][aout] from input 0 (a finished clip). Two join styles:
+
+      * ``fadewhite`` — trim + ``xfade=fadewhite`` (the v1 look; a white pop per join).
+      * ``hard`` / ``auto`` — HARD concat with an ALTERNATING ~5% punch-in per span
+        (v2 J4): consecutive kept spans differ in zoom, so the hard cut reads as a
+        deliberate edit, not a glitch — the modern short-form jump-cut look, minus the
+        template-tell white flashes. Needs ``dims`` (the clip W×H) for the crop; falls
+        back to a plain hard concat if absent.
+
+    Flashes are transient ``drawbox`` white pops (NOT ``fade`` — that painted the whole
+    clip white, BUG 64). Runs on the rendered clip so burned captions stay in sync."""
     fc: list[str] = []
-    if len(keep_rel) >= 2:
+    n = len(keep_rel)
+    hard = style in ("hard", "auto")
+    if n >= 2 and hard:
+        z = 1.05
+        for i, (s, e) in enumerate(keep_rel):
+            pre = f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS,fps={fps}"
+            if i % 2 == 1 and dims:                       # alternate punch-in
+                w, h = dims
+                pre += f",scale={int(round(w * z))}:{int(round(h * z))},crop={w}:{h}"
+            fc.append(pre + f"[v{i}]")
+            fc.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        vins = "".join(f"[v{i}]" for i in range(n))
+        ains = "".join(f"[a{i}]" for i in range(n))
+        fc.append(f"{vins}concat=n={n}:v=1:a=0[vcat]")
+        fc.append(f"{ains}concat=n={n}:v=0:a=1[aout]")
+        vcur = "vcat"
+    elif n >= 2:
         for i, (s, e) in enumerate(keep_rel):
             fc.append(f"[0:v]trim={s:.3f}:{e:.3f},setpts=PTS-STARTPTS,fps={fps}[v{i}]")
             fc.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS[a{i}]")
         vcur, acur = "v0", "a0"
         off = (keep_rel[0][1] - keep_rel[0][0]) - fade
-        for i in range(1, len(keep_rel)):
+        for i in range(1, n):
             fc.append(f"[{vcur}][v{i}]xfade=transition=fadewhite:duration={fade:.3f}"
                       f":offset={off:.3f}[vx{i}]")
             fc.append(f"[{acur}][a{i}]acrossfade=d={fade:.3f}[ax{i}]")
             vcur, acur = f"vx{i}", f"ax{i}"
             off += (keep_rel[i][1] - keep_rel[i][0]) - fade
+        fc.append(f"[{acur}]anull[aout]")
     else:
-        fc.append("[0:v]null[v0]"); fc.append("[0:a]anull[a0]")
-        vcur, acur = "v0", "a0"
+        fc.append("[0:v]null[v0]"); fc.append("[0:a]anull[aout]")
+        vcur = "v0"
     flparts: list[str] = []
     for ft in flash_rel:
-        # TRANSIENT drawbox flash — NOT fade (fade holds white outside its window
-        # and paints the whole clip white; that was BUG 64).
         flparts.extend(white_flash_boxes(ft, "soft"))
     fc.append(f"[{vcur}]" + (",".join(flparts) if flparts else "null") + "[vout]")
-    fc.append(f"[{acur}]anull[aout]")
     return ";".join(fc)
 
 
 def apply_transitions(clip_in: str, clip_out: str, keep_rel: list[Span],
                       flash_rel: list[float], *, fade: float = FADE, fps: int = 30,
+                      style: str = "fadewhite",
                       log: Callable[[str], None] | None = None) -> bool:
     """Render clip_in → clip_out applying cuts (keep_rel ≥2 spans) and/or flashes.
-    Uses the shared NVENC/libx264 selection. No-op (returns False) if nothing to do."""
+    Uses the shared NVENC/libx264 selection. No-op (returns False) if nothing to do.
+    ``style``: fadewhite | hard | auto (v2 J4 — hard/auto add the punch-in seam)."""
     if len(keep_rel) < 2 and not flash_rel:
         return False
-    fc = _build_filter(keep_rel, flash_rel, fade, fps)
+    dims = _ffprobe_dims(clip_in) if style in ("hard", "auto") and len(keep_rel) >= 2 else None
+    fc = _build_filter(keep_rel, flash_rel, fade, fps, style=style, dims=dims)
     try:
         import venc  # shared encoder selection
         vargs = venc.video_args(crf=20, preset_libx264="veryfast")
@@ -464,28 +577,95 @@ def process_clip_transitions(clip_path: str, *, cuts: list[dict], flashes: list[
                              clip_start: float, duration: float, temp_dir: str,
                              jump_mode: str, flash_mode: str, seed: int,
                              category: str = "", fps: int = 30,
+                             payoff_abs: float | None = None,
+                             effect_cues: list[float] | None = None,
+                             run_stamp: str = "", clip_title: str = "",
+                             cut_style: str | None = None,
+                             word_items: list[dict] | None = None,
                              log: Callable[[str], None] | None = None) -> bool:
     """Orchestrator entry point. Combines rule-based + LLM cuts/flashes, applies
     them to a FINISHED clip IN PLACE (via temp), and returns True if it modified
     the clip. Fully failure-soft: on any problem the original clip is untouched.
 
     jump_mode:  off | gaps (silence only) | llm (model cuts only) | on (both)
-    flash_mode: off | on (seeded cadence + any model flashes)"""
+    flash_mode: off | on (seeded cadence + any model flashes)
+
+    v2 params:
+      payoff_abs   — (J1) the moment's absolute-VOD payoff time (refined-payoff halo).
+      effect_cues  — (J1) clip-relative SFX cue times already placed (effect-aware
+                     joins + ground-truth remap in the effects log).
+      run_stamp/clip_title — provenance for the effects-log transitions row.
+      cut_style    — (J4) auto | hard | fadewhite join style (env CLIP_CUT_STYLE).
+      word_items   — (J5) word-level [{word,start,end}] for the filler micro-lane
+                     (env CLIP_CUT_FILLERS)."""
     jump_mode = (jump_mode or "off").lower()
     flash_mode = (flash_mode or "off").lower()
     if jump_mode == "off" and flash_mode == "off":
         return False
+
+    # v2 J1: per-category CUT POLICY — enforce posture beyond the drop fraction.
+    cat = (category or "").lower()
+    policy = CATEGORY_CUT_POLICY.get(cat)
+    if policy == "off":
+        jump_mode = "off"                       # no cuts (flashes still allowed)
+    elif policy == "silence" and jump_mode in ("llm", "on"):
+        jump_mode = "gaps"                       # strip smart cuts; keep silence removal
+
+    # v2 J4: join style + the fade the timeline math must use (hard/auto = 0 overlap).
+    _style = (cut_style or os.environ.get("CLIP_CUT_STYLE") or "auto").strip().lower()
+    if _style not in ("auto", "hard", "fadewhite"):
+        _style = "auto"
+    _fade = FADE if _style == "fadewhite" else 0.0
+
     clip_end = clip_start + duration
     seg = load_segments(f"{temp_dir}/transcript.json", clip_start, clip_end)
-    boundaries = sorted({b for s in seg for b in s})
+    # v2 J1: snap cut edges to natural BREATHS (RMS dips) too, not just Whisper
+    # segment boundaries — finer, more human edit points.
+    try:
+        breaths = [clip_start + b for b in beat_map.breath_points(temp_dir, clip_start, duration)]
+    except Exception:
+        breaths = []
+    boundaries = sorted({b for s in seg for b in s} | set(breaths))
 
     all_cuts: list[dict] = []
     if jump_mode in ("gaps", "on"):
         all_cuts += gaps_to_cuts(seg, clip_start, clip_end)
     if jump_mode in ("llm", "on"):
         all_cuts += (cuts or [])
-    max_drop = CATEGORY_MAX_DROP.get((category or "").lower(), MAX_DROP_FRAC)
-    keep_abs = (compute_keep_spans(all_cuts, clip_start, clip_end, boundaries, max_drop_frac=max_drop)
+    # v2 J5: deterministic pause-adjacent filler micro-lane (word-level), opt-in.
+    if (jump_mode != "off" and word_items
+            and os.environ.get("CLIP_CUT_FILLERS", "0").strip().lower() in ("1", "true", "on", "yes")):
+        try:
+            import cut_inference as _ci
+            all_cuts += _ci.filler_cuts(word_items, protect_after=clip_end - max(0.0, GUARANTEE_TAIL))
+        except Exception:
+            pass
+
+    # v2 J1: beat-map guards — never cut the refined payoff (a halo around the REAL
+    # payoff, which payoff_rescue proved is often mid-clip) or a placed SFX cue, and
+    # never straddle a laughter marker / prominent non-verbal transient (the pause or
+    # reaction that IS the content). Reuses the tuned SFX timing via beat_map.
+    protect_spans: list[Span] = []
+    veto_times: list[float] = []
+    if jump_mode != "off" and all_cuts:
+        try:
+            _pa = float(payoff_abs) if payoff_abs is not None else clip_start + duration / 2.0
+            bm = beat_map.build(temp_dir, clip_start, duration, {"timestamp": _pa})
+            _P = float(os.environ.get("CLIP_CUT_PROTECT_PAYOFF_S", "") or PROTECT_PAYOFF_S)
+            pay_abs = clip_start + float(bm.get("payoff_rel", duration / 2.0))
+            protect_spans.append((pay_abs - _P, pay_abs + _P))
+            veto_times += [clip_start + t for t in bm.get("laughter_rel", [])]
+            veto_times += [clip_start + t for t in bm.get("transient_rel", [])]
+        except Exception:
+            pass
+    ec = [float(t) for t in (effect_cues or []) if t is not None]
+    for t in ec:                                 # effect-aware: keep joins clear of cues
+        protect_spans.append((clip_start + t - JOIN_CLEAR, clip_start + t + JOIN_CLEAR))
+
+    max_drop = CATEGORY_MAX_DROP.get(cat, MAX_DROP_FRAC)
+    keep_abs = (compute_keep_spans(all_cuts, clip_start, clip_end, boundaries,
+                                   max_drop_frac=max_drop, protect_spans=protect_spans,
+                                   veto_times=veto_times)
                 if (jump_mode != "off" and all_cuts) else [(clip_start, clip_end)])
     keep_rel = [(round(s - clip_start, 3), round(e - clip_start, 3)) for s, e in keep_abs]
 
@@ -495,27 +675,48 @@ def process_clip_transitions(clip_path: str, *, cuts: list[dict], flashes: list[
         all_flashes += flash_cadence(clip_start, clip_end, seed)
     flash_rel: list[float] = []
     for fl in all_flashes:
-        r = remap_time(float(fl.get("t", -1)), keep_abs, fade=FADE)
-        if r is not None and 0.4 < r < (compressed_duration(keep_abs) - 0.4):
+        r = remap_time(float(fl.get("t", -1)), keep_abs, fade=_fade)
+        if r is not None and 0.4 < r < (compressed_duration(keep_abs, _fade) - 0.4):
             flash_rel.append(round(r, 2))
     flash_rel = sorted(set(flash_rel))[:6]
 
     if len(keep_rel) < 2 and not flash_rel:
         return False
+
+    # v2 J1: ground-truth honesty — where the placed SFX cues land on the COMPRESSED
+    # timeline (the Reference Lab reads these), and which got swallowed by a drop.
+    remapped_cues: list[float] = []
+    dropped_cues: list[float] = []
+    if ec and len(keep_rel) >= 2:
+        for t in ec:
+            r = remap_time(clip_start + t, keep_abs, fade=_fade)
+            if r is None:
+                dropped_cues.append(round(t, 3))
+            else:
+                remapped_cues.append(round(r, 3))
+
     if log:
-        kept = compressed_duration(keep_abs)
+        kept = compressed_duration(keep_abs, _fade)
         log(f"  [transitions] cuts={len(keep_rel) - 1 if len(keep_rel) > 1 else 0} "
-            f"({duration:.1f}s→{kept:.1f}s) flashes={len(flash_rel)} cat={category}")
+            f"({duration:.1f}s→{kept:.1f}s) style={_style} flashes={len(flash_rel)} cat={category}"
+            + (f" sfx:{len(remapped_cues)}kept/{len(dropped_cues)}dropped" if ec else ""))
     out_tmp = str(Path(clip_path).with_suffix(".trans.mp4"))
-    if apply_transitions(clip_path, out_tmp, keep_rel, flash_rel, fps=fps, log=log):
+    if apply_transitions(clip_path, out_tmp, keep_rel, flash_rel, fade=_fade,
+                         fps=fps, style=_style, log=log):
         try:
             os.replace(out_tmp, clip_path)
             try:  # effects manifest (logging only, never affects the render)
                 import effects_log as _efl
-                _efl.log_effect(Path(clip_path).stem, "transitions",
-                                {"flashes": [{"t": t} for t in flash_rel],
-                                 "jump_cuts": max(0, len(keep_rel) - 1),
-                                 "category": category})
+                _rec = {"flashes": [{"t": t} for t in flash_rel],
+                        "jump_cuts": max(0, len(keep_rel) - 1),
+                        "cut_style": _style,
+                        "category": category,
+                        "duration_before": round(duration, 2),
+                        "duration_after": round(compressed_duration(keep_abs, _fade), 2)}
+                if ec:                            # keep the Lab's SFX ground truth true
+                    _rec["sfx_cues_remapped"] = remapped_cues
+                    _rec["sfx_cues_dropped_by_cut"] = dropped_cues
+                _efl.log_effect(clip_title or Path(clip_path).stem, "transitions", _rec)
             except Exception:
                 pass
             return True
@@ -585,6 +786,36 @@ def _selftest() -> int:
     gc = gaps_to_cuts([(100, 105), (110, 130)], 100.0, 130.0, min_gap=1.2)
     check("gap -> drop", len(gc) == 1 and 104.9 < gc[0]["drop_start"] < 105.4
           and 109.7 < gc[0]["drop_end"] < 110.2)
+
+    # v2 J1: leave-a-beat — ~0.45s of the 5s silence is kept
+    left = 5.0 - (gc[0]["drop_end"] - gc[0]["drop_start"])
+    check("leave-a-beat residual ~0.45", abs(left - LEAVE_A_BEAT) < 0.06)
+
+    # v2 J1: protect_spans SUBTRACT (payoff halo splits a drop around itself)
+    ksp = compute_keep_spans([{"drop_start": 110, "drop_end": 125}], 100.0, 130.0,
+                             protect_spans=[(116.0, 120.0)])
+    check("protect splits a drop -> 3 keeps",
+          len(ksp) == 3 and any(abs(s - 116.0) < 1e-6 and abs(e - 120.0) < 1e-6 for s, e in ksp))
+
+    # v2 J1: veto_times reject a drop that straddles a beat (laughter/transient)
+    kv = compute_keep_spans([{"drop_start": 110, "drop_end": 120}], 100.0, 130.0,
+                            veto_times=[115.0])
+    check("veto straddling drop -> no-op", kv == [(100.0, 130.0)])
+
+    # v2 J1: category posture wired
+    check("controversial/dancing drop caps fixed",
+          CATEGORY_MAX_DROP.get("controversial") == 0.25 and CATEGORY_MAX_DROP.get("dancing") == 0.0)
+    check("cut policy: dancing off, controversial+emotional silence",
+          CATEGORY_CUT_POLICY.get("dancing") == "off"
+          and CATEGORY_CUT_POLICY.get("controversial") == "silence"
+          and CATEGORY_CUT_POLICY.get("emotional") == "silence")
+
+    # v2 J4: seam styling — hard/auto = concat + alternating punch-in (no xfade)
+    fc_hard = _build_filter([(0.0, 3.0), (5.0, 8.0)], [], 0.0, 30, style="hard", dims=(1080, 1920))
+    check("hard style: concat + punch-in, no xfade",
+          "concat=" in fc_hard and "crop=1080:1920" in fc_hard and "xfade" not in fc_hard)
+    fc_fade = _build_filter([(0.0, 3.0), (5.0, 8.0)], [], FADE, 30, style="fadewhite")
+    check("fadewhite style: xfade join", "xfade=transition=fadewhite" in fc_fade and "[vout]" in fc_fade)
 
     # flash_cadence deterministic + in-window
     fa = flash_cadence(100.0, 140.0, 1234)

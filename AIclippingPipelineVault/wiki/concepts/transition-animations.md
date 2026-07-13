@@ -52,11 +52,13 @@ Pure, testable helpers (`python clip_cuts.py --selftest`):
 
 ---
 
-## Model inference
+## Model inference (v2 — [[concepts/plan-jump-cuts-v2-2026-07]], shipped 2026-07-13)
 
-The cut decision ("which rambling to drop") is a transcript-reasoning task, so it's added to the **Stage 6 vision call**, which already sees the clip's transcript. When a transition mode is on, the prompt is given the **absolute-timestamped** transcript and asked for `cuts` / `flashes` (stored on `edit_plan`). **Gated**: when the flags are off (default), the prompt is byte-identical to before — zero risk to normal runs. The validator (`edit_plan.normalize`) + the keep-span caps tolerate sloppy model output.
+The smart cut decision is now a **dedicated text-only call** (`scripts/lib/cut_inference.py`), NOT a field of the Stage-6 vision mega-prompt. The model QUOTES verbatim substrings to delete; `cut_inference` maps each quote to time **deterministically** (segment start/end + intra-segment char interpolation), so the LLM never does word→second arithmetic and a hallucinated quote (not found in the transcript) is discarded — self-verifying. The call runs in Stage 6 (model loaded); the vision prompt now only infers flashes. A **J3 coherence gate** (the payoff's content-words must survive the cut) rejects gutting cuts; an optional LLM fidelity judge (`CLIP_CUT_JUDGE`, default off) adds a second check.
 
-Crucially, the **rule-based modes work without the LLM**: `gaps` (silence-drop) and the flash cadence need only the transcript, so the feature is useful immediately and degrades gracefully.
+Cuts reuse the **tuned SFX timing** via `scripts/lib/beat_map.py` (extracted from `sfx_cues.py`): the refined payoff (protect a halo around the REAL payoff, which `payoff_rescue` proved is often mid-clip), laughter markers + prominent transients (veto — never cut a comedic pause/laugh), and breath points (cut edges land on natural breaths, finer than Whisper segment edges).
+
+The **rule-based `gaps` mode still needs no LLM** (silence-drop from the transcript + `leave-a-beat`), so the feature is useful immediately and degrades gracefully.
 
 ---
 
@@ -64,23 +66,30 @@ Crucially, the **rule-based modes work without the LLM**: `gaps` (silence-drop) 
 
 | Env var | Values | Meaning |
 |---|---|---|
-| `CLIP_JUMP_CUTS` | `off` (default) · `gaps` · `llm` · `on` | `gaps`=drop silence only (safe); `llm`=model-inferred cuts; `on`=both |
+| `CLIP_JUMP_CUTS` | `off` (default) · `gaps` · `llm` · `on` | `gaps`=silence only (safe); `llm`=text-anchored cuts; `on`=both |
+| `CLIP_CUT_STYLE` | `auto` (default) · `hard` · `fadewhite` | join look — `auto`/`hard`=hard cut + alternating ±5% punch-in; `fadewhite`=the v1 white-flash join |
+| `CLIP_CUT_PROTECT_PAYOFF_S` | `2.0` | no-cut halo around the refined payoff |
+| `CLIP_CUT_JUDGE` | `0` (default) · `1` | optional LLM fidelity judge on the compressed transcript |
+| `CLIP_CUT_FILLERS` | `0` (default) · `1` | pause-adjacent filler-word micro-lane (word-level) |
+| `CLIP_AB_CUTS_EXPERIMENT` | `0` (default) · `1` | compress the **(B)** variant only → labelable A-vs-B pair (measurement) |
 | `CLIP_FLASH_CUTS` | `off` (default) · `on` | seeded cadence flashes + any model-picked beats |
 
-[[entities/dashboard|Dashboard]] toggles (Originality & Render panel): **"White-flash transitions"** checkbox + **"Jump-cut compression"** select (Off / Silence only / Smart + silence) → `config_io.originality_to_env`.
+**Per-category posture** (`clip_cuts.CATEGORY_CUT_POLICY` + `CATEGORY_MAX_DROP`): storytime/informational compress most (0.50); funny/hot_take 0.30, reactive 0.35, hype 0.25; **emotional** 0.20 **silence-only** (pauses ARE the content); **controversial** 0.25 **silence-only** (an LLM cut dropping a qualifier = an out-of-context edit); **dancing** = **off** (joins chop music/motion).
 
-**Guardrails** (so a cut can't wreck a clip): per-category max-drop fraction (`clip_cuts.CATEGORY_MAX_DROP` — storytime/informational 0.5, hype 0.25, …), a protected tail (`GUARANTEE_TAIL` 2 s — never cut the payoff), `MIN_KEEP` 1.5 s slivers skipped, cut edges snapped to natural pauses, flashes capped at 6/clip with a min spacing.
+[[entities/dashboard|Dashboard]] (Originality & Render panel): **"Jump-cut compression"** select (Off / Silence only / Smart + silence) + **"Editing style"** select (Auto / Hard / White fade) → `config_io.originality_to_env`.
+
+**Guardrails** (so a cut can't wreck a clip): the per-category caps + policy above; a protected **payoff halo** (`CLIP_CUT_PROTECT_PAYOFF_S`, refined via beat_map) AND the protected tail (`GUARANTEE_TAIL` 2 s); **veto** of any drop straddling a laughter marker or prominent transient; **effect-aware joins** (a `JOIN_CLEAR` 0.5 s halo round every placed SFX cue, and the surviving cue times remapped into the effects log so the Reference Lab's ground truth stays honest); `MIN_KEEP` 1.5 s slivers skipped; edges snapped to breaths/pauses; flashes capped at 6/clip.
 
 ---
 
 ## Cost & limitations
 
 - One extra NVENC re-encode per modified clip (~3–5 s each, only when enabled). Runs sequentially after the parallel render loop.
-- The recorded/summary duration is the pre-cut estimate (the clip file is correct; the logged number is cosmetic).
-- **Future (P2 deferred):** a dedicated text edit-pass (separate LLM call over the full clip transcript) would reason about cuts better than folding it into the vision call. The current Stage 6 route + rule-based gaps are sufficient for v1.
+- The effects-log `transitions` row now records `duration_before`/`duration_after` + remapped/dropped SFX cue times, so the compressed length is recoverable (the old "duration is a pre-cut estimate" caveat is resolved for cut clips).
+- **Not built:** join-time whoosh (`CLIP_CUT_WHOOSH`) — the visual punch-in hides the seam; a whoosh needs audio-input plumbing out of proportion to its value (one-item follow-up).
 
-> [!note] Needs a validation run
-> All layers are unit/FFmpeg-tested in isolation, but the full Stage-6→7 path needs an end-to-end run with a flag on (`CLIP_JUMP_CUTS=gaps` is the safest first try) to confirm in production. Default-off, so normal runs are unaffected.
+> [!note] Owner validation gate still open
+> All layers pass unit + a real-ffmpeg integration test (both join styles, full `process_clip_transitions` gaps path with SFX remap). The remaining gate before any **default flip** is the owner's live `CLIP_JUMP_CUTS=gaps` pipeline run + eyeball. Default-off, so normal runs are unaffected. See [[concepts/plan-jump-cuts-v2-2026-07]] J6.
 
 ---
 

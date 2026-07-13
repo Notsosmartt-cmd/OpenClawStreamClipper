@@ -79,6 +79,12 @@ updated: 2026-07-13
 > would catch "our storytime clips run short vs reference storytimes". Each is a 3-line change
 > (`_agg` key → `_cmp` tuple → `_LEVERS` entry) per the closed-rules doctrine in
 > [[concepts/reference-lab]].
+>
+> **(e) SHIPPED 2026-07-13** — `duration_med` is now a numeric gap metric (`corpus_diff.py`:
+> `_duration()` + `_agg` + the `_cmp` tuple + `_LEVERS` → lever `stage4_moments max_dur +
+> CLIP_JUMP_CUTS`), so the Lab measures clip length vs reference per category and can track
+> jump-cut compression ([[concepts/plan-jump-cuts-v2-2026-07]] J6). (d) `verbal_vs_visual_top`
+> still pending.
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 
