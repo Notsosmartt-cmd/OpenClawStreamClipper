@@ -75,6 +75,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/plan-reference-deconstruction-2026-07]] — Loop-B rebuild: reference clips → editorial attribute CARDS → contrastive DIFF vs our clips → curated apply + **Reference Lab dashboard tab (R6 SHIPPED 2026-07-12, replaced Clip Forensics)**; no training (**in-progress — R0–R4 + R6 done; R5 retrieval few-shot pending**)
 - [[concepts/reference-lab]] — **Owner's guide** to the Reference Lab tab: panels, the 2 actions, where the LLM runs, model dropdown, judged-report export
 - [[concepts/plan-news-compilation-2026-07]] — "Streamer News Today" third output mode: multi-VOD → one compilation from FINISHED clips (grid intro, headline banners, piper anchor VO); dashboard News Compile button (**v1 shipped 2026-07-11 — owner ear-check gate open**)
+- [[concepts/plan-jump-cuts-v2-2026-07]] — Beat-aware jump cuts: unify cut timing w/ the SFX beat machinery (beat_map), payoff halo, text-anchored micro-call, seam styling, per-category posture (**planned 2026-07-13**)
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library

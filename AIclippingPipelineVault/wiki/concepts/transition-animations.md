@@ -86,6 +86,12 @@ Crucially, the **rule-based modes work without the LLM**: `gaps` (silence-drop) 
 
 ## Improvement evaluation (2026-07-13, owner: "any substantial improvements to smart+silence?")
 
+> [!note] Expanded into a full development plan
+> This ranked list grew into **[[concepts/plan-jump-cuts-v2-2026-07]]** (phases J0–J6: shared
+> beat_map extraction, payoff-anchored protection, cut↔SFX conflict fix, text-anchored
+> micro-call, coherence gate, seam styling, category-gated rollout). That page is now the
+> authoritative roadmap; the list below is the original evaluation.
+
 Ranked by impact/cost, each grounded in a specific shipped weakness. The "P2 deferred" note
 above (dedicated edit-pass) is subsumed by #1. None violate the no-training doctrine — all are
 prompt/config/deterministic-code changes.
