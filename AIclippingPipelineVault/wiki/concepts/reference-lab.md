@@ -135,6 +135,14 @@ paste-anywhere handoff (to an agent session, a note, Discord).
   the queue under their old date (and in any `_judged.md` you exported).
 - All outputs are derived artifacts (gitignored): cards in `reference_clips/.cache/`, our-clip
   cards in `clips/.diagnostics/cards/<run>/`, reports + queue in `clips/.diagnostics/`.
+- **Folder layout (2026-07-13 reorg):** the reference clips sit at the top level of
+  `reference_clips/` (video files only — uncluttered so you can add/rename/remove clips
+  freely); owner annotations are grouped in **`reference_clips/notes/<stem>.notes.json`**
+  (tracked in git, stem must match the clip). Resolution is centralized in
+  `clip_forensics.notes_path()` / `iter_notes()` and still READS a legacy top-level sidecar
+  if one is present, so nothing breaks if you drop a clip in with an old-style sidecar —
+  but every tool now WRITES into `notes/`. `.cache/` (machine artifacts) and `sfx_reference/`
+  are unchanged.
 - After ANY dashboard code change, restart the dashboard ([[concepts/bugs-and-fixes#BUG 70]]).
 
 ## The full loop (already exercised end-to-end)

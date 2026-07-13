@@ -55,7 +55,7 @@ _LABELS_CACHE: dict | None = None
 _DEFAULT_LABELS: dict[str, Any] = {
     # CLAP raw audio-text cosines run LOW + uncalibrated (verified 2026-06-21:
     # top labels ~0.26-0.32 on real clips). 0.30 is a starting default — TUNE
-    # per corpus against your reference_clips/.notes.json. Higher = fewer/cleaner.
+    # per corpus against your reference_clips/notes/*.notes.json. Higher = fewer/cleaner.
     "clap_threshold": 0.30,
     "panns_threshold": 0.30,
     "clap_labels": [

@@ -29,12 +29,44 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 REF_DIR = REPO / "reference_clips"
+# Owner notes live in a dedicated subfolder so the clip files aren't buried among
+# sidecars (2026-07-13 reorg). Reads fall back to the legacy top-level sidecar so a
+# clip dropped in with an old-style <stem>.notes.json still resolves.
+NOTES_DIR = REF_DIR / "notes"
 LIB_DIR = REPO / "scripts" / "lib"
 sys.path.insert(0, str(LIB_DIR))  # so `import audio_sense` works as a script
 
 
 def _log(msg: str) -> None:
     print(f"[clip_forensics] {msg}", file=sys.stderr)
+
+
+def notes_path(clip, *, for_write: bool = False) -> Path:
+    """Resolve a clip's .notes.json. Canonical home: reference_clips/notes/<stem>.notes.json.
+    `clip` may be a Path, a filename, or a bare stem. On READ, falls back to a legacy
+    top-level sidecar (reference_clips/<stem>.notes.json) when the grouped file is absent.
+    On WRITE (for_write=True) it always targets the grouped notes/ dir."""
+    stem = Path(clip).stem
+    grouped = NOTES_DIR / f"{stem}.notes.json"
+    if for_write or grouped.exists():
+        return grouped
+    legacy = REF_DIR / f"{stem}.notes.json"
+    return legacy if legacy.exists() else grouped
+
+
+def iter_notes() -> list[Path]:
+    """Every .notes.json across the corpus: the grouped notes/ dir first, then any
+    legacy top-level sidecar not already shadowed by a grouped file."""
+    out: list[Path] = []
+    seen: set[str] = set()
+    if NOTES_DIR.is_dir():
+        for p in sorted(NOTES_DIR.glob("*.notes.json")):
+            seen.add(p.name[: -len(".notes.json")])
+            out.append(p)
+    for p in sorted(REF_DIR.glob("*.notes.json")):
+        if p.name[: -len(".notes.json")] not in seen:
+            out.append(p)
+    return out
 
 
 # Hard per-stage wall-clock caps (seconds). Generous — a real run on a curated
@@ -546,12 +578,10 @@ def decompose(clip: Path, *, device: str | None = None,
     else:
         timeline["_stages"]["style_profile"] = "skipped"
 
-    notes_path = clip.with_suffix(".notes.json")
-    if not notes_path.exists():
-        notes_path = clip.parent / f"{stem}.notes.json"
-    if notes_path.exists():
+    np_ = notes_path(clip)
+    if np_.exists():
         try:
-            notes = json.loads(notes_path.read_text(encoding="utf-8"))
+            notes = json.loads(np_.read_text(encoding="utf-8"))
             timeline["notes_eval"] = _score_against_notes(timeline, notes)
         except Exception as e:
             _log(f"notes eval failed ({type(e).__name__})")
@@ -632,7 +662,8 @@ def _cli() -> int:
 
     if args.draft_notes:
         draft = _draft_notes(timeline)
-        dst = clip.with_suffix(".notes.json")
+        dst = notes_path(clip, for_write=True)
+        dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists():
             try:
                 existing = json.loads(dst.read_text(encoding="utf-8"))

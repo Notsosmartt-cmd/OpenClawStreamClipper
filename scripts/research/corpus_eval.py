@@ -50,15 +50,13 @@ def draft_from_cache() -> int:
     made = 0
     for tj in sorted(CACHE.glob("*.timeline.json")):
         stem = tj.name[: -len(".timeline.json")]
-        # find the media file (any extension) to place the sidecar next to it
-        media = next((m for m in REF_DIR.glob(f"{stem}.*")
-                      if m.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm")), None)
-        dst = (media.with_suffix(".notes.json") if media
-               else REF_DIR / f"{stem}.notes.json")
-        if dst.exists():
-            existing = _load(dst) or {}
+        existing_path = cf.notes_path(stem)            # read resolver: grouped OR legacy sidecar
+        dst = cf.notes_path(stem, for_write=True)      # grouped reference_clips/notes/<stem>.notes.json
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if existing_path.exists():
+            existing = _load(existing_path) or {}
             if not existing.get("_draft"):
-                continue  # never clobber a corrected file
+                continue  # never clobber a corrected file (grouped or legacy)
         tl = _load(tj)
         if not tl:
             continue
@@ -72,7 +70,7 @@ def draft_from_cache() -> int:
 
 
 def evaluate() -> int:
-    notes_files = sorted(REF_DIR.glob("*.notes.json"))
+    notes_files = cf.iter_notes()   # grouped reference_clips/notes/ + any legacy sidecars
     if not notes_files:
         print("[corpus_eval] no .notes.json files. Decompose clips with --ocr, then "
               "`corpus_eval --draft-from-cache` to seed drafts to correct.")
