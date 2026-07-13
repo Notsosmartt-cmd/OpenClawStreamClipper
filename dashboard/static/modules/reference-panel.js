@@ -1,5 +1,8 @@
-// Reference Lab panel (R6) — the reverse-engineering loop from the UI.
-// decompose -> attribute cards -> card our clips -> gap report -> approve/reject.
+// Reference Lab panel — Clipper-style UX (2026-07-12 simplification).
+// Check reference clips in a table -> press ONE button:
+//   "Analyze Selected (N)" / "Analyze New"  = decompose-if-needed + style card
+//   "Compare -> Gap Report"                 = card our clips (missing only) + report
+// Findings render with plain-language labels + approve/reject per row.
 // See AIclippingPipelineVault/wiki/concepts/plan-reference-deconstruction-2026-07.
 
 import { apiPost, humanBytes } from "./util.js";
@@ -8,59 +11,149 @@ function esc(s) {
     return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const refState = {
+    selected: [],          // stems of checked reference clips
+    clips: [],             // last corpus payload
+    jobRunning: false,
+};
 let jobPoll = null;
 let curReportDate = "latest";
 
-// ---- corpus table + run picker -------------------------------------------
+// ---- Reference Clips table (mirrors the VOD Library) -----------------------
 export async function fetchReferenceCorpus() {
-    const body = document.getElementById("ref-corpus");
-    if (!body) return;
+    const tbody = document.getElementById("ref-tbody");
+    if (!tbody) return;
     try {
         const res = await fetch("/api/reference/corpus");
         const d = await res.json();
+        refState.clips = d.clips || [];
         const c = d.counts || {};
         const cs = document.getElementById("ref-counts");
-        if (cs) cs.textContent = `${c.total} clips · ${c.decomposed} decomposed · ${c.carded} carded`;
+        if (cs) cs.textContent = `${c.carded}/${c.total} analyzed`;
 
-        body.innerHTML = (d.clips || []).map(cl => {
-            const chip = (ok, txt) => `<span class="fx-chip" style="background:${ok ? "var(--accent-dim,#1c3)" : "#333"};opacity:${ok ? 1 : .5}">${esc(txt)}</span>`;
-            const notesChip = cl.notes === "corrected" ? chip(true, "notes✓")
-                : cl.notes === "draft" ? `<span class="fx-chip" style="opacity:.6">notes-draft</span>` : "";
-            const catChip = cl.category ? `<span class="fx-chip">${esc(cl.category)}</span>` : "";
-            return `<tr>
-              <td>${esc(cl.name)} <span class="fx-muted">${humanBytes(cl.size_bytes)}</span></td>
-              <td>${chip(cl.decomposed, "decomp")} ${chip(cl.carded, "card")} ${catChip} ${notesChip}</td>
-              <td>${cl.carded ? `<button class="btn-ghost btn-sm" data-card="${esc(cl.stem)}">view card</button>` : ""}</td>
+        if (!refState.clips.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No reference clips — drop competitor .mp4s into reference_clips/</td></tr>';
+            refState.selected = [];
+            syncRefChecks();
+            updateRefControls();
+            return;
+        }
+        const present = new Set(refState.clips.map(x => x.stem));
+        refState.selected = refState.selected.filter(s => present.has(s));
+
+        tbody.innerHTML = refState.clips.map(cl => {
+            const checked = refState.selected.includes(cl.stem);
+            const status = cl.carded
+                ? `<span class="ref-ok">✓ analyzed</span>${cl.category ? ` <span class="fx-muted">· ${esc(cl.category)}</span>` : ""}`
+                : (cl.decomposed
+                    ? `<span class="fx-muted">partial — needs analyze</span>`
+                    : `<span class="fx-muted">not analyzed</span>`);
+            return `
+            <tr data-ref="${esc(cl.stem)}" class="${checked ? "selected" : ""}"
+                onclick="toggleRef('${esc(cl.stem)}')">
+                <td style="text-align:center; width:36px;" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="ref-check" data-ref="${esc(cl.stem)}"
+                           ${checked ? "checked" : ""} onchange="toggleRef('${esc(cl.stem)}')">
+                </td>
+                <td>${esc(cl.name)}</td>
+                <td>${humanBytes(cl.size_bytes)}</td>
+                <td>${status}</td>
+                <td onclick="event.stopPropagation()">${cl.carded
+                    ? `<button class="btn-ghost btn-sm" data-card="${esc(cl.stem)}">card</button>` : ""}</td>
             </tr>`;
-        }).join("") || `<tr><td colspan="3" class="fx-muted">No clips in reference_clips/</td></tr>`;
+        }).join("");
 
-        body.querySelectorAll("[data-card]").forEach(b =>
+        tbody.querySelectorAll("[data-card]").forEach(b =>
             b.addEventListener("click", () => viewCard(b.dataset.card)));
+        syncRefChecks();
+        updateRefControls();
 
-        // run picker for R2/R3
+        // run picker (newest first; ✓ = that run's clips already carded)
         const sel = document.getElementById("ref-run");
         if (sel) {
             const cur = sel.value;
             sel.innerHTML = (d.runs || []).map(r =>
-                `<option value="${esc(r.stamp)}">${esc(r.stamp)}${r.carded ? "  ✓cards" : ""} — ${r.renders} renders</option>`
-            ).join("") || `<option value="">no clip runs found — clip a VOD first</option>`;
-            if (cur) sel.value = cur;
+                `<option value="${esc(r.stamp)}">${esc(r.stamp)}${r.carded ? " ✓" : ""} — ${r.renders} clips</option>`
+            ).join("") || `<option value="">no clip runs yet — clip a VOD first</option>`;
+            if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
         }
     } catch (e) {
-        body.innerHTML = `<tr><td colspan="3" class="fx-warn">Failed: ${esc(e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="fx-warn">Failed: ${esc(e.message)}</td></tr>`;
     }
 }
 
-// ---- job launch + poll ----------------------------------------------------
+export function toggleRef(stem) {
+    const i = refState.selected.indexOf(stem);
+    if (i >= 0) refState.selected.splice(i, 1);
+    else refState.selected.push(stem);
+    syncRefChecks();
+    updateRefControls();
+}
+
+export function toggleAllRefs(checked) {
+    refState.selected = checked ? refState.clips.map(c => c.stem) : [];
+    syncRefChecks();
+    updateRefControls();
+}
+
+function syncRefChecks() {
+    document.querySelectorAll("#ref-tbody tr[data-ref]").forEach(tr => {
+        const on = refState.selected.includes(tr.dataset.ref);
+        tr.classList.toggle("selected", on);
+        const cb = tr.querySelector(".ref-check");
+        if (cb) cb.checked = on;
+    });
+    const all = document.getElementById("ref-select-all");
+    if (all) {
+        const n = refState.selected.length, t = refState.clips.length;
+        all.checked = t > 0 && n === t;
+        all.indeterminate = n > 0 && n < t;
+    }
+}
+
+function updateRefControls() {
+    const n = refState.selected.length;
+    const analyze = document.getElementById("btn-ref-analyze");
+    const analyzeNew = document.getElementById("btn-ref-analyze-new");
+    const compare = document.getElementById("btn-ref-compare");
+    const stop = document.getElementById("btn-ref-stop");
+    if (analyze) {
+        analyze.disabled = n === 0 || refState.jobRunning;
+        analyze.textContent = n > 1 ? `Analyze Selected (${n})` : "Analyze Selected";
+    }
+    if (analyzeNew) analyzeNew.disabled = refState.jobRunning;
+    if (compare) compare.disabled = refState.jobRunning;
+    if (stop) stop.style.display = refState.jobRunning ? "inline-block" : "none";
+}
+
+// ---- the two actions -------------------------------------------------------
 async function startJob(url, payload, label) {
     const st = document.getElementById("ref-job-status");
     const { ok, data } = await apiPost(url, payload || {});
     if (!ok) { if (st) st.textContent = "✗ " + (data.error || "failed to start"); return; }
-    if (st) st.textContent = `▶ ${label} started…`;
-    setJobButtons(true);
+    refState.jobRunning = true;
+    updateRefControls();
+    if (st) st.textContent = `▶ ${label}…`;
     if (jobPoll) clearInterval(jobPoll);
     jobPoll = setInterval(pollJob, 2500);
     pollJob();
+}
+
+export function analyzeSelected() {
+    if (!refState.selected.length) return;
+    startJob("/api/reference/analyze", { stems: refState.selected.slice() },
+        `analyzing ${refState.selected.length} clip(s)`);
+}
+export function analyzeNew() {
+    startJob("/api/reference/analyze", {}, "analyzing new clips");
+}
+export function runCompare() {
+    const run = document.getElementById("ref-run")?.value;
+    if (!run) return;
+    startJob("/api/reference/compare", { run }, `comparing vs run ${run}`);
+}
+export async function stopReferenceJob() {
+    await apiPost("/api/reference/stop", {});
 }
 
 async function pollJob() {
@@ -71,48 +164,23 @@ async function pollJob() {
         const d = await res.json();
         if (logEl) { logEl.textContent = d.log || ""; logEl.scrollTop = logEl.scrollHeight; }
         if (d.running) {
+            refState.jobRunning = true;
             if (st) st.textContent = `▶ ${d.name}… ${d.elapsed}s`;
         } else {
             clearInterval(jobPoll); jobPoll = null;
-            setJobButtons(false);
+            refState.jobRunning = false;
             if (st) st.textContent = d.name
-                ? `✓ ${d.name} finished (exit ${d.returncode ?? 0})` : "idle";
+                ? (d.returncode === 0 ? `✓ ${d.name} finished` : `✗ ${d.name} exited ${d.returncode}`)
+                : "idle";
+            updateRefControls();
             fetchReferenceCorpus();
-            loadReport();  // a diff run may have produced a fresh report
+            loadReport();
         }
     } catch (e) { /* transient */ }
+    updateRefControls();
 }
 
-function setJobButtons(disabled) {
-    ["btn-ref-decompose", "btn-ref-cards", "btn-ref-our-cards", "btn-ref-diff"]
-        .forEach(id => { const b = document.getElementById(id); if (b) b.disabled = disabled; });
-    const stop = document.getElementById("btn-ref-stop");
-    if (stop) stop.style.display = disabled ? "inline-block" : "none";
-}
-
-export function runDecompose() {
-    const scope = document.getElementById("ref-scope")?.value || "missing";
-    startJob("/api/reference/decompose", { scope }, `decompose (${scope})`);
-}
-export function runCards() {
-    const scope = document.getElementById("ref-scope")?.value || "missing";
-    startJob("/api/reference/cards", { scope }, `build cards (${scope})`);
-}
-export function runOurCards() {
-    const run = document.getElementById("ref-run")?.value;
-    if (!run) return;
-    startJob("/api/reference/our-cards", { run }, `card our clips (${run})`);
-}
-export function runDiff() {
-    const run = document.getElementById("ref-run")?.value;
-    if (!run) return;
-    startJob("/api/reference/diff", { run }, `gap report (${run})`);
-}
-export async function stopReferenceJob() {
-    await apiPost("/api/reference/stop", {});
-}
-
-// ---- card viewer ----------------------------------------------------------
+// ---- card viewer ------------------------------------------------------------
 async function viewCard(stem) {
     const el = document.getElementById("ref-detail");
     if (!el) return;
@@ -123,23 +191,44 @@ async function viewCard(stem) {
         const c = d.card, h = c.hook || {}, a = c.arc || {}, co = c.comedy || {},
             eg = c.edit_grammar || {}, sg = c.sfx_grammar || {}, cap = c.captions || {};
         el.innerHTML = `
-          <div class="fx-head">${esc(c.clip)} <span class="fx-muted">${esc(c.category)} · conf ${esc(c.confidence)}</span></div>
+          <div class="fx-head">${esc(c.clip)} <span class="fx-muted">${esc(c.category)} · confidence ${esc(c.confidence)}</span></div>
           <div class="fx-chips">
             <span class="fx-chip"><b>${esc(eg.cuts_per_30s)}</b> cuts/30s</span>
             <span class="fx-chip"><b>${esc(sg.count_per_30s)}</b> sfx/30s</span>
-            <span class="fx-chip"><b>${esc(cap.density_wps)}</b> cap wps</span>
+            <span class="fx-chip"><b>${esc(cap.density_wps)}</b> caption wps</span>
             <span class="fx-chip">${esc(a.shape)}</span>
             <span class="fx-chip">${esc(co.verbal_vs_visual)}</span>
           </div>
           <div class="fx-k">Hook</div><div>${esc(h.mechanic)} <span class="fx-muted">— ${esc(h.text_hook_style)}</span></div>
           <div class="fx-k">Comedy</div><div>${esc(co.device)}</div>
           <div class="fx-k">Captions</div><div>${esc(cap.casing)} · ${esc(cap.voice)}</div>
-          <div class="fx-k">Essence</div><div>${esc(c.essence_commentary)}</div>
+          <div class="fx-k">What to copy</div><div>${esc(c.essence_commentary)}</div>
           <details class="fx-raw"><summary>Raw card JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>`;
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (e) { el.innerHTML = `<div class="fx-warn">${esc(e.message)}</div>`; }
 }
 
-// ---- gap report + approve/reject ------------------------------------------
+// ---- gap report (plain-language) + approve/reject ---------------------------
+const METRIC_LABELS = {
+    sfx_per_30s_med: "Sound effects per 30s",
+    cuts_per_30s_med: "Cuts per 30s",
+    caption_wps_med: "Caption words/sec",
+    caption_casing_top: "Caption casing",
+    chat_overlay_pct: "Chat overlay usage",
+    zooms_med: "Zoom punches",
+    sfx_offset_ms_med: "SFX timing offset (ms)",
+    category_coverage: "Format we never produce",
+};
+
+function humanizeItem(it) {
+    const [scope, metric] = String(it.id || "").split(":");
+    const label = METRIC_LABELS[metric] || METRIC_LABELS[it.metric] || it.metric || it.id;
+    const where = scope === "ALL" ? "all clips"
+        : scope === "coverage" ? ""
+        : scope ? scope.replace(/_/g, " ") : "";
+    return where ? `${label} — ${where}` : label;
+}
+
 export async function loadReport(date) {
     const el = document.getElementById("ref-report");
     if (!el) return;
@@ -147,22 +236,32 @@ export async function loadReport(date) {
     try {
         const res = await fetch(`/api/reference/report?date=${encodeURIComponent(curReportDate)}`);
         const d = await res.json();
-        if (!res.ok || !d.ok) { el.innerHTML = `<div class="fx-muted">${esc(d.error || "no report yet — run a gap report")}</div>`; return; }
+        if (!res.ok || !d.ok) {
+            el.innerHTML = `<div class="empty-state">${esc(d.error || 'No report yet — check some clips, Analyze, then "Compare → Gap Report".')}</div>`;
+            return;
+        }
         curReportDate = d.date;
         const items = (d.items || []).map(it => {
             const v = it.verdict || "";
-            const badge = v ? `<span class="fx-chip" style="background:${v === "approved" ? "#1a4" : v === "rejected" ? "#a33" : "#555"}">${esc(v)}</span>` : "";
-            const btn = (verd, txt) => `<button class="btn-ghost btn-sm" data-appr="${esc(it.id)}" data-verd="${verd}">${txt}</button>`;
+            const badge = v ? `<span class="fx-chip ref-verdict-${esc(v)}">${esc(v)}</span>` : "";
+            const btn = (verd, txt, cls) =>
+                `<button class="${cls} btn-sm" data-appr="${esc(it.id)}" data-verd="${verd}">${txt}</button>`;
             return `<div class="ref-item">
-              <div><b>${esc(it.id)}</b> ${badge}<br>
-                <span class="fx-muted">ref <code>${esc(it.reference)}</code> vs ours <code>${esc(it.ours)}</code> · lever <code>${esc(it.lever)}</code></span><br>
-                <span class="fx-muted">${esc(it.note)}</span></div>
-              <div class="ref-item-actions">${btn("approved", "✓ approve")} ${btn("rejected", "✗ reject")} ${btn("no-action", "– skip")}</div>
+              <div>
+                <b>${esc(humanizeItem(it))}</b> ${badge}<br>
+                <span class="fx-muted">their clips: <code>${esc(it.reference)}</code> · ours: <code>${esc(it.ours)}</code></span><br>
+                <span class="fx-muted">${esc(it.note)}</span>
+              </div>
+              <div class="ref-item-actions">
+                ${btn("approved", "✓ Fix it", "btn-primary")}
+                ${btn("rejected", "✗ Not a problem", "btn-secondary")}
+              </div>
             </div>`;
         }).join("");
-        el.innerHTML = `<div class="fx-head">Gap report ${esc(d.date)} <span class="fx-muted">run ${esc(d.run)} · ${(d.items || []).length} items</span></div>
-          ${items || '<div class="fx-muted">No gaps above threshold.</div>'}
-          <details class="fx-raw"><summary>Full report markdown</summary><pre>${esc(d.markdown)}</pre></details>`;
+        el.innerHTML = `
+          <div class="fx-head">Report ${esc(d.date)} <span class="fx-muted">vs run ${esc(d.run)} · ${(d.items || []).length} findings — "Fix it" queues the change for the agent</span></div>
+          ${items || '<div class="empty-state">No differences above the threshold — our clips match the reference style.</div>'}
+          <details class="fx-raw"><summary>Full report (raw)</summary><pre>${esc(d.markdown)}</pre></details>`;
         el.querySelectorAll("[data-appr]").forEach(b =>
             b.addEventListener("click", () => approve(b.dataset.appr, b.dataset.verd)));
     } catch (e) { el.innerHTML = `<div class="fx-warn">${esc(e.message)}</div>`; }
@@ -176,4 +275,5 @@ async function approve(item, verdict) {
 export function initReferenceTab() {
     fetchReferenceCorpus();
     loadReport("latest");
+    pollJob();   // pick up a job already in flight (e.g. tab re-opened)
 }

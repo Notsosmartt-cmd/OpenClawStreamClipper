@@ -373,53 +373,56 @@
 <div id="view-reference" class="view">
 <div class="dashboard">
 
-    <!-- Reference Lab controls: the reverse-engineering loop -->
+    <!-- Reference Clips library (mirrors the VOD Library) -->
     <div class="panel">
         <div class="panel-header">
-            <span class="panel-title">Reference Lab — learn from other creators' clips</span>
-            <button id="btn-ref-refresh" class="btn-ghost btn-sm">Refresh</button>
+            <span class="panel-title">Reference Clips</span>
+            <span>
+                <span id="ref-counts" class="fx-muted" style="margin-right:8px;"></span>
+                <button id="btn-ref-refresh" class="btn-ghost btn-sm">Refresh</button>
+            </span>
         </div>
-        <div class="panel-body">
-            <div class="empty-state" style="margin-bottom:10px;">Decompose reference clips → build editorial <b>attribute cards</b> → card <b>our</b> clips → generate a <b>gap report</b> → approve/reject each fix. Approvals queue for an agent to apply as config changes (no auto-apply). One job at a time; blocked while the clip pipeline runs.</div>
-
-            <div class="control-group">
-                <label class="field-label">Scope</label>
-                <select id="ref-scope" style="width:160px;">
-                    <option value="missing">missing only</option>
-                    <option value="all">all (rebuild)</option>
-                </select>
-            </div>
-            <div class="btn-row" style="margin-top:8px;">
-                <button id="btn-ref-decompose" class="btn-secondary" title="R0: run clip_forensics over reference clips (CLAP audio, cuts, motion, OCR). CPU.">1 · Decompose</button>
-                <button id="btn-ref-cards" class="btn-primary" title="R1: one multimodal call per clip → editorial attribute card (VLM reads on-screen text). Needs LM Studio.">2 · Build cards</button>
-            </div>
-
-            <hr class="section-divider">
-
-            <div class="control-group" style="width:100%;">
-                <label class="field-label">Clip run to compare against <span style="color: var(--text-muted); font-weight: normal;">(✓cards = already carded)</span></label>
-                <select id="ref-run" style="width:100%;"><option value="">…</option></select>
-            </div>
-            <div class="btn-row" style="margin-top:8px;">
-                <button id="btn-ref-our-cards" class="btn-secondary" title="R2: card OUR produced clips for the selected run (uses effects-log ground truth).">3 · Card our clips</button>
-                <button id="btn-ref-diff" class="btn-primary" title="R3: reference-vs-ours gap report, each item mapped to a config lever.">4 · Gap report</button>
-                <button id="btn-ref-stop" class="btn-danger" style="display:none;">Stop</button>
-            </div>
-            <span id="ref-job-status" style="display:block; margin-top:10px; font-size:11px; color: var(--text-dim);">idle</span>
-            <pre id="ref-job-log" class="fx-mono" style="max-height:150px; overflow:auto; margin-top:6px; font-size:10px; white-space:pre-wrap;"></pre>
+        <div class="panel-body" style="max-height: 420px; overflow:auto;">
+            <table class="vod-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px; text-align: center;">
+                            <input type="checkbox" id="ref-select-all" title="Select all reference clips"
+                                   onchange="toggleAllRefs(this.checked)">
+                        </th>
+                        <th>Clip</th>
+                        <th>Size</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="ref-tbody">
+                    <tr><td colspan="5" class="empty-state">Loading…</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <!-- Corpus table -->
+    <!-- Reference Controls (mirrors Clip Controls) -->
     <div class="panel">
         <div class="panel-header">
-            <span class="panel-title">Corpus</span>
-            <span id="ref-counts" class="fx-muted"></span>
+            <span class="panel-title">Reference Controls</span>
         </div>
-        <div class="panel-body" style="max-height:420px; overflow:auto;">
-            <table class="ref-table"><tbody id="ref-corpus">
-                <tr><td class="fx-muted">Loading…</td></tr>
-            </tbody></table>
+        <div class="panel-body">
+            <div class="control-group" style="width: 100%;">
+                <label class="field-label" title="A clip run = one past clipping session. The gap report compares the reference clips' style against the clips that run produced.">Compare against clip run</label>
+                <select id="ref-run" style="width: 100%;"><option value="">…</option></select>
+            </div>
+
+            <div class="btn-row" style="margin-top: 12px;">
+                <button id="btn-ref-analyze" class="btn-primary" disabled title="Analyze the checked reference clips (extract audio/cuts/captions, then build the style card). Re-analyzing a clip rebuilds its card.">Analyze Selected</button>
+                <button id="btn-ref-analyze-new" class="btn-secondary" title="Analyze only clips that don't have a card yet — use after dropping new clips into reference_clips/.">Analyze New</button>
+                <button id="btn-ref-compare" class="btn-primary" title="Build the gap report: how our clips differ from the reference clips (SFX density, captions, pacing…), with an approve/reject button per finding.">Compare → Gap Report</button>
+                <button id="btn-ref-stop" class="btn-danger" style="display:none;">Stop</button>
+            </div>
+
+            <span id="ref-job-status" style="display:block; margin-top:10px; font-size:11px; color: var(--text-dim);">idle</span>
+            <pre id="ref-job-log" class="fx-mono" style="max-height:180px; overflow:auto; margin-top:6px; font-size:10px; white-space:pre-wrap;"></pre>
         </div>
     </div>
 

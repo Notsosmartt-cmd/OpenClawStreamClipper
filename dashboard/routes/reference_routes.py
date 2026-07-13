@@ -160,50 +160,37 @@ def api_ref_corpus():
     })
 
 
-@bp.route("/api/reference/decompose", methods=["POST"])
-def api_ref_decompose():
+# Two owner-facing actions (Clipper-style UX, 2026-07-12): "Analyze" chains
+# decompose-if-missing + card; "Compare" chains card-our-clips (missing only) +
+# gap report. The old 4-step endpoints (decompose/cards/our-cards/diff) were
+# removed — the numbered workflow confused the owner.
+
+@bp.route("/api/reference/analyze", methods=["POST"])
+def api_ref_analyze():
     data = request.get_json(force=True) or {}
-    scope = (data.get("scope") or "missing").strip()
-    args = ["--all"] if scope == "all" else ["--missing"]
-    proc, err = _start_job("decompose", "decompose_corpus.py", args)
+    stems = [str(s).strip() for s in (data.get("stems") or []) if str(s).strip()]
+    if stems:
+        args = ["--clips", ",".join(stems)]
+        label = f"analyze ({len(stems)} selected)"
+    else:
+        args = ["--all-new"]
+        label = "analyze (all new)"
+    proc, err = _start_job(label, "reference_analyze.py", args)
     if err:
         return jsonify({"error": err}), 409
-    return jsonify({"status": "started", "job": "decompose", "scope": scope}), 202
+    return jsonify({"status": "started", "job": label}), 202
 
 
-@bp.route("/api/reference/cards", methods=["POST"])
-def api_ref_cards():
-    data = request.get_json(force=True) or {}
-    scope = (data.get("scope") or "missing").strip()
-    args = ["--all"] + (["--missing"] if scope == "missing" else [])
-    proc, err = _start_job("cards", "attribute_cards.py", args)
-    if err:
-        return jsonify({"error": err}), 409
-    return jsonify({"status": "started", "job": "cards", "scope": scope}), 202
-
-
-@bp.route("/api/reference/our-cards", methods=["POST"])
-def api_ref_our_cards():
-    data = request.get_json(force=True) or {}
-    run = (data.get("run") or "").strip()
-    if not run:
-        return jsonify({"error": "run stamp required"}), 400
-    proc, err = _start_job("our-cards", "our_clip_cards.py", ["--run", run])
-    if err:
-        return jsonify({"error": err}), 409
-    return jsonify({"status": "started", "job": "our-cards", "run": run}), 202
-
-
-@bp.route("/api/reference/diff", methods=["POST"])
-def api_ref_diff():
+@bp.route("/api/reference/compare", methods=["POST"])
+def api_ref_compare():
     data = request.get_json(force=True) or {}
     run = (data.get("run") or "").strip()
     if not run:
-        return jsonify({"error": "run stamp required"}), 400
-    proc, err = _start_job("diff", "corpus_diff.py", ["--run", run])
+        return jsonify({"error": "pick a clip run to compare against"}), 400
+    proc, err = _start_job(f"compare vs {run}", "reference_compare.py", ["--run", run])
     if err:
         return jsonify({"error": err}), 409
-    return jsonify({"status": "started", "job": "diff", "run": run}), 202
+    return jsonify({"status": "started", "job": "compare", "run": run}), 202
 
 
 @bp.route("/api/reference/stop", methods=["POST"])

@@ -26,17 +26,21 @@ Layout (modularized 2026-05-01 — see [[concepts/modularization-plan]]):
 
 ### Reference Lab tab (2026-07-12 — replaced the Clip Forensics tab)
 
-The dashboard is **tabbed** — a top nav (`.tabs` / `.tab-btn`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (`#view-clipper`) and the **Reference Lab** view (`#view-reference`, lazy-loaded on first open). The old single-clip **Clip Forensics** tab (2026-06-21, `forensics_routes.py`/`forensics-panel.js`) was **deleted** and superseded — its decompose capability is now the Reference Lab's "Decompose" button. The Reference Lab drives the full reverse-engineering loop ([[concepts/plan-reference-deconstruction-2026-07]] R6): decompose → attribute cards → card-our-clips → gap report → approve/reject, each heavy step a bounded background job (`reference_routes.py`, 10 endpoints; `reference-panel.js`), one at a time and mutually 409-excluded with the clip pipeline via `is_reference_running()` + `_state.reference_job`. Approvals write to `clips/.diagnostics/diff_approvals.json` (the R4 queue); nothing auto-applies.
+The dashboard is **tabbed** — a top nav (`.tabs` / `.tab-btn`, switched by `switchView()` in `app.js`) flips between the **Clipper** view (`#view-clipper`) and the **Reference Lab** view (`#view-reference`, lazy-loaded on first open). The old single-clip **Clip Forensics** tab (2026-06-21, `forensics_routes.py`/`forensics-panel.js`) was **deleted** and superseded — its decompose capability is now the Reference Lab's "Decompose" button. **v2 (2026-07-12): Clipper-style UX** — checkbox table + `Analyze Selected (N)` / `Analyze New` / `Compare → Gap Report` (each one chained background job; `/api/reference/analyze` + `/compare` replaced the 4 step endpoints); plain-language findings with ✓ Fix it / ✗ Not a problem. The Reference Lab drives the full reverse-engineering loop ([[concepts/plan-reference-deconstruction-2026-07]] R6): decompose → attribute cards → card-our-clips → gap report → approve/reject, each heavy step a bounded background job (`reference_routes.py`, 10 endpoints; `reference-panel.js`), one at a time and mutually 409-excluded with the clip pipeline via `is_reference_running()` + `_state.reference_job`. Approvals write to `clips/.diagnostics/diff_approvals.json` (the R4 queue); nothing auto-applies.
 
-The Forensics tab drives the offline decomposer `scripts/research/clip_forensics.py` ([[concepts/plan-clip-forensics]], [[entities/audio-sense-module]], [[entities/visual-sense-module]]) so the owner can iterate without the CLI. Backend `routes/forensics_routes.py`:
+Current Reference Lab routes (`routes/reference_routes.py`):
 
 | Route | Does |
 |---|---|
-| `GET /api/forensics/clips` | List `reference_clips/` media + whether each has a cached `.cache/<stem>.timeline.json` (✓) |
-| `POST /api/forensics/run` | Run the decomposer on one clip (`clip`, `trim_end`, `ocr`, `llm`, `cuda`), write the timeline, return it. Native subprocess (bare metal) or docker-exec; sets `KMP_DUPLICATE_LIB_OK=TRUE`; 1500s outer cap on top of the tool's own per-stage watchdog. |
-| `GET /api/forensics/result?clip=` | Return a previously-cached timeline (re-read without re-running) |
+| `GET /api/reference/corpus` | Reference-clip table (decomposed/carded/category/notes state) + the clip-run picker list |
+| `POST /api/reference/analyze` | `{stems:[…]}` = re-analyze the checked clips (decompose-if-missing + rebuild card); `{}` = only clips without a card (`reference_analyze.py`) |
+| `POST /api/reference/compare` | `{run}` = card OUR clips for that run (missing only) + generate the gap report (`reference_compare.py`) |
+| `GET /api/reference/job` · `POST /stop` | Poll the single background job's status/log tail · kill its process tree |
+| `GET /api/reference/card?stem=` | One clip's attribute card (the "card" button) |
+| `GET /api/reference/report?date=latest` | Newest gap report + each item's current approve/reject verdict |
+| `POST /api/reference/approve` | `{date,item,verdict}` → written into `diff_approvals.json` (the R4 queue) |
 
-The panel (`forensics-panel.js`) renders the timeline as stat chips + music beds + censor + audio-event histogram, then the LLM **style profile** (summary, pacing, sfx_cues, hook, replication_notes) in a highlighted card, with the raw JSON in a `<details>`. Controls: clip dropdown, **Trim end (s)** (drop the TikTok download outro — see [[entities/audio-sense-module]]), and **LLM style profile** / **Caption OCR** / **Use GPU** toggles. Default device is CPU; LLM needs LM Studio running. Failure-soft: a missing model / down LM Studio yields a partial result, not an error.
+*(Historical: the pre-2026-07-12 Forensics tab exposed `/api/forensics/{clips,run,result}` via the now-deleted `forensics_routes.py`/`forensics-panel.js` — single-clip decompose + timeline/style-profile viewer. See git history if ever needed.)*
 
 ### Originality & Render panel (added April 2026)
 

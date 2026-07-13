@@ -253,6 +253,23 @@ beyond the R1/R3 gates it surfaces — it's a control surface, not new behavior.
 > job idle, tab served. Owner UX: open Reference Lab → 1·Decompose → 2·Build cards → pick a clip
 > run → 3·Card our clips → 4·Gap report → approve/reject each lever — no CLI.
 
+> [!note] R6 v2 — Clipper-style UX simplification (2026-07-12, owner: "kind of confusing")
+> The numbered 1→4 workflow confused the owner; the tab now mirrors the Clipper's UX language
+> (check rows in a table → press one big button). **Reference Clips** panel = a `.vod-table`
+> clone (select-all header, checkbox rows, row-click toggle, status "✓ analyzed · category" /
+> "not analyzed", per-row "card" viewer). **Reference Controls** = a run dropdown + THREE
+> buttons: **Analyze Selected (N)** (chains decompose-if-missing + card rebuild for the checked
+> clips), **Analyze New** (only clips without a card), **Compare → Gap Report** (chains
+> card-our-clips-missing-only + report). Backend: the 4 step endpoints were REPLACED by
+> `/api/reference/analyze` (`reference_analyze.py`) + `/api/reference/compare`
+> (`reference_compare.py`) — each button = one bounded background job. Gap-report items render
+> in PLAIN LANGUAGE ("Sound effects per 30s — all clips: theirs 31.7 vs ours 5.4") with
+> **✓ Fix it / ✗ Not a problem** buttons. Verified live: Analyze New found + carded the one
+> new clip (60/60 now), Compare skipped 9 cached cards and regenerated the report, 409 guard
+> held mid-job, test instance shut down clean, owner's dashboard restarted (BUG 70 rule).
+> Note: a re-run of Compare mints a NEW report date, so verdicts start fresh (history persists
+> under the old date in `diff_approvals.json`).
+
 ---
 
 ## Sequencing, effort, gates

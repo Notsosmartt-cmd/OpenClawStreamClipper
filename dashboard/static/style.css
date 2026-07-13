@@ -453,9 +453,11 @@ button:disabled { opacity: 0.3; cursor: not-allowed; }
   padding: 10px; margin-top: 6px; max-height: 360px; overflow: auto; font-family: var(--mono); font-size: 11px; }
 @media (max-width: 900px) { .fx-prof-grid { grid-template-columns: 1fr; } }
 
-/* Reference Lab (R6) — corpus table + gap-report items (reuses .fx-* chips) */
-.ref-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.ref-table td { padding: 5px 6px; border-bottom: 1px solid var(--border, #2a2a2a); vertical-align: top; }
+/* Reference Lab — Clipper-style (reuses .vod-table); gap-report items + verdicts */
+.ref-ok { color: var(--accent, #2dd4bf); font-weight: 600; }
+.ref-verdict-approved { background: #1a4; }
+.ref-verdict-rejected { background: #a33; }
+.ref-verdict-no-action { background: #555; }
 .ref-item { display: flex; justify-content: space-between; gap: 12px; align-items: center;
             padding: 8px 0; border-bottom: 1px solid var(--border, #2a2a2a); }
 .ref-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
