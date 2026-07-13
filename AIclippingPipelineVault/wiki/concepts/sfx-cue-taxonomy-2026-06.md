@@ -194,6 +194,31 @@ furniture. Applied (`config/sfx_cues.json` + `sfx_cues.py`):
   (riser→boom + 3 light pops) where the old config produced 1. Failure-soft ([] on any error);
   kill switches: `secondary_peaks.enabled=false`, `max_cues` back to 4.
 
+## Density vs storytime/emotional (2026-07-13, owner concern: "will the SFX push degrade storytime?")
+
+The density lever is **category-gated at the source** (`category_beats` in `config/sfx_cues.json`,
+enforced in `sfx_cues.build()`), so the push lands almost entirely on funny/reactive/hype:
+- **emotional**: `payoff: null` → `build()` returns ZERO cues — no payoff, no riser, and the
+  `secondary_peaks` scanner is skipped too (it's gated on `if payoff_beat:`). Fully clean.
+- **storytime**: one soft `reveal` (applause −12 dB / ding −8 dB) + a −10 dB riser; **no
+  laughter scanning** (`scan_laughter: false`). Max exposure to the new density: the ≤3 ducked
+  −8 dB `punchline_light` pops on prominent acoustic transients — calm narration has few
+  transients ≥0.55 prominence, so in practice these rarely fire on quiet stories.
+- The hot 0 dB boom and laughter-scan punchlines remain **funny/reactive-only** (hype/dancing
+  get payoff booms, no laughter scan).
+
+> [!todo] No per-category `secondary_peaks` opt-out exists yet — the only gate is `payoff: null`.
+> If the owner's ear says storytime is over-decorated, the surgical lever is adding a
+> `secondary_peaks: false` key per category in `category_beats` (small code change in
+> `build()`), NOT lowering `max_cues` globally.
+
+Detection is untouched by the density work: storytime/emotional keep their **150s max duration**
+(vs 90s for everything else, `stage4_moments.py`), their pattern lane, prompt instructions, and
+stream-type multipliers (storytime ×1.5 on just_chatting, ×1.3 on irl); companion shorts still
+exempt storytime/emotional; news selection actively BOOSTS storytime ×1.2 / emotional ×1.1 /
+controversial ×1.35. SFX density is a Stage-7 render decision — it cannot affect which moments
+Stage 4 finds.
+
 ## Related
 - [[concepts/plan-unoriginality-audio-layer]] — the plan this research feeds (P1 punchline-anchored SFX)
 - [[concepts/case-incongruity-comedy]] — the reference clips that need boom/crickets/trombone cues

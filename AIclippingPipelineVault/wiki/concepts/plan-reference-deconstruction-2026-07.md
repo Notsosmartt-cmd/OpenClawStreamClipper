@@ -69,6 +69,16 @@ updated: 2026-07-13
 > reference's burned-caption OCR rate — not the same metric. Fix: derive our caption wps from
 > the clip SRT (we own the exact timing). (c) our cut counts may include burned zoom-punches
 > (PySceneDetect reads them as cuts). Directions are trustworthy; magnitudes need these fixes.
+>
+> **Candidate metric promotions (2026-07-13, owner Q&A on visual-comedy convergence):** the
+> cards already capture `comedy.verbal_vs_visual` and clip duration, and `_agg` aggregates
+> `verbal_vs_visual` — but neither is a gap-item RULE yet (`_cmp` skips them; they reach only
+> the narrative LLM). Promote when wanted: (d) `verbal_vs_visual_top` as a categorical rule
+> (like casing) → "reference: both, ours: verbal" would become an approvable item — the diff's
+> lever for physical/visual comedy the transcript can't see; (e) `duration_med` per category →
+> would catch "our storytime clips run short vs reference storytimes". Each is a 3-line change
+> (`_agg` key → `_cmp` tuple → `_LEVERS` entry) per the closed-rules doctrine in
+> [[concepts/reference-lab]].
 
 # Plan: reference-clip deconstruction — editorial cards → contrastive diff → curated apply
 
