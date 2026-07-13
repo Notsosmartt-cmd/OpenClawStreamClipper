@@ -3,7 +3,7 @@ title: "Transition Animations (jump-cuts + white flashes)"
 type: concept
 tags: [rendering, transitions, jump-cut, flash, edit-plan, stage-7, ffmpeg, originality, engagement]
 sources: 0
-updated: 2026-06-12
+updated: 2026-07-13
 ---
 
 # Transition Animations
@@ -81,6 +81,53 @@ Crucially, the **rule-based modes work without the LLM**: `gaps` (silence-drop) 
 
 > [!note] Needs a validation run
 > All layers are unit/FFmpeg-tested in isolation, but the full Stage-6→7 path needs an end-to-end run with a flag on (`CLIP_JUMP_CUTS=gaps` is the safest first try) to confirm in production. Default-off, so normal runs are unaffected.
+
+---
+
+## Improvement evaluation (2026-07-13, owner: "any substantial improvements to smart+silence?")
+
+Ranked by impact/cost, each grounded in a specific shipped weakness. The "P2 deferred" note
+above (dedicated edit-pass) is subsumed by #1. None violate the no-training doctrine — all are
+prompt/config/deterministic-code changes.
+
+1. **Text-anchored LLM cuts** — fixes the core "smart" weakness (timestamp imprecision).
+   Today the Stage-6 mega-prompt asks for `drop_start/drop_end` in absolute seconds; LLMs are
+   poor at word→second arithmetic, and the edges only survive because `compute_keep_spans`
+   snaps them ±1 s. Instead: ask for the exact transcript **substrings to delete**, then map
+   text → word-level SRT timestamps deterministically (we own word timings). Frame-accurate
+   edges, zero timestamp hallucination, and trivially verifiable (the quoted text must exist in
+   the window; must not overlap the payoff). Best shipped as the deferred **dedicated
+   micro-call** (text-only, few-shot ramble→deletions) so the edit stops competing with ~15
+   other JSON fields.
+2. **Reaction-aware gap veto** — fixes the core "silence" weakness (the funny pause IS
+   content). `gaps_to_cuts` sees only Whisper-segment gaps, so a comedic awkward pause, a
+   wheeze-laugh, or a silent facial reaction reads as dead air and gets cut — destroying the
+   timing the SFX taxonomy explicitly treats as a beat (awkward_silence→crickets).
+   `sfx_cues._laughter_times()` already extracts laughter markers from the SAME
+   `temp_dir/transcript.json` the transitions pass receives → vetoing (or shrinking) any drop
+   that overlaps one is ~15 lines. Refinement: **leave-a-beat** — compress long pauses to
+   ~0.4–0.5 s instead of the current ~0.25 s residue, the way editors "tighten" rather than
+   delete.
+3. **Hide the seam: hard cuts + alternating punch-in** — every join today is the same 0.22 s
+   `fadewhite`; 4–6 identical white pops per clip is a template tell (and stacks with
+   `CLIP_FLASH_CUTS`' pops). Real short-form jump cuts are mostly HARD cuts disguised by a
+   slight zoom alternation (~100%↔105% across joins — standard talking-head technique; zoom
+   infra already exists in [[concepts/style-profiles]]), optionally + the stocked `transition`
+   whoosh beat. Makes compression read as edited-on-purpose. (Reference Lab report #1 showed
+   our cut DENSITY already ≈ reference — the gap is cut *style*, which is this item.)
+4. **Kept-transcript coherence gate** — after `compute_keep_spans`, reconstruct the kept text;
+   deterministic check that the moment's payoff words survived + optionally one caption_judge-
+   style fidelity call before accepting the compression. Catches "dropped the setup" wholesale.
+5. **Filler-word micro-lane** — word-level SRT already exists: drop "um/uh/like/you-know"
+   clusters **adjacent to pauses** (merged span crosses MIN_DROP), Descript-style; keep
+   isolated fillers (machine-gun micro-cuts look worse than the filler).
+6. **Rollout & measurement** — category-gated default-on first (`gaps` for
+   storytime/informational, the MAX_DROP=0.5 categories), or wire into the A/B lane
+   (B = compressed) so owner GOOD/BAD labels measure it; the Lab already tracks `cuts_per_30s`.
+
+Non-goals: a dedicated editing model (no-training doctrine + the §7 serving floor); moving
+cuts pre-render (the crf-20 re-encode loss is negligible vs re-introducing caption-sync
+complexity — the post-render design above stays).
 
 ---
 
