@@ -339,12 +339,23 @@ def _load_audio_fast(audio_path: str, sample_rate: int, librosa, np):
     # the pipeline's Stage-2 output but defend against custom audio files).
     if y_raw.ndim > 1:
         y_raw = np.mean(y_raw, axis=1, dtype=np.float32)
-    # Skip resampling when source already matches target — common when an
-    # operator pre-extracts audio at 22050 Hz to avoid this stage's cost.
-    if sr_native == sample_rate:
-        return y_raw, sample_rate
-    # polyphase = scipy.signal.resample_poly under the hood. ~5-7× faster
-    # than the default kaiser_best with no audible quality loss for HPSS.
+    # BUG 71b (2026-07-13): resampling the Stage-2 16 kHz WAV up to 22050 Hz was
+    # PATHOLOGICALLY slow — `librosa.resample(..., res_type="polyphase")` for the
+    # 16000→22050 ratio is up=441/down=320, and resample_poly's FIR cost scales with
+    # the up-factor, so on a 3 h VOD (180 M samples) it pinned one core for ~20 MINUTES
+    # (measured live; the old "~7-10 s" comment was wrong for this ratio). That was the
+    # real "Stage 2 never finishes" bottleneck (the earlier soundfile.info fix removed a
+    # SEPARATE slow get_duration on top of it).
+    #
+    # The audio-event detectors (HPSS / onset / RMS / crowd) are sample-rate-agnostic —
+    # they take `sr` as a parameter and everything downstream (`_build_window_tasks`,
+    # the detectors) uses the RETURNED sr — so we simply KEEP the native rate when it's
+    # already usable (≥16 kHz) and skip the resample entirely. The 22050 target only
+    # ever existed for opportunistic cache reuse with scan_music.py, not correctness.
+    if sr_native == sample_rate or sr_native >= 16000:
+        return y_raw, sr_native
+    # Only genuinely low-rate sources (<16 kHz, rare) get upsampled — a small ratio
+    # where polyphase is cheap.
     y_full = librosa.resample(
         y_raw, orig_sr=sr_native, target_sr=sample_rate,
         res_type="polyphase",
@@ -841,7 +852,7 @@ def scan_audio_events(
     try:
         try:
             y_full, sr = _load_audio_fast(audio_path, SAMPLE_RATE, librosa, np)
-            load_method = "soundfile+polyphase"
+            load_method = f"soundfile@{sr}Hz"   # native rate kept when ≥16k (BUG 71b)
         except MemoryError:
             raise  # → outer OOM handler
         except Exception as _fast_err:
@@ -850,7 +861,10 @@ def scan_audio_events(
                 f"({type(_fast_err).__name__}: {_fast_err}); using librosa.load",
                 file=sys.stderr,
             )
-            y_full, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
+            # sr=None keeps the native rate (BUG 71b) — forcing SAMPLE_RATE here
+            # would re-trigger the pathological 16k→22.05k resample, and via the
+            # even-slower kaiser_best. Detectors use the returned sr, so native is fine.
+            y_full, sr = librosa.load(audio_path, sr=None, mono=True)
     except MemoryError:
         print(
             "[AUDIO_EVENTS] OOM loading full audio (VOD too long for in-memory scan); "
