@@ -112,14 +112,15 @@ def _guard() -> tuple[bool, str]:
     return True, ""
 
 
-def _start_job(name: str, script: str, args: list[str]):
+def _start_job(name: str, script: str, args: list[str], env_extra: dict | None = None):
     ok, err = _guard()
     if not ok:
         return None, err
     JOB_LOG.parent.mkdir(parents=True, exist_ok=True)
     lf = open(JOB_LOG, "w", encoding="utf-8")
     env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE",
-           "HF_HUB_DISABLE_SYMLINKS_WARNING": "1", "PYTHONUNBUFFERED": "1"}
+           "HF_HUB_DISABLE_SYMLINKS_WARNING": "1", "PYTHONUNBUFFERED": "1",
+           **(env_extra or {})}
     cmd = [sys.executable, str(RESEARCH / script), *args]
     kwargs = {"stdout": lf, "stderr": subprocess.STDOUT, "cwd": str(REPO), "env": env}
     if os.name == "nt":
@@ -149,11 +150,20 @@ def _stop_job() -> bool:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+def _default_model() -> str:
+    try:
+        cfg = json.loads((REPO / "config" / "models.json").read_text(encoding="utf-8"))
+        return cfg.get("text_model") or ""
+    except Exception:
+        return ""
+
+
 @bp.route("/api/reference/corpus")
 def api_ref_corpus():
     clips = _corpus()
     return jsonify({
         "dir": str(REF_DIR), "clips": clips, "runs": _effects_runs(),
+        "default_model": _default_model(),
         "counts": {"total": len(clips),
                    "decomposed": sum(1 for c in clips if c["decomposed"]),
                    "carded": sum(1 for c in clips if c["carded"])},
@@ -165,17 +175,30 @@ def api_ref_corpus():
 # gap report. The old 4-step endpoints (decompose/cards/our-cards/diff) were
 # removed — the numbered workflow confused the owner.
 
+def _model_env(data: dict) -> tuple[dict | None, str]:
+    """Per-job LLM override (owner req 2026-07-13): the Lab's LLM calls (card
+    pass + report narrative) resolve via clip_forensics._llm_config(), which
+    reads CLIP_TEXT_MODEL first — so a job-scoped env override selects the
+    model exactly like the Clipper's models.json does for the pipeline.
+    Empty model = pipeline default (config/models.json text_model)."""
+    model = (data.get("model") or "").strip()
+    if not model:
+        return None, ""
+    return {"CLIP_TEXT_MODEL": model}, f" [{model.split('/')[-1]}]"
+
+
 @bp.route("/api/reference/analyze", methods=["POST"])
 def api_ref_analyze():
     data = request.get_json(force=True) or {}
     stems = [str(s).strip() for s in (data.get("stems") or []) if str(s).strip()]
+    env_extra, mtag = _model_env(data)
     if stems:
         args = ["--clips", ",".join(stems)]
-        label = f"analyze ({len(stems)} selected)"
+        label = f"analyze ({len(stems)} selected){mtag}"
     else:
         args = ["--all-new"]
-        label = "analyze (all new)"
-    proc, err = _start_job(label, "reference_analyze.py", args)
+        label = f"analyze (all new){mtag}"
+    proc, err = _start_job(label, "reference_analyze.py", args, env_extra)
     if err:
         return jsonify({"error": err}), 409
     return jsonify({"status": "started", "job": label}), 202
@@ -187,7 +210,9 @@ def api_ref_compare():
     run = (data.get("run") or "").strip()
     if not run:
         return jsonify({"error": "pick a clip run to compare against"}), 400
-    proc, err = _start_job(f"compare vs {run}", "reference_compare.py", ["--run", run])
+    env_extra, mtag = _model_env(data)
+    proc, err = _start_job(f"compare vs {run}{mtag}", "reference_compare.py",
+                           ["--run", run], env_extra)
     if err:
         return jsonify({"error": err}), 409
     return jsonify({"status": "started", "job": "compare", "run": run}), 202
@@ -275,6 +300,84 @@ def api_ref_report():
         "markdown": md.read_text(encoding="utf-8") if md.exists() else "",
         "available": [p.stem.replace("corpus_diff_", "") for p in reversed(reports)],
     })
+
+
+# Plain-language labels for the export (kept in sync with reference-panel.js).
+_METRIC_LABELS = {
+    "sfx_per_30s_med": "Sound effects per 30s",
+    "cuts_per_30s_med": "Cuts per 30s",
+    "caption_wps_med": "Caption words/sec",
+    "caption_casing_top": "Caption casing",
+    "chat_overlay_pct": "Chat overlay usage",
+    "zooms_med": "Zoom punches",
+    "sfx_offset_ms_med": "SFX timing offset (ms)",
+    "category_coverage": "Format we never produce",
+}
+
+
+def _humanize(item_id: str, metric: str) -> str:
+    scope, _, m = (item_id or "").partition(":")
+    label = _METRIC_LABELS.get(m) or _METRIC_LABELS.get(metric) or m or item_id
+    where = ("all clips" if scope == "ALL"
+             else "" if scope == "coverage" else scope.replace("_", " "))
+    return f"{label} — {where}" if where else label
+
+
+@bp.route("/api/reference/approvals-export")
+def api_ref_approvals_export():
+    """The JUDGED report (owner req 2026-07-13): one copy-ready markdown doc
+    merging the gap report's explained diffs with the owner's approve/reject
+    verdicts. Also written to clips/.diagnostics/corpus_diff_<date>_judged.md
+    so it exists on disk beside the raw report."""
+    which = (request.args.get("date") or "latest").strip()
+    reports = sorted(DIAG.glob("corpus_diff_*.json"))
+    reports = [r for r in reports if not r.stem.endswith("_judged")]
+    if not reports:
+        return jsonify({"error": "no gap report yet"}), 404
+    jf = reports[-1] if which == "latest" else DIAG / f"corpus_diff_{which}.json"
+    if not jf.exists():
+        return jsonify({"error": "report not found"}), 404
+    try:
+        rep = json.loads(jf.read_text(encoding="utf-8"))
+    except Exception as e:
+        return jsonify({"error": f"unreadable report: {e}"}), 500
+    date = rep.get("date") or jf.stem.replace("corpus_diff_", "")
+    verdicts = _read_approvals().get("reports", {}).get(date, {})
+
+    by = {"approved": [], "rejected": [], "no-action": [], "unjudged": []}
+    for it in rep.get("items", []):
+        v = verdicts.get(it.get("id")) or {}
+        by.get(v.get("verdict") or "unjudged", by["unjudged"]).append((it, v))
+
+    md = [f"# Judged gap report — {date} (vs clip run {rep.get('run')})", "",
+          f"Reference corpus vs our clips; each finding carries the config lever it maps to. "
+          f"Verdicts: {len(by['approved'])} approved · {len(by['rejected'])} rejected · "
+          f"{len(by['no-action'])} no-action · {len(by['unjudged'])} unjudged.", ""]
+    _sec = {"approved": "✅ APPROVED — apply these levers",
+            "rejected": "❌ REJECTED — not problems",
+            "no-action": "➖ NO ACTION",
+            "unjudged": "❓ UNJUDGED"}
+    for key, title in _sec.items():
+        if not by[key]:
+            continue
+        md += [f"## {title}", ""]
+        for it, v in by[key]:
+            md += [f"### {_humanize(it.get('id'), it.get('metric'))}",
+                   f"- reference: `{it.get('reference')}` · ours: `{it.get('ours')}` "
+                   f"(gap {it.get('gap')})",
+                   f"- lever: `{it.get('lever')}`",
+                   f"- explanation: {it.get('note')}"]
+            if v.get("reason"):
+                md += [f"- verdict reason: {v['reason']}"]
+            md += [""]
+    text = "\n".join(md)
+    out = DIAG / f"corpus_diff_{date}_judged.md"
+    try:
+        out.write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+    return jsonify({"ok": True, "date": date, "markdown": text, "path": str(out),
+                    "counts": {k: len(v) for k, v in by.items()}})
 
 
 @bp.route("/api/reference/approve", methods=["POST"])

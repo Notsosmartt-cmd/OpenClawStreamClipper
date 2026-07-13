@@ -77,9 +77,37 @@ export async function fetchReferenceCorpus() {
             ).join("") || `<option value="">no clip runs yet — clip a VOD first</option>`;
             if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
         }
+        loadModelPicker(d.default_model || "");
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="5" class="fx-warn">Failed: ${esc(e.message)}</td></tr>`;
     }
+}
+
+// ---- analysis-model picker (same source as the Clipper's Models panel) ------
+let modelsLoaded = false;
+async function loadModelPicker(defaultModel) {
+    const sel = document.getElementById("ref-model");
+    if (!sel) return;
+    const defLabel = defaultModel
+        ? `pipeline default — ${defaultModel.split("/").pop()}` : "pipeline default";
+    if (sel.options.length) sel.options[0].textContent = defLabel;
+    if (modelsLoaded) return;
+    try {
+        const res = await fetch("/api/models/available");
+        const d = await res.json();
+        const names = (d.lmstudio || []).map(m => m.name).filter(Boolean)
+            .filter(n => !n.startsWith("text-embedding"));
+        if (!names.length) return;
+        modelsLoaded = true;
+        const cur = sel.value;
+        sel.innerHTML = `<option value="">${esc(defLabel)}</option>` +
+            names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+        if (cur) sel.value = cur;
+    } catch (e) { /* LM Studio down — default stays */ }
+}
+
+function refModel() {
+    return document.getElementById("ref-model")?.value || "";
 }
 
 export function toggleRef(stem) {
@@ -141,19 +169,38 @@ async function startJob(url, payload, label) {
 
 export function analyzeSelected() {
     if (!refState.selected.length) return;
-    startJob("/api/reference/analyze", { stems: refState.selected.slice() },
+    startJob("/api/reference/analyze",
+        { stems: refState.selected.slice(), model: refModel() },
         `analyzing ${refState.selected.length} clip(s)`);
 }
 export function analyzeNew() {
-    startJob("/api/reference/analyze", {}, "analyzing new clips");
+    startJob("/api/reference/analyze", { model: refModel() }, "analyzing new clips");
 }
 export function runCompare() {
     const run = document.getElementById("ref-run")?.value;
     if (!run) return;
-    startJob("/api/reference/compare", { run }, `comparing vs run ${run}`);
+    startJob("/api/reference/compare", { run, model: refModel() }, `comparing vs run ${run}`);
 }
 export async function stopReferenceJob() {
     await apiPost("/api/reference/stop", {});
+}
+
+// ---- judged-report export (copy to clipboard + saved beside the raw report) --
+export async function copyJudgedReport() {
+    const btn = document.getElementById("btn-ref-copy-judged");
+    try {
+        const res = await fetch(`/api/reference/approvals-export?date=${encodeURIComponent(curReportDate || "latest")}`);
+        const d = await res.json();
+        if (!res.ok || !d.ok) { if (btn) btn.textContent = "✗ " + (d.error || "no report"); return; }
+        await navigator.clipboard.writeText(d.markdown);
+        if (btn) {
+            const c = d.counts || {};
+            btn.textContent = `✓ copied (${c.approved ?? 0}✓ ${c.rejected ?? 0}✗ ${c.unjudged ?? 0}?)`;
+            setTimeout(() => { btn.textContent = "Copy judged report"; }, 4000);
+        }
+    } catch (e) {
+        if (btn) { btn.textContent = "✗ " + e.message; setTimeout(() => { btn.textContent = "Copy judged report"; }, 4000); }
+    }
 }
 
 async function pollJob() {

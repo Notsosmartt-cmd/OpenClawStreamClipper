@@ -35,6 +35,7 @@ import {
 import {
     fetchReferenceCorpus, analyzeSelected, analyzeNew, runCompare,
     stopReferenceJob, initReferenceTab, toggleRef, toggleAllRefs,
+    copyJudgedReport,
 } from "./modules/reference-panel.js";
 
 // Inline onclick= handlers in HTML need these on window.
@@ -94,4 +95,5 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-ref-analyze-new")?.addEventListener("click", analyzeNew);
     document.getElementById("btn-ref-compare")?.addEventListener("click", runCompare);
     document.getElementById("btn-ref-stop")?.addEventListener("click", stopReferenceJob);
+    document.getElementById("btn-ref-copy-judged")?.addEventListener("click", copyJudgedReport);
 });

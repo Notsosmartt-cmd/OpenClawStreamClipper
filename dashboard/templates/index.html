@@ -414,6 +414,11 @@
                 <select id="ref-run" style="width: 100%;"><option value="">…</option></select>
             </div>
 
+            <div class="control-group" style="width: 100%; margin-top: 8px;">
+                <label class="field-label" title="The LLM that writes the style cards and the report narrative (the decompose step itself is CPU-only, no LLM). Default = the same model the Clipper uses (config/models.json). Pick a loaded LM Studio model to override for this job only.">Analysis model</label>
+                <select id="ref-model" style="width: 100%;"><option value="">pipeline default</option></select>
+            </div>
+
             <div class="btn-row" style="margin-top: 12px;">
                 <button id="btn-ref-analyze" class="btn-primary" disabled title="Analyze the checked reference clips (extract audio/cuts/captions, then build the style card). Re-analyzing a clip rebuilds its card.">Analyze Selected</button>
                 <button id="btn-ref-analyze-new" class="btn-secondary" title="Analyze only clips that don't have a card yet — use after dropping new clips into reference_clips/.">Analyze New</button>
@@ -429,7 +434,8 @@
     <!-- Gap report + approve/reject -->
     <div class="panel" style="grid-column: 1 / -1">
         <div class="panel-header">
-            <span class="panel-title">Gap report — approve / reject each lever</span>
+            <span class="panel-title">Gap report — approve / reject each finding</span>
+            <button id="btn-ref-copy-judged" class="btn-ghost btn-sm" title="Copy the JUDGED report to the clipboard: every finding with its explanation, numbers, config lever, and your ✓/✗ verdict — ready to paste anywhere. Also saved as corpus_diff_<date>_judged.md.">Copy judged report</button>
         </div>
         <div class="panel-body">
             <div id="ref-report"><div class="fx-muted">No report yet — run steps 1→4.</div></div>
