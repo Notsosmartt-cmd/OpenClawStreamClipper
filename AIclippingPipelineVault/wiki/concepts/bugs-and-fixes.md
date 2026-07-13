@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 71 bugs (highest number BUG 71) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 72 bugs (highest number BUG 72; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1797,6 +1797,70 @@ batches practical (each VOD's audio scan: ~20 min → seconds-of-load + a few-mi
 > `get_duration` AND a pathological resample. Fixing one revealed the other. When a stage is
 > silent, bisect with a staged probe and don't assume a single cause; and be suspicious of any
 > resample whose rate ratio has a large numerator after gcd reduction.
+
+### BUG 71c — THE UNIFYING ROOT CAUSE: numba's JIT cache is unwritable under the Program-Files interpreter → GIL-held tempfile retry spin on ANY first librosa import (minutes-to-hours, ~1 core, zero output)
+
+> [!success] Status: FIXED + MEASURED 2026-07-13. `NUMBA_CACHE_DIR` → `%LOCALAPPDATA%\OpenClawClipper\numba_cache`, set at every spawn chokepoint (`paths.child_env()`, dashboard `pipeline_env()`, Reference-Lab `_start_job`, and `audio_events.py` module top for direct CLI). Probe: stuck >20 min → **11 s total**; threaded scan **4.63 win/s = 3.8× over serial, 3.43 effective cores**; full 3 h-VOD scan ≈ **4 min** (was 20+ min to effectively-never).
+
+**The definitive evidence (py-spy stack of the live stuck process):**
+```
+_mkstemp_inner (tempfile.py:262)
+NamedTemporaryFile (tempfile.py:582)
+ensure_cache_path (numba\core\caching.py:112)
+enable_caching (numba\core\dispatcher.py:811)
+<module> (librosa\core\notation.py:1014)   ← module IMPORT, not computation
+```
+
+**Mechanism:** numba's default JIT-cache location is *next to the decorated source* —
+`site-packages\librosa\**\__pycache__`. The dashboard's interpreter is
+`C:\Program Files\Python312\python.exe`, whose site-packages is **admin-protected**. numba's
+`ensure_cache_path()` probes writability with a `NamedTemporaryFile`; on Windows,
+`tempfile._mkstemp_inner` treats `PermissionError` as a name-collision retry whenever
+`os.access(dir, W_OK)` claims writable (it lies about ACL-protected dirs) — so it retries up to
+`TMP_MAX` (10,000) names, **per `@jit(cache=True)` function, per process, while holding the
+GIL**. librosa's lazy submodule imports register dozens of such functions at import time →
+any first librosa touch spins for minutes-to-hours at ~1 core with 50 threads Waiting/1 Running.
+
+**Why it looked like three different bugs:** the spin fires at *lazy-import* time of whatever
+librosa entry point is touched first. `librosa.get_duration` (BUG 71) and `librosa.resample`
+(a large share of BUG 71b's "20-minute resample") were mostly THIS — both shipped fixes remain
+net-positive (header-read duration; skipping a pointless 16k→22.05k resample), but their
+attribution is corrected here. The KMP_DUPLICATE_LIB_OK theory was disproven twice (hung with
+the flag set). Threading was NEVER the problem: with the cache writable, the existing 4-thread
+scan delivers its historical ~3.3× (measured 3.8× at 16 kHz).
+
+**Why it never showed before 2026-07-13:** the fast historical benchmarks ran under the
+repo `.venv` (user-writable site-packages → cache worked), while dashboard-launched children
+inherit the Program-Files interpreter; and every dashboard run since the audio-events CACHE
+shipped (2026-07-08) skipped the scan entirely — until a 9-VOD `--force` batch deleted the
+caches and exposed it.
+
+**Diagnostic lesson:** on any silent ~1-core stall, `pip install py-spy; py-spy dump --pid N`
+FIRST — one stack dump ended a day of plausible-but-wrong theories (OpenMP, FIR ratios, GIL).
+Tool: `scripts/research/bench_audio_scan.py` (serial/threads/procs micro-bench on a real WAV).
+
+---
+
+## BUG 72 — Dashboard Stop orphans pipeline stage children (non-tree kill) → they keep writing into the shared work dir and sabotage the next launch
+
+> [!success] Status: FIXED 2026-07-13 (`dashboard/pipeline_runner.py`). `kill_pipeline()` now `taskkill /F /T` (whole tree, matching the marker-pid path); NEW `sweep_orphan_stage_children()` (psutil, conservative) runs before every native launch and after every stop. Stale-marker behavior verified correct (dead-pid marker → `is_pipeline_running()` False → GUI launch never blocked by a leftover marker).
+
+**Symptom (observed live, twice in one day):** after `/api/stop`, a `stage4_moments.py` child
+survived as an orphan; later an `audio_events.py` orphan survived its parent's death and kept
+spinning — and kept **writing `audio.wav`/`transcript.json` into the SHARED work dir** while a
+fresh run wrote the same files → corrupted/contended Stage-2 artifacts. This orphan-collision
+class, stacked on BUG 71/71b/71c, is what made the owner's 9-VOD batch attempts feel cursed.
+
+**Cause:** on Windows `kill_pipeline()` used `proc.terminate()` — which kills ONLY
+`run_pipeline.py`, never its children. The marker-pid path (which always did `taskkill /T`)
+then found the marker's pid already dead and did nothing.
+
+**Fix:** (1) `kill_pipeline()` → `taskkill /F /T /PID` on Windows. (2) A conservative psutil
+sweep — python processes running THIS repo's `scripts/lib/**` or `scripts/pipeline/**` whose
+parent pid is gone (never touches `scripts/research/**` = Reference-Lab jobs, never touches
+live parents) — killed before each native spawn and after each stop, logged as `[SWEEP]`.
+Verified: sweep importable + returns 0 on a clean box; synthetic dead-pid marker reads as
+not-running.
 
 ---
 
