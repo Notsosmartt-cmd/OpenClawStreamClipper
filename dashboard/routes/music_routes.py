@@ -34,7 +34,7 @@ def api_music_scan():
         ]
     else:
         cmd = [
-            sys.executable,
+            _state.repo_python(),
             str(_state.PROJECT_DIR / "scripts" / "lib" / "scan_music.py"),
             "--library", library,
         ]

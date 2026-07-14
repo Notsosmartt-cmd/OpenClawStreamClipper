@@ -39,7 +39,7 @@ def api_libraries_scan():
         cmd = ["docker", "exec", container,
                "python3", _seed_script_path_container(), "--scan"]
     else:
-        cmd = [sys.executable, _seed_script_path_local(), "--scan"]
+        cmd = [_state.repo_python(), _seed_script_path_local(), "--scan"]
 
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)

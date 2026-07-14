@@ -132,7 +132,9 @@ def _start_job(name: str, script: str, args: list[str], env_extra: dict | None =
         _ence(env)
     except Exception:
         pass
-    cmd = [sys.executable, str(RESEARCH / script), *args]
+    # W0.1: pin to the repo venv (whisperx/pyannote + Lab decompose deps live there),
+    # never the dashboard's own interpreter chain.
+    cmd = [_state.repo_python(), str(RESEARCH / script), *args]
     kwargs = {"stdout": lf, "stderr": subprocess.STDOUT, "cwd": str(REPO), "env": env}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
