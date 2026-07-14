@@ -407,10 +407,39 @@ established on the live box:
   `text_model_passb` exists today, not a per-stage URL) and pays the same VRAM constraint.
   (§10's "llama.cpp-direct second stack" no-go was about replacing the stack, not a bounded
   per-stage sidecar — still, prefer the in-stack lms route.)
-- **PENDING PoC (box was busy — owner's compare job held the 35B)**: (1) select CUDA + load 9B
-  and confirm the spawned llama-server uses the cuda backend dir; (2) measure 9B-CUDA decode
-  tok/s vs the 35B-Vulkan 50 tok/s baseline on the same prompt; (3) confirm co-serving. ~3 min
-  of idle box; restores all state (re-select Vulkan, reload 35B at ctx 32768).
+- **PoC RUN 2026-07-14 (owner-approved, state fully restored after)** — all three questions
+  answered YES, and the numbers are better than hoped. Same-day, same prompts, run-unique 5k
+  filler (defeats KV prefix reuse → RAW prefill floor on both):
+
+  | metric | 35B Vulkan (dual-GPU) | 9B CUDA (NVIDIA-only) | ratio |
+  |---|---|---|---|
+  | decode | 27.7–28.4 tok/s | 60–62 tok/s | **2.2×** |
+  | prefill, 5.1–5.4k-tok prompt | ~190 tok/s (TTFT 26.5–28.7 s) | ~2,800 tok/s (TTFT 1.86 s) | **~14×** |
+  | Pass-B-shaped call (5k in / short out) | ~30 s | ~4.6 s | **~6.4×** |
+  | warm load / unload | 18.3 s / ~1 s | 4.7 s / 0.8 s | swap round-trip ≈ 25 s |
+
+  Verified mechanics: `lms runtime select` non-interactive ✓; `lms runtime survey` under CUDA
+  shows ONLY the RTX 5060 Ti ✓; spawned worker ran from
+  `backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.23.1\llama-server.exe` ✓; `--identifier
+  passb-cuda` gave the instance a stable API id ✓; restore path (re-select Vulkan → reload 35B
+  ctx 32768) verified back on the vulkan backend dir ✓.
+- **One-time cost**: the FIRST-ever CUDA load of the 9B took **6 m 27 s** (cold disk read +
+  CUDA kernel JIT for the Blackwell sm_120 card, then cached) — warm reloads are 4.7 s. Budget
+  one slow load per new model × runtime pairing, then it's cheap forever.
+- **Same-day recalibration of §9b (methodology note, not an overwrite)**: 2026-07-14's raw
+  no-prefix-reuse measurement of the 35B-Vulkan = 28 tok/s decode / ~190 tok/s prefill, at
+  BOTH ctx 16384 and 32768 (ctx setting ruled out as a factor). The §9b "50 tok/s / prefill
+  ~42% of call" figures were replayed REAL Pass-B prompts, which share a large static prefix →
+  prefix-reuse absorbed much of their prefill. Production Pass-B sits between the two: the
+  per-chunk VARIABLE tokens (~2k transcript + cards) always pay the raw floor (~11 s/chunk on
+  Vulkan vs ~0.7 s on 9B-CUDA).
+- **Stage-4 projection**: at ~6.4× per Pass-B-shaped call (and ~25 s total swap overhead), a
+  9B-CUDA Pass B (+cards/judges on the same instance) plausibly takes S4 from ~47 min to
+  ~13–18 min on a fresh 3 h VOD → total ~55–60 min before Tier 1/2 diets. **The blocker is
+  QUALITY, not plumbing**: Pass B is the finder; 9B-vs-35B clip-set A/B + owner review is the
+  gate (the Lab already proved 9B can categorize differently). Integration sketch:
+  `common.load_model` grows a runtime-select wrapper used only around the Pass-B swap, with
+  the select restored on every error path.
 
 Related: [[concepts/pipeline-speed-findings-2026-07]] (§7 correction, §9 facts, §10 fresh-VOD
 baseline) · [[concepts/plan-pipeline-speed-2026-07]] (Wave 1, shipped) ·
