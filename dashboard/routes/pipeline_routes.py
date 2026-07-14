@@ -40,6 +40,20 @@ def api_status():
         except Exception:
             pass
 
+    # Per-VOD batch progress ({name, index, total}) written by run_pipeline's
+    # multi-VOD loop — lets the UI show "VOD 3/9: <name>" instead of just "9 VODs".
+    vod_progress = None
+    if running and _state.VOD_FILE.exists():
+        try:
+            import json as _json
+            vp = _json.loads(_state.VOD_FILE.read_text(encoding="utf-8"))
+            if isinstance(vp, dict) and vp.get("total"):
+                vod_progress = {"name": str(vp.get("name", "")),
+                                "index": int(vp.get("index", 0)),
+                                "total": int(vp.get("total", 0))}
+        except Exception:
+            vod_progress = None
+
     docker_ok = True
     if use_docker_exec():
         docker_ok = get_docker_container() is not None
@@ -50,6 +64,7 @@ def api_status():
         "running": running,
         "stage": stage,
         "vod": _state.pipeline_vod_name if running else None,
+        "vod_progress": vod_progress,
         "pid": _state.pipeline_process.pid if _state.pipeline_process and running else None,
         "mode": "docker" if use_docker_exec() else "local",
         "docker": docker_ok,

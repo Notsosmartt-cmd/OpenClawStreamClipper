@@ -210,14 +210,26 @@ def _fmt_stats(title: str, s: dict) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Reference-vs-ours attribute diff report (R3)")
-    ap.add_argument("--run", required=True, help="our-cards run stamp (clips/.diagnostics/cards/<run>/)")
+    ap.add_argument("--run", help="single our-cards run stamp (clips/.diagnostics/cards/<run>/)")
+    ap.add_argument("--runs", help="comma-separated run stamps — AGGREGATE our clips across "
+                    "several runs into one comparison (more clips = steadier medians)")
     ap.add_argument("--no-llm", action="store_true")
     args = ap.parse_args()
 
+    # Accept one run (--run) or many (--runs); aggregate all their cards into `ours`.
+    runs = [r.strip() for r in (args.runs or "").split(",") if r.strip()] or \
+           ([args.run.strip()] if args.run else [])
+    if not runs:
+        _log("need --run or --runs")
+        return 1
+    run_label = runs[0] if len(runs) == 1 else f"{len(runs)} runs: {', '.join(runs)}"
+
     ref = _load_cards(REF_CACHE)
-    ours = _load_cards(DIAG / "cards" / args.run)
+    ours: list[dict] = []
+    for r in runs:
+        ours.extend(_load_cards(DIAG / "cards" / r))
     if not ref or not ours:
-        _log(f"need both card sets (ref={len(ref)}, ours={len(ours)})")
+        _log(f"need both card sets (ref={len(ref)}, ours={len(ours)} across {len(runs)} run(s))")
         return 1
 
     ref_by_cat: dict[str, list] = defaultdict(list)
@@ -232,7 +244,7 @@ def main() -> int:
     narrative = None if args.no_llm else _narrative(ref_by_cat, ours_by_cat, items)
 
     date = time.strftime("%Y%m%d")
-    md = [f"# Corpus diff — reference vs ours (run {args.run}, {time.strftime('%Y-%m-%d')})",
+    md = [f"# Corpus diff — reference vs ours (run {run_label}, {time.strftime('%Y-%m-%d')})",
           "",
           f"Reference cards: **{len(ref)}** ({', '.join(f'{k}:{len(v)}' for k, v in sorted(ref_by_cat.items()))})",
           f"Our cards: **{len(ours)}** ({', '.join(f'{k}:{len(v)}' for k, v in sorted(ours_by_cat.items()))})",
@@ -255,12 +267,12 @@ def main() -> int:
         md += ["", "## Narrative", "", narrative.strip()]
     md += ["", "---", f"_Method: deterministic aggregates from attribute cards; OUR sfx counts use "
                       f"effects_log ground truth where present. Gap threshold 25% relative. "
-                      f"Cards: reference_clips/.cache + clips/.diagnostics/cards/{args.run}._"]
+                      f"Cards: reference_clips/.cache + clips/.diagnostics/cards/{{{','.join(runs)}}}._"]
 
     out_md = DIAG / f"corpus_diff_{date}.md"
     out_js = DIAG / f"corpus_diff_{date}.json"
     out_md.write_text("\n".join(md), encoding="utf-8")
-    out_js.write_text(json.dumps({"run": args.run, "date": date, "items": items},
+    out_js.write_text(json.dumps({"run": run_label, "runs": runs, "date": date, "items": items},
                                  indent=2), encoding="utf-8")
     _log(f"wrote {out_md.name} ({len(items)} gap items) + {out_js.name}")
     print("\n".join(md))

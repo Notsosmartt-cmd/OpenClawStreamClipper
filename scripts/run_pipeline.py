@@ -295,7 +295,7 @@ def _reset_work_artifacts(p) -> None:
     """Clear per-VOD work files between --all iterations, keeping the streamed
     log + lifecycle markers intact."""
     keep = {p.pipeline_log.name, p.stage_file.name, p.stages_log.name,
-            p.pid_file.name, p.done_file.name}
+            p.pid_file.name, p.done_file.name, p.vod_file.name}
     for f in p.work_dir.glob("*"):
         if f.name in keep:
             continue
@@ -358,6 +358,7 @@ def main(argv: list[str]) -> int:
 
     _news_stems: list[str] = []   # VODs completed this run (for CLIP_NEWS_AFTER)
     try:
+        common.clear_vod()  # no stale batch marker from a previous run
         if (args.all or args.vods) and not ctx.list_mode:
             if args.vods:
                 # Explicit multi-select (dashboard): process exactly these,
@@ -388,6 +389,8 @@ def main(argv: list[str]) -> int:
                         _pf[0] = None
                     _reset_work_artifacts(p)
                 log.line(f"=== Clipping {vod_name} ({i + 1}/{len(targets)}) ===")
+                # Dashboard "which VOD of how many" progress marker (batch runs).
+                common.set_vod(vod_name, i + 1, len(targets))
                 vctx = Ctx(argparse.Namespace(
                     style=args.style, vod=vod_name, type=args.type,
                     list=False, force=batch_force, all=False))
@@ -434,6 +437,7 @@ def main(argv: list[str]) -> int:
         import traceback
         log.write(traceback.format_exc())
     finally:
+        common.clear_vod()   # batch complete — drop the per-VOD progress marker
         common.cleanup(log, persistent_log, exit_code, start_epoch)
         log.close()
 

@@ -45,31 +45,31 @@ Most other bugs have fixes that shipped and are now part of the pipeline codebas
 > Every BUG entry (1–64, no BUG 22; 37 has 37b/37c) and both REMOVAL records below are listed here, grouped by category. Where a number was reused (BUG 60, BUG 61), both entries share a row — the `[[#BUG NN]]` anchor resolves to the first (older) occurrence.
 
 ### Infrastructure / Docker
-| # | Title |
-|---|---|
-| [[#BUG 1]] | Pipeline not reclipping after rebuild — `processed.log` full, use `--force` |
-| [[#BUG 2]] | PowerShell breaks `2>/dev/null` — wrap in `bash -c "..."` |
-| [[#BUG 4]] | Docker build uploads 32GB — missing `.dockerignore` |
-| [[#BUG 11]] | `apt-get` fails during Docker build on Windows/WSL2 — add retry/timeout config |
-| [[#BUG 12]] | Mixed mode falls back to CPU — `OLLAMA_VULKAN=1` missing |
-| [[#BUG 13]] | `vulkaninfo` not found in container — missing `vulkan-tools` package |
-| [[#BUG 14]] | Vulkan silently falls back to CPU — ICD init failure; now auto-detected |
-| [[#BUG 18]] | Pipeline logs lost after EXIT cleanup — added persistent timestamped log |
-| [[#BUG 31]] | Docker Desktop named pipe 500 kills `docker exec` mid-Pass-B — detached pipeline lifecycle |
-| [[#BUG 32]] | Container loses `host.docker.internal` route mid-run — fail-fast after 3 ENETUNREACH |
-| [[#BUG 59]] | HF model download hard-fails on Windows — symlink WinError 1314; set `HF_HUB_DISABLE_SYMLINKS=1` |
+| #           | Title                                                                                                    |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| [[#BUG 1]]  | Pipeline not reclipping after rebuild — `processed.log` full, use `--force`                              |
+| [[#BUG 2]]  | PowerShell breaks `2>/dev/null` — wrap in `bash -c "..."`                                                |
+| [[#BUG 4]]  | Docker build uploads 32GB — missing `.dockerignore`                                                      |
+| [[#BUG 11]] | `apt-get` fails during Docker build on Windows/WSL2 — add retry/timeout config                           |
+| [[#BUG 12]] | Mixed mode falls back to CPU — `OLLAMA_VULKAN=1` missing                                                 |
+| [[#BUG 13]] | `vulkaninfo` not found in container — missing `vulkan-tools` package                                     |
+| [[#BUG 14]] | Vulkan silently falls back to CPU — ICD init failure; now auto-detected                                  |
+| [[#BUG 18]] | Pipeline logs lost after EXIT cleanup — added persistent timestamped log                                 |
+| [[#BUG 31]] | Docker Desktop named pipe 500 kills `docker exec` mid-Pass-B — detached pipeline lifecycle               |
+| [[#BUG 32]] | Container loses `host.docker.internal` route mid-run — fail-fast after 3 ENETUNREACH                     |
+| [[#BUG 59]] | HF model download hard-fails on Windows — symlink WinError 1314; set `HF_HUB_DISABLE_SYMLINKS=1`         |
 | [[#BUG 62]] | Installing torchcodec broke M3 callbacks in Stage 4 — per-subprocess DLL-dir gap; `sitecustomize.py` fix |
 
 ### Dashboard
-| # | Title |
-|---|---|
-| [[#BUG 3]] | Dashboard JSON parsing error — Flask returning HTML, not JSON |
-| [[#BUG 5]] | `os.setsid` AttributeError on Windows — Linux-only syscall |
-| [[#BUG 6]] | Dashboard can't see VODs — wrong path (`dashboard/vods/` vs project root) |
-| [[#BUG 7]] | `processed.log` UnicodeDecodeError — UTF-16 BOM |
-| [[#BUG 8]] | Pipeline doesn't start from dashboard — must use `docker exec`, not local bash |
-| [[#BUG 10]] | Docker dashboard zombie process — Flask crash, no listener on port 5000 |
-| [[#BUG 16]] | LM Studio `/v1/models` flooded by status polls — added 30 s cache |
+| #           | Title                                                                          |
+| ----------- | ------------------------------------------------------------------------------ |
+| [[#BUG 3]]  | Dashboard JSON parsing error — Flask returning HTML, not JSON                  |
+| [[#BUG 5]]  | `os.setsid` AttributeError on Windows — Linux-only syscall                     |
+| [[#BUG 6]]  | Dashboard can't see VODs — wrong path (`dashboard/vods/` vs project root)      |
+| [[#BUG 7]]  | `processed.log` UnicodeDecodeError — UTF-16 BOM                                |
+| [[#BUG 8]]  | Pipeline doesn't start from dashboard — must use `docker exec`, not local bash |
+| [[#BUG 10]] | Docker dashboard zombie process — Flask crash, no listener on port 5000        |
+| [[#BUG 16]] | LM Studio `/v1/models` flooded by status polls — added 30 s cache              |
 
 ### LLM / Model Integration
 | # | Title |

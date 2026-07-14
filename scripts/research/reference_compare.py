@@ -25,12 +25,8 @@ import our_clip_cards as occ     # noqa: E402
 import corpus_diff               # noqa: E402
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Card our clips (missing only) + generate the gap report")
-    ap.add_argument("--run", required=True, help="clip-run stamp (effects_log)")
-    args = ap.parse_args()
-    run = args.run.strip()
-
+def _card_run(run: str) -> int:
+    """Card OUR clips for one run (missing only). Returns the number carded."""
     cache_dir = occ.DIAG / "cards" / run
     cache_dir.mkdir(parents=True, exist_ok=True)
     ground = occ._effects_for_run(run)
@@ -38,12 +34,13 @@ def main() -> int:
     if not clips:
         print(f"[compare] no clips found for run {run} — clip a VOD first "
               f"(or its mp4s were moved/archived off-repo)", flush=True)
-        return 1
+        return 0
 
     todo = [c for c in clips if not (cache_dir / f"{c.stem}.card.json").exists()]
     print(f"[compare] run {run}: {len(clips)} clip(s), {len(todo)} need carding "
           f"({len(clips) - len(todo)} cached)", flush=True)
 
+    carded = 0
     for i, clip in enumerate(todo, 1):
         stem = clip.stem
         print(f"[{i}/{len(todo)}] carding OUR clip: {stem[:55]}", flush=True)
@@ -63,11 +60,29 @@ def main() -> int:
                     card["_ground_truth"] = gt
                     (cache_dir / f"{stem}.card.json").write_text(
                         json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8")
+                    carded += 1
         except Exception as e:  # noqa: BLE001
             print(f"    FAILED: {type(e).__name__}: {e}", flush=True)
+    return carded
 
-    print("[compare] generating the gap report...", flush=True)
-    sys.argv = ["corpus_diff", "--run", run]
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Card our clips (missing only) + generate the gap report")
+    ap.add_argument("--run", help="single clip-run stamp (effects_log)")
+    ap.add_argument("--runs", help="comma-separated run stamps — aggregate several runs' clips "
+                    "into ONE comparison against the reference corpus")
+    args = ap.parse_args()
+    runs = [r.strip() for r in (args.runs or "").split(",") if r.strip()] or \
+           ([args.run.strip()] if args.run else [])
+    if not runs:
+        print("[compare] need --run or --runs", flush=True)
+        return 1
+
+    for run in runs:
+        _card_run(run)
+
+    print(f"[compare] generating the gap report over {len(runs)} run(s)...", flush=True)
+    sys.argv = ["corpus_diff", "--runs", ",".join(runs)]
     return corpus_diff.main()
 
 
