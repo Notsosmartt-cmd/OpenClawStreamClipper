@@ -35,26 +35,28 @@ def run(ctx) -> None:
         common.unload_model(log, ctx.llm_url, ctx.text_model)
         _ctx_len = ctx.context_length
         if _runtime:
+            # 32768 (not 16384) since the Raud finding: the ctx is a shared pool
+            # across concurrent slots — 2 workers × (~10k prompt + ~5k gen) needs
+            # ~30k. KV for the 9B at 32k is tiny (lms estimate: 6.1 GiB total).
             try:
-                _cap = int(os.environ.get("CLIP_PASSB_CUDA_CTX", "16384") or 16384)
+                _ctx_len = int(os.environ.get("CLIP_PASSB_CUDA_CTX", "32768") or 32768)
             except ValueError:
-                _cap = 16384
-            _ctx_len = min(_ctx_len, _cap)
+                _ctx_len = 32768
         common.load_model(log, ctx.llm_url, ctx.text_model_passb, _ctx_len, runtime=_runtime)
 
     # BUG 67 fail-fast guard: one tiny probe of the (now-loaded) Pass-B model. Aborts in
     # ~1 s if the model ignores no-think (permanent reasoning -> would fail every chunk).
     common.preflight_thinking(log, ctx.llm_url, ctx.text_model_passb)
 
-    # D1 (plan-speed-wave3, measured on the 2026-07-14 integration run): on the
-    # CUDA lane the server (PARALLEL=4) has decode headroom the Vulkan 35B never
-    # had — the old workers=2 ceiling was a Vulkan bandwidth finding and does not
-    # transfer. Chunk slots were ~82 s with 2 workers because per-moment grounding
-    # judge calls serialize behind the moment calls; 4 workers overlaps them.
-    # Lane-conditional (hardware-adaptive) + respects an explicit env override.
-    if _runtime and "CLIP_PASSB_MOMENT_WORKERS" not in os.environ:
-        env["CLIP_PASSB_MOMENT_WORKERS"] = "4"
-        log.log("[D1] CUDA lane: Pass-B moment workers -> 4 (set CLIP_PASSB_MOMENT_WORKERS to override)")
+    # D1 REVERTED to 2 workers (2026-07-14 Raud run + concurrency bench): the
+    # loaded context is a POOL shared by all in-flight requests — at 4 workers,
+    # 4 × (~6-10k prompt + generation) overflowed the 16384 pool and ALL 28
+    # chunks failed ("Context size has been exceeded"), leaving the serial
+    # end-of-pass re-queue to do the real work (62-min Stage 4 + the recovered
+    # moments only get light grounding). Pool sizing rule:
+    #   workers ≤ loaded_ctx / (max prompt + worst-case generation) ≈ 32768/15k → 2.
+    # More concurrency later requires shrinking prompts/outputs, not more slots.
+    # CLIP_PASSB_MOMENT_WORKERS still overrides for experiments.
 
     common.run_module(log, "stages/stage4_moments.py", [], env=env, check=True)
 
