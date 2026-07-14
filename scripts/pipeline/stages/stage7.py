@@ -760,32 +760,75 @@ def run(ctx) -> None:
     rows = _generate_manifest(ctx)
     log.log(f"  Manifest: {len(rows)} clips to process")
 
-    # 7b — extract clip audio (parallel, 2026-06-04). One ffmpeg per clip,
-    # each is fast (seek + 16k mono PCM rip ≈ 0.5-1 s) but invocation
-    # overhead adds up across 10 clips. Same ThreadPool pattern as 7d.
-    log.log("  Extracting audio for all clips...")
+    # 7b/7c — per-clip caption timing.
+    #
+    # A2' (plan-speed-wave3, 2026-07-14): the DEFAULT is now slicing each clip's
+    # word-SRT out of the Stage-2 master transcript (wav2vec2-aligned since
+    # Wave 0) via a clip_windows.json manifest — deterministic, keeps captions
+    # identical to the text every detection stage read, and removes Stage 7's
+    # whole Whisper load/claim. The legacy per-clip audio rip + batch Whisper
+    # path remains as the fallback (CLIP_CAPTION_SOURCE=whisper forces it, and
+    # any missing slice output triggers it automatically). Works on every
+    # hardware profile; CPU-only installs save the most.
+    def _row_window(row):
+        start = max(0, int(float(row["clip_start"]))) if row["clip_start"] != "" else max(0, int(row["t"]) - 22)
+        length = int(float(row["clip_duration"])) if row["clip_duration"] != "" else 45
+        return start, length
+
+    windows = {}
+    for row in rows:
+        _ws, _wl = _row_window(row)
+        windows[str(row["t"])] = {"start": _ws, "duration": _wl}
+    try:
+        p.work("clip_windows.json").write_text(json.dumps(windows), encoding="utf-8")
+    except OSError as _we:
+        log.warn(f"  could not write clip_windows.json ({_we}) — Whisper fallback will handle captions")
+
+    cap_env = dict(env)
+    cap_env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
+    _cap_source = os.environ.get("CLIP_CAPTION_SOURCE", "master").strip().lower()
+    _master_ready = _cap_source == "master" and p.transcript_json.exists()
+
     audio_workers = _resolve_render_workers()  # share the env knob
 
     def _extract_clip_audio(row):
-        start = max(0, int(float(row["clip_start"]))) if row["clip_start"] != "" else max(0, int(row["t"]) - 22)
-        length = int(float(row["clip_duration"])) if row["clip_duration"] != "" else 45
+        start, length = _row_window(row)
         common.run_ffmpeg(["ffmpeg", "-nostdin", "-y", "-ss", str(start), "-t", str(length),
                            "-i", str(ctx.vod_path), "-vn", "-acodec", "pcm_s16le", "-ar", "16000",
                            "-ac", "1", str(p.work(f"clip_audio_{row['t']}.wav"))])
 
-    if audio_workers <= 1 or len(rows) <= 1:
-        for row in rows:
-            _extract_clip_audio(row)
-    else:
-        with ThreadPoolExecutor(max_workers=audio_workers) as pool:
-            for fut in as_completed({pool.submit(_extract_clip_audio, row): row for row in rows}):
-                fut.result()
+    def _legacy_caption_pass():
+        # 7b — extract clip audio (parallel, 2026-06-04). One ffmpeg per clip,
+        # each is fast (seek + 16k mono PCM rip ≈ 0.5-1 s) but invocation
+        # overhead adds up across 10 clips. Same ThreadPool pattern as 7d.
+        log.log("  Extracting audio for all clips...")
+        if audio_workers <= 1 or len(rows) <= 1:
+            for row in rows:
+                _extract_clip_audio(row)
+        else:
+            with ThreadPoolExecutor(max_workers=audio_workers) as pool:
+                for fut in as_completed({pool.submit(_extract_clip_audio, row): row for row in rows}):
+                    fut.result()
+        # 7c — batch caption transcription (single Whisper load)
+        log.log("  Batch transcribing all clips (single Whisper load)...")
+        _wenv = dict(cap_env)
+        _wenv["CLIP_CAPTION_SOURCE"] = "whisper"
+        common.run_module(log, "stages/stage7_transcribe.py", [], env=_wenv, check=False)
 
-    # 7c — batch caption transcription (single Whisper load)
-    log.log("  Batch transcribing all clips (single Whisper load)...")
-    cap_env = dict(env)
-    cap_env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
-    common.run_module(log, "stages/stage7_transcribe.py", [], env=cap_env, check=False)
+    if _master_ready:
+        log.log("  Caption timing sliced from the master transcript (A2' — no per-clip Whisper)...")
+        common.run_module(log, "stages/stage7_transcribe.py", [], env=cap_env, check=False)
+        # An empty SRT is a legit silent clip; only a MISSING file means the
+        # slicer didn't cover that window — run the legacy pass for everything.
+        _missing = [row["t"] for row in rows if not p.work(f"clip_{row['t']}.srt").exists()]
+        if _missing:
+            log.warn(f"  master-slice missed {len(_missing)} clip SRT(s) ({_missing[:4]}...) — "
+                     "running the legacy Whisper pass.")
+            _legacy_caption_pass()
+    else:
+        if _cap_source == "master":
+            log.log("  Master transcript unavailable — using the legacy Whisper caption pass.")
+        _legacy_caption_pass()
 
     # 7d — render. Parallelized 2026-06-04: each clip's render is an
     # independent ffmpeg invocation (blur-fill + subtitle burn + audio mix).

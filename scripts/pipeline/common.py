@@ -434,6 +434,53 @@ def verify_models(log: Logger, llm_url: str, models: Iterable[str]) -> None:
     log.log(f"  All {len(wanted)} configured model(s) present in LM Studio.")
 
 
+def timed_probe(log: Logger, llm_url: str, model: str, timeout: float = 45.0) -> float | None:
+    """Wave A3: one tiny timed completion against ``model``. Returns wall seconds
+    or None when the server is unreachable/erroring/timing out. The 07-13 batch
+    showed LM Studio decays for HOURS before dying (S4 rate +70% over the final
+    6 h, then hard timeouts) — this is the direct detector for both modes."""
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "/no_think\nReply with exactly: ok"}],
+        "stream": False, "temperature": 0, "max_tokens": 8,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }).encode()
+    req = urllib.request.Request(
+        f"{llm_url.rstrip('/')}/v1/chat/completions",
+        data=payload, headers={"Content-Type": "application/json"})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            json.loads(resp.read().decode())
+        return time.time() - t0
+    except Exception as e:  # noqa: BLE001 — any failure = "not healthy"
+        log.warn(f"[A3] LM Studio probe failed: {type(e).__name__}: {e}")
+        return None
+
+
+def lms_server_restart(log: Logger) -> bool:
+    """Wave A3: recycle the LM Studio local server via the `lms` CLI (stop →
+    start). Used only when the between-VOD probe reports dead or heavily
+    decayed serving. Failure-soft: returns False when lms is missing or a step
+    errors; never raises."""
+    if not _LMS_BIN:
+        log.warn("[A3] lms CLI not found — cannot recycle the LM Studio server.")
+        return False
+    try:
+        log.log("[A3] Recycling LM Studio server (lms server stop/start)...")
+        subprocess.run([_LMS_BIN, "server", "stop"], capture_output=True, timeout=60)
+        time.sleep(3)
+        r = subprocess.run([_LMS_BIN, "server", "start"], capture_output=True,
+                           text=True, timeout=120)
+        ok = r.returncode == 0
+        log.log(f"[A3] server restart {'OK' if ok else f'non-zero ({r.returncode})'}")
+        time.sleep(2)
+        return ok
+    except Exception as e:  # noqa: BLE001
+        log.warn(f"[A3] server restart failed: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Subprocess helpers
 # ---------------------------------------------------------------------------

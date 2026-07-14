@@ -381,6 +381,42 @@ def main(argv: list[str]) -> int:
             prefetch_on = os.environ.get("CLIP_BATCH_PREFETCH", "1").strip().lower() not in (
                 "0", "false", "no", "off", "")
             _pf = [None]  # holder for the in-flight prefetch thread (list -> closure-writable)
+            # A3 (plan-speed-wave3): between-VOD LM Studio hygiene. The 07-13
+            # batch decayed for ~6 h (S4 rate +70%) then died at hour 17.6 —
+            # probe serving health before every VOD after the first, recycle the
+            # server once on dead/heavy-decay, and abort CLEANLY (instead of
+            # grinding 14 min of call timeouts) only if it stays dead.
+            # Kill switch: CLIP_BATCH_LLM_PROBE=0.
+            _probe_on = os.environ.get("CLIP_BATCH_LLM_PROBE", "1").strip().lower() in (
+                "1", "true", "yes", "on")
+            _probe_baseline = [None]
+
+            def _llm_hygiene(vctx_) -> bool:
+                """Probe (+ recycle once). Returns False only when the server
+                stays dead after a recycle — the batch should stop cleanly."""
+                common.load_model(log, vctx_.llm_url, vctx_.text_model, vctx_.context_length)
+                lat = common.timed_probe(log, vctx_.llm_url, vctx_.text_model)
+                if lat is None:
+                    common.lms_server_restart(log)
+                    common.load_model(log, vctx_.llm_url, vctx_.text_model, vctx_.context_length)
+                    lat = common.timed_probe(log, vctx_.llm_url, vctx_.text_model)
+                    if lat is None:
+                        return False
+                if _probe_baseline[0] is None:
+                    _probe_baseline[0] = lat
+                    log.log(f"[A3] LM Studio probe baseline: {lat:.1f}s")
+                elif lat > 5.0 and lat > 3.0 * _probe_baseline[0]:
+                    log.warn(f"[A3] LM Studio decay detected ({lat:.1f}s vs baseline "
+                             f"{_probe_baseline[0]:.1f}s) — recycling the server...")
+                    common.lms_server_restart(log)
+                    common.load_model(log, vctx_.llm_url, vctx_.text_model, vctx_.context_length)
+                    lat2 = common.timed_probe(log, vctx_.llm_url, vctx_.text_model)
+                    log.log(f"[A3] post-recycle probe: "
+                            f"{f'{lat2:.1f}s' if lat2 is not None else 'STILL DEAD'} — continuing.")
+                else:
+                    log.log(f"[A3] LM Studio probe: {lat:.1f}s (baseline {_probe_baseline[0]:.1f}s)")
+                return True
+
             for i, vod_name in enumerate(targets):
                 if i > 0:
                     if _pf[0] is not None:
@@ -388,6 +424,13 @@ def main(argv: list[str]) -> int:
                         _pf[0].join(timeout=1800)
                         _pf[0] = None
                     _reset_work_artifacts(p)
+                    # vctx here is the PREVIOUS iteration's (same models/url).
+                    if _probe_on and not _llm_hygiene(vctx):
+                        log.err(f"[A3] LM Studio still unresponsive after a server recycle — "
+                                f"stopping the batch cleanly before '{vod_name}' "
+                                f"({i}/{len(targets)} done; a re-run resumes from here).")
+                        exit_code = exit_code or 2
+                        break
                 log.line(f"=== Clipping {vod_name} ({i + 1}/{len(targets)}) ===")
                 # Dashboard "which VOD of how many" progress marker (batch runs).
                 common.set_vod(vod_name, i + 1, len(targets))
