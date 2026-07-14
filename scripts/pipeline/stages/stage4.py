@@ -46,6 +46,16 @@ def run(ctx) -> None:
     # ~1 s if the model ignores no-think (permanent reasoning -> would fail every chunk).
     common.preflight_thinking(log, ctx.llm_url, ctx.text_model_passb)
 
+    # D1 (plan-speed-wave3, measured on the 2026-07-14 integration run): on the
+    # CUDA lane the server (PARALLEL=4) has decode headroom the Vulkan 35B never
+    # had — the old workers=2 ceiling was a Vulkan bandwidth finding and does not
+    # transfer. Chunk slots were ~82 s with 2 workers because per-moment grounding
+    # judge calls serialize behind the moment calls; 4 workers overlaps them.
+    # Lane-conditional (hardware-adaptive) + respects an explicit env override.
+    if _runtime and "CLIP_PASSB_MOMENT_WORKERS" not in os.environ:
+        env["CLIP_PASSB_MOMENT_WORKERS"] = "4"
+        log.log("[D1] CUDA lane: Pass-B moment workers -> 4 (set CLIP_PASSB_MOMENT_WORKERS to override)")
+
     common.run_module(log, "stages/stage4_moments.py", [], env=env, check=True)
 
     moments = json.loads(p.hype_moments.read_text(encoding="utf-8")) if p.hype_moments.exists() else []
