@@ -22,6 +22,22 @@ a correctness/quality mandate (better word timing + speaker labels) that also ch
 the Stage-2 profile Wave A then optimizes. It is allowed to COST a little time before
 Wave A recovers it.
 
+**Owner amendment 2 (2026-07-14): hardware-adaptive defaults.** These optimizations
+must be DEFAULT on the owner's dual-vendor rig but must not interfere with CPU-only,
+NVIDIA-only, or AMD-only installs — the dashboard and pipeline stay usable everywhere.
+See §2b (hardware profiles): a detection layer resolves a `gpu_profile`, and every
+machine-specific behavior (the CUDA runtime dance above all) activates conditionally
+under `auto`, with a visible dashboard status and a manual override.
+
+**Owner amendment 3 (2026-07-14): NO mid-wave owner gates.** Owner: *"implement the
+full plan, review and evaluate whatever you can on your side for metrics, and at the
+end I will see the final outputted clips and go back for fine-tuning."* This
+consciously overrides the default RED-rubric promotion flow FOR THIS PLAN: waves ship
+default-on (conditioned on hardware profile), the agent self-evaluates each wave
+(timings, smoke tests, mechanical clip-set diffs, Reference-Lab carding as a quality
+proxy), and the single owner review happens at the END on the final output clips,
+followed by a fine-tuning pass. Kill switches stay on everything regardless.
+
 Baseline (measured, [[concepts/pipeline-speed-findings-2026-07]] §10 — fresh 3 h talk
 VOD, ~10 clips, healthy LM Studio ≈ **90 min**):
 
@@ -100,7 +116,35 @@ no whisperx.
   the first WhisperX run's clips deserve one normal owner glance since segmentation
   shifts slightly.
 
-### Wave A — structural overlaps (byte-safe, no owner gate, ship after Wave 0)
+### Wave 2b — hardware profiles & conditional activation (owner amendment 2)
+
+New module `scripts/lib/hw_profile.py` + dashboard surface. Detection (cached per
+process, override-able):
+- NVIDIA: `nvidia-smi` (count, VRAM) — same probe [[entities/vram-log|vram_log]] uses.
+- AMD: `Win32_VideoController` / vram_log's cross-vendor probe.
+- CUDA-for-torch: whisper's own `cuda→cpu` fallback already handles this per-device.
+- Resolved `gpu_profile`: `dual_vendor` | `nvidia_only` | `amd_only` | `cpu_only`,
+  stored/overridable in `config/hardware.json` (`"gpu_profile": "auto"` default).
+
+Activation matrix (what turns on where — everything else is universal):
+
+| feature | dual_vendor (owner) | nvidia_only | amd_only | cpu_only |
+|---|---|---|---|---|
+| W0 interpreter pin + WhisperX + diarization | ✅ | ✅ | ✅ (align/diar on CPU) | ✅ (slower, works) |
+| A1/A2 overlaps, A3 reload hygiene | ✅ | ✅ | ✅ | ✅ (A2 still helps: CPU encode) |
+| B1 model split (passb=9B) | ✅ default via models.json | ✅ (same file — their choice) | ✅ | ✅ |
+| **B2 CUDA runtime dance** (`CLIP_PASSB_RUNTIME=auto`) | **✅ auto-ACTIVE** (needs: both vendors present + `lms` CLI + a cuda runtime pack installed + passb model fits NVIDIA VRAM) | ⛔ auto-INERT (already native CUDA — a select would be a no-op) | ⛔ auto-INERT (no CUDA) | ⛔ auto-INERT |
+| C vision diet | ✅ | ✅ | ✅ | ✅ |
+| NVENC encode | ✅ (existing fallback to libx264 stays) | ✅ | ⛔ → libx264 (existing) | ⛔ → libx264 |
+
+`CLIP_PASSB_RUNTIME`: `auto` (default — the conditions above decide) | `off` | `cuda`
+(force). UI/UX: the dashboard **Hardware panel** shows the detected profile and a
+plain-language line per conditional feature ("CUDA text-lane: ACTIVE — dual-GPU setup
+detected" / "not needed — native CUDA" / "unavailable — no NVIDIA GPU"), plus the
+override dropdown. Failure-soft everywhere: if any probe errors, resolve to the most
+conservative profile and log it — a detection bug must never break a run.
+
+### Wave A — structural overlaps (byte-safe, ship after Wave 0)
 - **A1 — S2 overlap** (`scripts/pipeline/stages/stage2.py`): start the CPU audio-events
   scan (+ any other CPU audio analysis) in a thread as soon as `audio.wav` exists, join
   before S3 consumes events. Whisper (GPU) and the scan (CPU threads) don't contend.
@@ -121,8 +165,11 @@ no whisperx.
 Full detail: [[concepts/single-card-cuda-lane-2026-07]].
 - **B1 (config-only)**: `models.json: "text_model_passb": "qwen/qwen3.5-9b"` → S4 runs
   on the 9B via the EXISTING Phase-5.1 swap. S4 47 → ~17–22 m.
-  **GATE: owner clip-set A/B** — same VOD, unified-35B run vs lane run, review both
-  clip sets (this is the finder; quality is the whole question).
+  **Self-eval (amendment 3 — no mid-wave owner gate)**: run the same VOD unified-35B vs
+  lane; mechanically diff the clip sets (count, categories, time-bucket coverage, score
+  distributions, judge rankings via `logtool selection`) and card BOTH runs through the
+  Reference Lab → `corpus_diff` as an objective quality proxy. Findings go in the final
+  report; the owner judges the END clips.
 - **B2 (+CUDA wrapper)**: `common.load_model(..., runtime=...)` wrapping the stage-4
   load in `lms runtime select cuda → load → select vulkan` with restore on EVERY error
   path; `CLIP_PASSB_RUNTIME=cuda9b` default-off; unload-first (never trust
@@ -136,7 +183,8 @@ Full detail: [[concepts/single-card-cuda-lane-2026-07]].
 - **C1 — image diet** (`stage5.py` extraction size, `vlm_judge.py`, `stage6_vision.py`):
   extract/downscale frames to ~360-480p for LLM calls (rendering still uses originals),
   judge rounds on 4 frames instead of 6. ~4× fewer image tokens → S5.5+S6 20 → ~11 m.
-  GATE: owner eyeballs one run's titles/hooks + judge ranking spot-check vs a control.
+  Self-eval: control-vs-diet on one run — title/hook fidelity via the existing
+  `caption_judge` scores + top-10 judge-ranking overlap; owner sees the end clips.
 - **C2 — judge budget**: max_comparisons 30 → ~20 (Swiss on ≤12 clips converges by
   round 4). −1–2 m, same gate.
 
@@ -166,20 +214,23 @@ and it requires most of Wave D. The robust landing zone for 0+A+B+C is **~37–4
 squarely in the owner's target. W0.4's measured S2 number replaces the ~estimates
 above before Wave B starts.
 
-## 4. Validation protocol
+## 4. Validation protocol (amendment 3: agent self-eval per wave, owner review at END)
 - Wave 0: smoke test — Stage-2 log shows `WhisperX backend` (NOT the fallback line) +
   alignment + diarization; `transcript.json` has non-None `speaker` fields; word-SRT
-  consumed by captions unchanged; S2 wall time recorded (the new baseline). First
-  WhisperX run's clips get one normal owner glance (segmentation shifts slightly).
+  consumed by captions unchanged; S2 wall time recorded (the new baseline).
 - Wave A: byte-identical artifacts (events/transcript/clip files) vs a control run +
-  `run_metrics.jsonl` stage rows. No owner time needed.
-- Wave B: ONE A/B pair on a known VOD (2xRaKai or Thetylilshow — cached transcripts
-  make the text phase the only variable). Owner reviews both clip sets; `logtool
-  selection` diff for rank churn. Promote via models.json default only on a pass.
-- Wave C: control-vs-diet run, owner eyeballs titles/hooks; judge-ranking overlap
-  metric (top-10 set intersection) as the objective check.
-- Always: stage timings land in `run_metrics.jsonl` (cleanup()) — verify each rung's
-  predicted saving actually materialized before starting the next.
+  `run_metrics.jsonl` stage rows.
+- Wave B: ONE A/B pair on a known VOD (cached transcript isolates the text phase);
+  mechanical clip-set diff + `logtool selection` rank churn + Reference-Lab carding of
+  both runs → `corpus_diff` as the quality proxy. Result recorded, not gated.
+- Wave C: control-vs-diet caption_judge fidelity scores + top-10 judge-ranking overlap.
+- Hardware profiles: unit-test the matrix (mock probes for all 4 profiles → expected
+  activations); on this box assert `dual_vendor` + CUDA-lane ACTIVE.
+- Always: stage timings land in `run_metrics.jsonl` — verify each rung's predicted
+  saving materialized before the next.
+- **END: the owner deliverable** — a full fresh-VOD run with everything on → final
+  clips for owner review + a consolidated metrics report (per-wave measured savings,
+  self-eval findings, anything flagged for the fine-tuning pass).
 
 ## 5. Risk register
 - **Runtime-select global window** (B2): restore-on-error in a `finally`; never flip
