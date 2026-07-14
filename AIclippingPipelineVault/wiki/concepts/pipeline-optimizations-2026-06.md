@@ -3,7 +3,7 @@ title: "Pipeline parallelization & optimization sweep (2026-06-04)"
 type: concept
 tags: [performance, parallelization, multiprocessing, threadpool, ffmpeg, librosa, optimization, hub]
 sources: 1
-updated: 2026-06-12
+updated: 2026-07-14
 ---
 
 # Pipeline optimization sweep — 2026-06-04
@@ -62,6 +62,16 @@ Every stage except [[entities/audio-events]] (already parallelized 2026-06-04 ro
 
 > [!warning] Label correction (2026-06-06) — `multi` and `sample` were swapped
 > The original estimates (and the dashboard dropdown) had `multi` at 5-15%/very-low and `sample` at 20-25%/low. That is **backwards**: `sample` uses the *same* 6-signal `_alive` check as `multi` and then *additionally* force-runs the LLM on every Nth dead chunk (`stage4_moments.py` ~`:1413-1436`). So `sample` skips a strict **subset** of what `multi` skips → it runs **more** LLM calls (slower, less lift) and is **strictly safer** (every chunk it skips, `multi` also skips, plus more). Corrected ordering by both speed and FN risk: **off < sample < multi < strict**. Dashboard labels fixed to match (`dashboard/templates/index.html`). Percentages remain rough estimates — only the *ordering* is rigorous.
+
+> [!warning] MEASURED reality (2026-07-14) — the estimates don't survive this corpus or the July architecture
+> Simulated `multi` against the 8 real VODs of the 20260713 batch (307 chunks; signals 5+6 exact from the logs, signals 1-4 can only *rescue*, so this is an **upper bound** on skips):
+>
+> - **5 of 8 VODs would skip ZERO chunks** — every fresh talk/IRL VOD (64-100% `just_chatting`) auto-passes via signal 6, and their non-subjective chunks are talk-dense (wd ≥ 1.5). The `<15 words` free skip fired **0** times batch-wide (these streamers always talk).
+> - Skips concentrate in **gaming-hybrid VODs only**: Jynxzi 12/63, Lacy-0703 12/39, tbvnks-0708 9/50 — all `gaming` chunks at wd 0.18-1.3. Value there ≈ **9-13% of that VOD's wall** (~10-14 min), *before* keyword/audio rescue shrinkage.
+> - **Architecture drift halves even that**: since the two-phase card-parallel default (2026-07), chunk cards (~25% of Stage 4 — e.g. 738 s for 24 cards) are precomputed for EVERY ≥15-word chunk *before* the gate runs (`stage4_moments.py` precompute walk ignores the gate), so a gate skip saves only the moment call — the skipped chunk's card is already paid.
+> - Batch-wide upper bound: ~4%. On the speed-plan target case (fresh 3h talk VOD): **0%**.
+>
+> **Disposition (2026-07-14)**: keep the code (clean, auditable, zero-cost off), keep default `off`, **excluded from the speed plan** — it cannot help the owner's typical content. Dashboard labels rewritten to the measured numbers (the old "~22% faster" claim was unmeasured). If gaming-heavy VODs ever become regular content, the one worthwhile upgrade is gating the card-precompute walk with the same `_alive` signals (recovers the other ~25%; note: gated cards change later chunks' prior-context, so shadow-validate) + one `logtool dead` shadow run to measure the real rescue rate first.
 
 **Round 4 changes from round 2** (2026-06-04 evening):
 - **Default flipped to `off`** after the rakai Delaware case study showed the strict 2-signal gate has a meaningful false-negative rate. A missed clip displaces a worse one in its time-bucket slot (Pass C is competitive), so false negatives cost ~5-10× a false positive (which downstream stages filter for free).
