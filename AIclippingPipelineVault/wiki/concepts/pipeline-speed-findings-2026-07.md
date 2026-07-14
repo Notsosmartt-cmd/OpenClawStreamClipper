@@ -3,7 +3,7 @@ title: "Pipeline Speed — Empirical Findings (validation testing, 2026-07)"
 type: concept
 tags: [performance, speed, testing, validation, findings, reference, llm-determinism, gpu, whisper, stage-4, audio-events]
 sources: 0
-updated: 2026-07-09
+updated: 2026-07-14
 ---
 
 # Pipeline Speed — Empirical Findings
@@ -315,6 +315,39 @@ transcript windows), ~2700 tok each, `max_tokens=512`, temp 0.
   overlaps the ~5.6 min render window essentially free. Saves ~5.6 min per VOD transition in a
   batch → promoted default-on (`CLIP_BATCH_PREFETCH`). Chose the micro-bench over a ~2.5 h full
   batch because C1 is byte-safe, so contention was its only failure mode.
+
+## 10. Fresh-VOD baseline + LM Studio decay curve (measured 2026-07-14, 9-VOD batch)
+
+Mined from the 20260713_223856 batch (`pipeline_stages.log` stage marks + persistent log;
+post-BUG-71c, qwen3.6-35b-a3b, style-profiles + A/B on). 7 VODs completed before the LM
+Studio death; VODs 5–7 were fully FRESH (no cached transcript/audio/segments).
+
+| VOD (order run) | len | cache | wall | min/VOD-h |
+|---|---|---|---|---|
+| Thetylilshow | 3.1h | transcript | 81m | 25.9 |
+| 2xRaKai | 3.2h | t+audio+segments | 74m | 22.8 |
+| Jynxzi | 6.4h | t+audio | 149m | 23.4 |
+| Lacy 0703 | 4.0h | transcript | 103m | 25.6 |
+| tbvnks 0706 | 6.3h | **FRESH** | 184m | 29.3 |
+| AliOnAirr | 3.7h | **FRESH** | 139m | 37.5 ⚠ |
+| tbvnks 0708 | 5.6h | **FRESH** | 224m | 40.3 ⚠ |
+
+- **Healthy fresh baseline ≈ 26–30 min wall per VOD-hour (~2.2× realtime)** — a fresh 3h VOD
+  ≈ 80–95 min. Warm caches ≈ 23–26 min/VOD-h. Additive model: S2 transcribe+audio-scan
+  **4.1 min/VOD-h** (flat across all fresh runs — the post-71c scan is a solved problem),
+  S3 ~1, S4 moments **14.4–15.8 min/VOD-h** (≈60% of wall = the dominant cost), plus
+  ~2.5–3 min per exported clip (judge ~35 s + vision ~80 s + edit ~40 s).
+- **⚠ The LM Studio decay curve (new failure signature):** S4's per-hour rate was stable
+  14.4–15.8 min/VOD-h for the first ~12 h of the batch, then climbed 20.5 → 24.1 → 24.9
+  (+70%) over the final ~6 h — while S2/S3 (non-LLM) stayed flat, isolating the slowdown to
+  the server, not the pipeline. The 11:02 timeout death was the END of an hours-long
+  prodrome, not a sudden event. Implication: a per-VOD LM Studio health probe (or scheduled
+  model reload between VODs) in long batches would both recover the lost throughput on late
+  VODs and likely prevent the crash. (Idea filed, not built — owner gate.)
+- **Batch bookkeeping gotcha:** batch runs write NO `run_metrics.jsonl` rows per VOD —
+  `cleanup()` fires once at process exit, so a crashed batch leaves zero rows and the
+  history under-represents exactly the long runs that stress the system. Per-VOD rows would
+  need a `cleanup()`-equivalent inside the batch loop.
 
 ## Bottom line
 
