@@ -103,13 +103,13 @@
                         <option value="2.0">2×</option>
                     </select>
                 </div>
-                <div class="control-group" title="Pass B dead-chunk gate. Higher modes skip the LLM on chunks judged 'dead' (no clip-worthy signal), saving time but risking false negatives (a missed clip). Ordered safest→fastest. 'sample' = multi + a 1-in-N pass-through, so it skips a subset of multi → slower but safer.">
+                <div class="control-group" title="Pass B dead-chunk gate. Higher modes skip the LLM on chunks judged 'dead' (no clip-worthy signal), saving time but risking false negatives (a missed clip). Measured 2026-07-14 on 8 real VODs: talk/IRL VODs skip ~0 chunks (just_chatting auto-passes the gate), so the speedup only exists on gaming-heavy VODs (~9-13% of that VOD's run). 'sample' = multi + a 1-in-N pass-through, so it skips a subset of multi → slower but safer. 'strict' has a proven 5-10% missed-clip rate — legacy, avoid.">
                     <label class="field-label">Pass B Gate</label>
                     <select id="sel-passb-gate">
-                        <option value="off" selected>Off — safest</option>
-                        <option value="sample">Sample — ~10% faster</option>
-                        <option value="multi">Multi — ~22% faster</option>
-                        <option value="strict">Strict — ~28% faster</option>
+                        <option value="off" selected>Off — safest (default)</option>
+                        <option value="sample">Sample — 0% talk VODs / ~5-8% gaming</option>
+                        <option value="multi">Multi — 0% talk VODs / ~9-13% gaming</option>
+                        <option value="strict">Strict — legacy, known misses</option>
                     </select>
                 </div>
             </div>
