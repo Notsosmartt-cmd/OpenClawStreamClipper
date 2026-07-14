@@ -19,6 +19,12 @@ updated: 2026-07-14
 > pyannote-audio installed in .venv) — it comes back the moment the pipeline runs under
 > the venv/WhisperX path. Expect Stage 2 to grow ~25-30% (CPU-bound) when it does.
 
+> [!note] RESOLVED 2026-07-14 — Wave 0 interpreter pin shipped
+> `_state.repo_python()` makes the WhisperX path — and this module with it — the real
+> default. Smoke test: speakers assigned to 44/44 segments (SPEAKER_00/01/02 = three
+> real speakers) in 5.2 s on a 3-min excerpt (~2 s per audio-minute → ~6 min on a 3 h
+> VOD, hidden under Wave A's S2 overlap).
+
 WhisperX + pyannote-audio integration that assigns a `speaker` label (e.g. `SPEAKER_00`, `SPEAKER_01`) to every Whisper segment after alignment. Lets the pipeline distinguish a 60 s solo monologue from 60 s of streamer + friend banter — different content profiles that previously looked identical to Pass A keyword scanning.
 
 Introduced 2026-04-27 as Tier-2 M1 of the [[concepts/moment-discovery-upgrades]]. Lives inside [[entities/speech-module]] (`_maybe_diarize()` helper); not a separate file because it's a thin WhisperX wrapper.

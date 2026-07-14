@@ -25,7 +25,7 @@ def _run_fetch_assets(args: list[str], timeout: int = 300) -> dict:
         cmd = ["docker", "exec", container,
                "python3", "/root/scripts/lib/fetch_assets.py"] + args
     else:
-        cmd = [sys.executable,
+        cmd = [_state.repo_python(),
                str(_state.PROJECT_DIR / "scripts" / "lib" / "fetch_assets.py")] + args
 
     try:

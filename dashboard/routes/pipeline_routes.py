@@ -117,7 +117,7 @@ def api_clip():
         if use_docker_exec():
             cmd = ["bash", _state.DOCKER_PIPELINE_SCRIPT, "--style", style, "--vod", vod]
         else:
-            cmd = [sys.executable, _state.PIPELINE_SCRIPT, "--style", style, "--vod", vod]
+            cmd = [_state.repo_python(), _state.PIPELINE_SCRIPT, "--style", style, "--vod", vod]
         if force:
             cmd.append("--force")
         if type_hint:
@@ -187,7 +187,7 @@ def api_clip_all():
             )
             cmd = ["bash", "-c", cmd_str]
         else:
-            cmd = [sys.executable, _state.PIPELINE_SCRIPT, "--all", "--style", style]
+            cmd = [_state.repo_python(), _state.PIPELINE_SCRIPT, "--all", "--style", style]
             if force:
                 cmd.append("--force")
 
@@ -278,7 +278,7 @@ def api_clip_batch():
                 )
             cmd = ["bash", "-c", "; ".join(steps)]
         else:
-            cmd = [sys.executable, _state.PIPELINE_SCRIPT,
+            cmd = [_state.repo_python(), _state.PIPELINE_SCRIPT,
                    "--style", style, "--vods", ",".join(vods)]
             if force:
                 cmd.append("--force")
@@ -335,7 +335,7 @@ def api_news_compile():
         if is_reference_running():
             return jsonify({"error": "A Reference Lab job is running — wait for it to finish"}), 409
         script = str(_state.PROJECT_DIR / "scripts" / "news_compile.py")
-        cmd = [sys.executable, script, "--vods", ",".join(vods)]
+        cmd = [_state.repo_python(), script, "--vods", ",".join(vods)]
         try:
             _state.pipeline_process = spawn_pipeline(cmd)
         except RuntimeError as e:

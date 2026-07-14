@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -37,6 +38,26 @@ DOCKER_COMPOSE_FILE = PROJECT_DIR / "docker-compose.yml"
 # directly; DOCKER_PIPELINE_SCRIPT is kept only for the legacy docker-exec path.
 PIPELINE_SCRIPT = str(PROJECT_DIR / "scripts" / "run_pipeline.py")
 DOCKER_PIPELINE_SCRIPT = "/root/scripts/clip-pipeline.sh"
+
+
+def repo_python() -> str:
+    """Interpreter for spawned pipeline/research jobs — pinned to the repo venv.
+
+    W0.1 (plan-speed-wave3): the dashboard itself may run under ANY interpreter
+    (system python, a venvlauncher child, an agent's shell), and spawning
+    children with ``sys.executable`` made the speech backend depend on how the
+    dashboard happened to be started — whisperx/pyannote live only in the venv,
+    so runs launched from a system-python dashboard silently fell back to
+    faster-whisper, losing wav2vec2 word alignment AND speaker diarization.
+    Resolve the repo venv explicitly; fall back to ``sys.executable`` so an
+    install without a .venv keeps working. (Inline ``-c`` probes that don't
+    import repo deps may still use sys.executable directly.)
+    """
+    if os.name == "nt":
+        cand = PROJECT_DIR / ".venv" / "Scripts" / "python.exe"
+    else:
+        cand = PROJECT_DIR / ".venv" / "bin" / "python"
+    return str(cand) if cand.exists() else sys.executable
 
 # Temp/work dir for pipeline state files. Resolve from the orchestrator's
 # single source of truth (scripts/lib/paths.py) so the dashboard reads the

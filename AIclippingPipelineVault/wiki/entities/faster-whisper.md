@@ -40,6 +40,13 @@ Default model (2026-06-04): **`large-v3-turbo`** — a distilled large-v3 (decod
 > §10-of-speed-findings S2 rate (4.1 min/VOD-h) was measured on the FALLBACK path — the
 > WhisperX path (VAD-batched ASR + alignment pass) needs its own measured run.
 
+> [!note] RESOLVED 2026-07-14 — Wave 0 of [[concepts/plan-speed-wave3-2026-07]]
+> All dashboard spawn sites now use `_state.repo_python()` (pins to the repo `.venv`,
+> falls back to `sys.executable` when no venv exists — universal across hardware
+> profiles). Smoke-verified same day: WhisperX ASR + wav2vec2 align + diarization all
+> engage under the pin (3 real speakers separated on a live excerpt). **WhisperX +
+> diarization are now the REAL pipeline default per owner mandate.**
+
 ### Two backends, one module ([[entities/speech-module]] / `scripts/lib/speech.py`)
 
 Stage 2 calls `speech.py`, which picks a backend from `config/speech.json::backend`
