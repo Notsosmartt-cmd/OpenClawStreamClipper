@@ -152,10 +152,19 @@ conservative profile and log it — a detection bug must never break a run.
   pyannote diarization pass are both CPU-heavy (24 threads available) — run them
   concurrently with/after the GPU phases. Target S2 ≈ 9-11 m instead of Wave 0's
   ~12-15 m sequential. Validation: byte-identical events JSON + transcript vs serial run.
-- **A2 — S6↔S7 overlap** (`stage6.py`/`stage7.py`): render clip N while clip N+1
-  enriches. Keep the vision model loaded until the last enrichment (move the
-  `stage7.py:751` unload later); NVENC/CPU-filter contention already measured ~0.
-  −4-6 m. Validation: identical clip outputs (per-clip commands unchanged), timing.
+- **A2′ — master-slice captions (REPLACED the S6↔S7 overlap, 2026-07-14)**: during
+  implementation, two blockers surfaced on the original A2 — Stage 7's caption step
+  loaded Whisper (GPU claim → VRAM conflict with a still-loaded 35B) and the clip
+  manifest depends on Stage 6's titles. The better move: Stage 7 now SLICES each
+  clip's word-SRT from the Stage-2 master transcript (`clip_windows.json` manifest →
+  `stage7_transcribe.py` master mode; wav2vec2-aligned since Wave 0) instead of
+  re-transcribing every clip. Removes S7's whole Whisper load (−1.5-2.5 m),
+  deterministic, captions match the text detection read, works on every hardware
+  profile (CPU-only saves most). Legacy path kept: `CLIP_CAPTION_SOURCE=whisper`
+  forces it; a missing slice output auto-falls-back. Self-tested (offsets, block
+  fallback, window exclusion, fallback decision). The full S6∥S7 render overlap
+  moved to **D6** (needs a design pass vs stage-6 window trimming; the VRAM blocker
+  is now gone, so it's feasible later).
 - **A3 — batch hygiene** (`run_pipeline.py` batch loop): `lms unload --all` + reload
   between VODs + a 5 s health probe; abort-with-message if LM Studio unresponsive.
   Protects the healthy 26–30 min/VOD-h rate (S4 decayed 14.4→24.9 min/VOD-h over the

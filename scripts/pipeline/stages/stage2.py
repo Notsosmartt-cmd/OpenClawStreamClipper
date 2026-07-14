@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Stage 2 — Transcription (+ audio events). Port of stage2_transcription.sh."""
+"""Stage 2 — Transcription (+ audio events). Port of stage2_transcription.sh.
+
+Wave A1 (plan-speed-wave3, 2026-07-14): the Tier-2 M2 audio-events scan is
+CPU-bound and the transcription is GPU-bound, yet they ran sequentially. Both
+only need ``audio.wav``, so the scan now launches in a background thread the
+moment extraction finishes and joins after transcription — on a fresh VOD the
+scan's ~3-4 min disappear into Whisper's wall time. ``CLIP_STAGE2_OVERLAP=0``
+restores the exact serial order.
+"""
 from __future__ import annotations
 
 import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from pipeline import common
@@ -72,68 +81,32 @@ def run(ctx) -> None:
         log.log("Cached transcript path — keeping LM Studio model resident "
                 "(no Whisper this run; skips a needless ~30-60 s reload in Stage 3).")
 
-    if _cache_ok and (not ctx.force or _reuse_transcript):
-        if ctx.force and _reuse_transcript:
-            log.log(f"CLIP_REUSE_TRANSCRIPT: reusing cached transcription for "
-                    f"'{ctx.vod_basename}' despite --force (deterministic; skips ~10 min).")
-        log.log(f"Found cached transcription for '{ctx.vod_basename}'. Skipping transcription.")
-        shutil.copyfile(cached_json, p.transcript_json)
-        shutil.copyfile(cached_srt, p.transcript_srt)
-        _print_cached_stats(ctx)
-        # 2026-06-04 (Delaware fix): even on the cached-transcript path we
-        # still need audio.wav for the Tier-2 M2 audio-events scan below.
-        # Before this fix, cached re-runs wrote `{"skipped_reason":
-        # "no_audio_source"}` because audio extraction only happened in the
-        # non-cached branch. That silently disabled rhythmic_speech /
-        # crowd_response / music_dominance signals on every re-run, which
-        # was one of the three failures stacked behind the rakai Delaware
-        # rap battle being missed. See case-rap-battle-missed §Diagnosis 4.
-        if not audio.exists():
-            log.log("Cached transcript path — extracting audio track for Tier-2 M2 audio events...")
-            common.run_ffmpeg(["ffmpeg", "-y", "-i", str(ctx.vod_path), "-vn",
-                               "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(audio)])
-    else:
-        if ctx.force and (cached_json.exists() or cached_srt.exists()):
-            log.log(f"Force reprocess: discarding cached transcription for '{ctx.vod_basename}' and re-transcribing.")
-            cached_json.unlink(missing_ok=True)
-            cached_srt.unlink(missing_ok=True)
-        else:
-            log.log("No cached transcription found.")
-        log.log("Transcribing via speech module...")
-        env = ctx.child_env()
-        env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
+    # ------------------------------------------------------------------
+    # Audio extraction — hoisted ahead of BOTH branches (A1). The WAV is the
+    # shared input of transcription, the audio-events scan, and Stage 7's
+    # clip_tighten/sfx, so it must exist before anything else starts.
+    # (2026-06-04 Delaware fix preserved: cached-transcript runs need it too.)
+    # ------------------------------------------------------------------
+    if _will_transcribe or not audio.exists():
         log.log("Extracting audio track...")
         common.run_ffmpeg(["ffmpeg", "-y", "-i", str(ctx.vod_path), "-vn",
                            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(audio)])
-        log.log(f"Audio duration: {common.ffprobe_duration(audio)}s")
-        try:
-            common.run_module(log, "speech.py", [
-                "--audio", str(audio),
-                "--out-json", str(p.transcript_json),
-                "--out-srt", str(p.transcript_srt),
-                "--vod", ctx.vod_basename,
-            ], env=env, check=True)
-        except subprocess.CalledProcessError:
-            log.err("speech.py transcription failed")
-            raise common.PipelineExit(1, json.dumps({"status": "transcription_failed", "clips": 0}))
-        shutil.copyfile(p.transcript_json, cached_json)
-        shutil.copyfile(p.transcript_srt, cached_srt)
-        log.log(f"Transcription cached to {p.transcriptions_dir}")
+        if _will_transcribe:
+            log.log(f"Audio duration: {common.ffprobe_duration(audio)}s")
 
-    log.log(f"Transcription complete. Output: {p.transcript_json}")
-
+    # ------------------------------------------------------------------
     # Tier-2 M2 — audio events scan (boost-only signals for Pass A).
-    # The cached-transcript path above now also extracts audio.wav, so
-    # this branch fires on both fresh and cached runs (post-2026-06-04).
     #
-    # Speed #1 (2026-07-08, plan-pipeline-speed-2026-07): the scan output is
-    # deterministic per VOD (~10-16 min serial) yet only the transcript was cached —
-    # mirror that cache to `<stem>.audio_events.json` so re-runs skip the rescan. Same
-    # reuse semantics as the transcript (reuse unless --force, minus the
-    # CLIP_REUSE_TRANSCRIPT dev override). audio.wav extraction above is unaffected
-    # (Stage 7 clip_tighten/sfx read it); ONLY the scan is skipped on a hit. A scan is
-    # cached ONLY when valid (non-empty `windows`, no `skipped_reason`) so a transient
-    # scanner error is never immortalized.
+    # Speed #1 (2026-07-08, plan-pipeline-speed-2026-07): deterministic per VOD →
+    # mirrored to `<stem>.audio_events.json`; re-runs skip the rescan. A scan is
+    # cached ONLY when valid (non-empty `windows`, no `skipped_reason`) so a
+    # transient scanner error is never immortalized.
+    #
+    # Wave A1: on a scan-needed run the scan launches HERE (audio.wav is ready)
+    # in a background thread and joins after transcription. CPU (scan) and GPU
+    # (Whisper) don't contend; Logger.write is lock-protected so interleaved
+    # child lines are safe (same contract as Pass B's moment-parallel logs).
+    # ------------------------------------------------------------------
     events = p.work("audio_events.json")
     cached_events = p.transcriptions_dir / f"{stem}.audio_events.json"
 
@@ -145,23 +118,90 @@ def run(ctx) -> None:
         except Exception:
             return False
 
-    if cached_events.exists() and _valid_events(cached_events) and (not ctx.force or _reuse_transcript):
-        log.log(f"Found cached audio events for '{ctx.vod_basename}' — skipping scan.")
-        shutil.copyfile(cached_events, events)
-    elif audio.exists():
-        if ctx.force and cached_events.exists():
-            cached_events.unlink(missing_ok=True)  # discard stale under --force, like the transcript
+    def _run_scan() -> None:
+        """The exact pre-A1 scan body: scan → sentinel-on-error → mirror cache."""
         log.log("Tier-2 M2: scanning audio events (rhythmic / crowd / music)...")
         r = common.run_module(log, "audio_events.py",
                               ["--audio", str(audio), "--out", str(events)],
                               env=ctx.child_env(), check=False)
         if r.returncode != 0:
-            events.write_text('{"windows": [], "skipped_reason": "scanner_error"}', encoding="utf-8")
+            events.write_text('{"windows": [], "skipped_reason": "scanner_error"}',
+                              encoding="utf-8")
         elif _valid_events(events):
             try:
                 shutil.copyfile(events, cached_events)
                 log.log(f"Audio events cached to {cached_events.name}")
             except OSError:
                 pass
+
+    _overlap = os.environ.get("CLIP_STAGE2_OVERLAP", "1").strip().lower() in (
+        "1", "true", "yes", "on")
+    _scan_needed = False
+    scan_thread: threading.Thread | None = None
+
+    if cached_events.exists() and _valid_events(cached_events) and (not ctx.force or _reuse_transcript):
+        log.log(f"Found cached audio events for '{ctx.vod_basename}' — skipping scan.")
+        shutil.copyfile(cached_events, events)
+    elif audio.exists():
+        if ctx.force and cached_events.exists():
+            cached_events.unlink(missing_ok=True)  # discard stale under --force, like the transcript
+        _scan_needed = True
+        if _overlap:
+            log.log("A1 overlap: audio-events scan running in parallel with transcription.")
+            scan_thread = threading.Thread(target=_run_scan, name="audio-events-scan",
+                                           daemon=True)
+            scan_thread.start()
     else:
-        events.write_text('{"windows": [], "skipped_reason": "no_audio_source"}', encoding="utf-8")
+        events.write_text('{"windows": [], "skipped_reason": "no_audio_source"}',
+                          encoding="utf-8")
+
+    # ------------------------------------------------------------------
+    # Transcription (foreground; GPU) — cached copy or the speech module.
+    # The scan join lives in `finally` so even a transcription failure can't
+    # leave an orphan scan child writing into the shared work dir (BUG 72
+    # family); the scan is bounded (~minutes), so a slow-fail is acceptable.
+    # ------------------------------------------------------------------
+    try:
+        if _cache_ok and (not ctx.force or _reuse_transcript):
+            if ctx.force and _reuse_transcript:
+                log.log(f"CLIP_REUSE_TRANSCRIPT: reusing cached transcription for "
+                        f"'{ctx.vod_basename}' despite --force (deterministic; skips ~10 min).")
+            log.log(f"Found cached transcription for '{ctx.vod_basename}'. Skipping transcription.")
+            shutil.copyfile(cached_json, p.transcript_json)
+            shutil.copyfile(cached_srt, p.transcript_srt)
+            _print_cached_stats(ctx)
+        else:
+            if ctx.force and (cached_json.exists() or cached_srt.exists()):
+                log.log(f"Force reprocess: discarding cached transcription for "
+                        f"'{ctx.vod_basename}' and re-transcribing.")
+                cached_json.unlink(missing_ok=True)
+                cached_srt.unlink(missing_ok=True)
+            else:
+                log.log("No cached transcription found.")
+            log.log("Transcribing via speech module...")
+            env = ctx.child_env()
+            env["CLIP_WHISPER_MODEL"] = ctx.whisper_model
+            try:
+                common.run_module(log, "speech.py", [
+                    "--audio", str(audio),
+                    "--out-json", str(p.transcript_json),
+                    "--out-srt", str(p.transcript_srt),
+                    "--vod", ctx.vod_basename,
+                ], env=env, check=True)
+            except subprocess.CalledProcessError:
+                log.err("speech.py transcription failed")
+                raise common.PipelineExit(1, json.dumps({"status": "transcription_failed", "clips": 0}))
+            shutil.copyfile(p.transcript_json, cached_json)
+            shutil.copyfile(p.transcript_srt, cached_srt)
+            log.log(f"Transcription cached to {p.transcriptions_dir}")
+
+        log.log(f"Transcription complete. Output: {p.transcript_json}")
+    finally:
+        if scan_thread is not None:
+            if scan_thread.is_alive():
+                log.log("A1 overlap: waiting for the audio-events scan to finish...")
+            scan_thread.join()
+
+    # Serial fallback (CLIP_STAGE2_OVERLAP=0) — the exact legacy order.
+    if _scan_needed and scan_thread is None:
+        _run_scan()
