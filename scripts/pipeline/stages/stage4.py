@@ -58,6 +58,16 @@ def run(ctx) -> None:
     # More concurrency later requires shrinking prompts/outputs, not more slots.
     # CLIP_PASSB_MOMENT_WORKERS still overrides for experiments.
 
+    # Owner-observed defect (2026-07-14, live lms ps during Stage 4): the
+    # grounding judge (`grounding._resolve_judge_model`) falls back to
+    # CLIP_TEXT_MODEL — the 35B — so its first call JIT-RELOADED the 35B (at
+    # 16384, the JIT fingerprint) ALONGSIDE the CUDA 9B: ~21 GB wanted on the
+    # 16 GB card → spilled weights → BOTH models degraded all of Stage 4.
+    # Scope every Stage-4 text call to the Pass-B model (identity no-op when
+    # passb == text_model; S6's caption judges still resolve to the loaded
+    # vision-phase model via CLIP_TEXT_MODEL as before).
+    env["CLIP_GROUNDING_JUDGE_MODEL"] = ctx.text_model_passb
+
     common.run_module(log, "stages/stage4_moments.py", [], env=env, check=True)
 
     moments = json.loads(p.hype_moments.read_text(encoding="utf-8")) if p.hype_moments.exists() else []
