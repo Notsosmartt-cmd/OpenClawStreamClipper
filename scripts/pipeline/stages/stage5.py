@@ -41,11 +41,20 @@ A2_FRAME_OFFSETS = [("setupminus1", -1), ("setupplus1", 1)]
 _DEFAULT_WORKERS = 8
 
 
+# C1 vision image diet (plan-speed-wave3, 2026-07-14): these frames exist ONLY
+# for the VLM (Stage 5.5 judge + Stage 6 enrichment) — renders cut from the VOD
+# directly — so their resolution is pure image-token budget. 960:540 ≈ ~650
+# image tokens/frame; the 640:360 default ≈ ~290 (≈2.3× less prefill per vision
+# call) while staying readable for on-screen-text reads (the R0 lesson: the VLM
+# does real OCR off these). CLIP_FRAME_SCALE=960:540 restores the old size.
+_FRAME_SCALE = os.environ.get("CLIP_FRAME_SCALE", "640:360").strip() or "640:360"
+
+
 def _extract(ctx, frame_t: int, out_name: str) -> None:
     common.run_ffmpeg([
         "ffmpeg", "-nostdin", "-y", "-ss", str(max(0, frame_t)),
         "-i", str(ctx.vod_path), "-frames:v", "1",
-        "-vf", "scale=960:540", "-q:v", "2",
+        "-vf", f"scale={_FRAME_SCALE}", "-q:v", "2",
         str(ctx.paths.work(out_name)),
     ])
 
