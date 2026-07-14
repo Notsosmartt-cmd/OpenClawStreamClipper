@@ -20,7 +20,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 | text_model | qwen/qwen3.6-35b-a3b (unified MoE, ~3B active) | 2026-06 | [[entities/qwen35]] |
 | vision_model | qwen/qwen3.6-35b-a3b (same unified model) | 2026-06 | [[entities/qwen3-vl]] |
 | Context length | 32768 | 2026-06 | [[concepts/vram-budget]] |
-| Transcription | faster-whisper large-v3-turbo, word-level SRT | 2026-06 | [[entities/faster-whisper]] |
+| Transcription | speech.py prefers WhisperX (wav2vec2 word align); ⚠ recent runs silently used the faster-whisper FALLBACK (interpreter roulette — dashboard's `sys.executable` decides; venv=whisperx, system-python=fallback) | 2026-07-14 | [[entities/faster-whisper]] |
 | Captions | CapCut word-box, bundled Montserrat Black | 2026-06-06 | [[concepts/captions]] |
 | Stage 7 encode | h264_nvenc by default (libx264 fallback) | 2026-06-06 | [[concepts/clip-rendering]] |
 | Audio-events scan | threaded default (min(4,cores-2), byte-identical 3.3×) + per-VOD cache (re-runs skip) | 2026-07-08 | [[concepts/pipeline-speed-findings-2026-07]] |
