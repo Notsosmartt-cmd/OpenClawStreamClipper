@@ -120,7 +120,7 @@ no whisperx.
 
 New module `scripts/lib/hw_profile.py` + dashboard surface. Detection (cached per
 process, override-able):
-- NVIDIA: `nvidia-smi` (count, VRAM) — same probe [[entities/vram-log|vram_log]] uses.
+- NVIDIA: `nvidia-smi` (count, VRAM) — same probe `scripts/lib/vram_log.py` uses.
 - AMD: `Win32_VideoController` / vram_log's cross-vendor probe.
 - CUDA-for-torch: whisper's own `cuda→cpu` fallback already handles this per-device.
 - Resolved `gpu_profile`: `dual_vendor` | `nvidia_only` | `amd_only` | `cpu_only`,
