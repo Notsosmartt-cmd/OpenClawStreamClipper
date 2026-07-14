@@ -4,7 +4,7 @@ type: concept
 status: planned
 tags: [performance, speed, lm-studio, serving, speculative-decoding, prefill, kv-cache, batch-overlap, plan, stage-4, stage-2, stage-3]
 sources: 0
-updated: 2026-07-09
+updated: 2026-07-14
 ---
 
 # Speed Wave 2 — Unified Implementation Plan
@@ -370,6 +370,48 @@ on), qwen3.5-9b as draft (compute-backwards + VRAM), MTP on current GGUF (no hea
 (already optimal), llama.cpp-direct second stack (out of stack), and the owner-excluded
 quality-touching list at the top.
 
-Related: [[concepts/pipeline-speed-findings-2026-07]] (§7 correction, §9 facts) ·
-[[concepts/plan-pipeline-speed-2026-07]] (Wave 1, shipped) · [[concepts/vram-budget]] ·
-[[entities/qwen35]]
+## 11. Programmatic GGUF runtime switching (researched live 2026-07-14 — LM Studio 0.4.19)
+
+Owner asked whether the llama.cpp engine (Vulkan dual-GPU vs CUDA single-GPU) can be picked
+WITHOUT the UI, per-stage — e.g. Pass B on CUDA, everything else on the Vulkan pool. Facts
+established on the live box:
+
+- **Per-model engine binding**: LM Studio spawns a standalone `llama-server.exe` PER loaded
+  model from a versioned backend dir (observed: `...\.cache\lm-studio\extensions\backends\
+  llama.cpp-win-x86_64-vulkan-avx2-2.24.0\llama-server.exe --model ...Qwen3.6-35B... --port
+  20648 --api-key ...`). The engine is fixed per process at LOAD time → models on DIFFERENT
+  engines can co-exist; the :1234 endpoint routes by model id regardless.
+- **`lms runtime` CLI is the programmatic surface** (non-interactive): `lms runtime ls`
+  (shows ✓ selected), `lms runtime select <alias>` (e.g.
+  `llama.cpp-win-x86_64-nvidia-cuda-avx2@2.23.1`), `survey`, `get`, `update`. CUDA packs are
+  ALREADY installed (cuda-avx2 up to 2.23.1; selected Vulkan is 2.24.0). `lms load` has **no
+  per-load runtime flag** — selection is global-per-format at load instant, so the pattern is
+  select → load → select back (the switch only matters for the load instant; running models
+  keep their engine).
+- **Temporal-switch recipe** (Pass-B-on-CUDA shape): select CUDA → `lms unload <35B>` →
+  `lms load qwen/qwen3.5-9b -c 16384 --ttl 900 --identifier passb-cuda -y` → **select Vulkan
+  back immediately** → run Pass B against `passb-cuda` → unload → reload the 35B (lands on
+  Vulkan since selection is already restored). `--identifier` gives the pipeline a stable id;
+  `--estimate-only` exists for fit checks.
+- **⚠ VRAM constraint (the real coupling)**: the Vulkan 35B holds ~14 GB of the 16 GB NVIDIA
+  card, so a CUDA 9B (~6.5 GB + KV) does NOT fit alongside it — Pass-B-on-CUDA REQUIRES the
+  unload/reload dance (~2-3 min round trip, natural fit for `common.load_model/unload_model`
+  which already swaps per stage). Sequence: S3 (35B) → swap → S4 Pass B (9B CUDA) → swap →
+  S5.5/S6 (35B).
+- **⚠ Selection is process-global**: while selection=CUDA, ANY concurrent JIT load (TTL
+  re-load, another client) binds CUDA — a 22 GB model on the 16 GB card spills/fails. Keep the
+  switch window tight and never leave it flipped; restore even on error paths.
+- **Fallback (if select+load proves fragile)**: the backend dirs contain standalone
+  `llama-server.exe` binaries — a CUDA sidecar on another port is fully programmatic with zero
+  LM Studio involvement, but needs per-stage URL support in the pipeline (only
+  `text_model_passb` exists today, not a per-stage URL) and pays the same VRAM constraint.
+  (§10's "llama.cpp-direct second stack" no-go was about replacing the stack, not a bounded
+  per-stage sidecar — still, prefer the in-stack lms route.)
+- **PENDING PoC (box was busy — owner's compare job held the 35B)**: (1) select CUDA + load 9B
+  and confirm the spawned llama-server uses the cuda backend dir; (2) measure 9B-CUDA decode
+  tok/s vs the 35B-Vulkan 50 tok/s baseline on the same prompt; (3) confirm co-serving. ~3 min
+  of idle box; restores all state (re-select Vulkan, reload 35B at ctx 32768).
+
+Related: [[concepts/pipeline-speed-findings-2026-07]] (§7 correction, §9 facts, §10 fresh-VOD
+baseline) · [[concepts/plan-pipeline-speed-2026-07]] (Wave 1, shipped) ·
+[[concepts/vram-budget]] · [[entities/qwen35]] · [[entities/lm-studio]]
