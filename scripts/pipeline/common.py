@@ -158,6 +158,26 @@ def set_stage(log: Logger, stage_text: str) -> None:
         log.warn(f"[VRAM] hook skipped ({type(_vram_err).__name__}: {_vram_err})")
 
 
+def set_vod(name: str, index: int, total: int) -> None:
+    """Write per-VOD batch progress for the dashboard status endpoint (which VOD
+    of how many is currently processing). Failure-soft — a marker write error must
+    never affect the run. index is 1-based; total is the batch size."""
+    try:
+        PATHS.vod_file.write_text(
+            json.dumps({"name": str(name), "index": int(index), "total": int(total)}),
+            encoding="utf-8")
+    except Exception:
+        pass
+
+
+def clear_vod() -> None:
+    """Remove the per-VOD progress marker (run finished / single-VOD run)."""
+    try:
+        PATHS.vod_file.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # LM Studio REST (ported from unload_model / load_model / verify_models)
 # ---------------------------------------------------------------------------

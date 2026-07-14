@@ -218,15 +218,20 @@ def api_ref_analyze():
 @bp.route("/api/reference/compare", methods=["POST"])
 def api_ref_compare():
     data = request.get_json(force=True) or {}
-    run = (data.get("run") or "").strip()
-    if not run:
-        return jsonify({"error": "pick a clip run to compare against"}), 400
+    # Accept one run (`run`) or many (`runs`: [...]) — multi-run aggregates our
+    # clips across the selected runs into ONE comparison (steadier medians).
+    runs = [str(r).strip() for r in (data.get("runs") or []) if str(r).strip()]
+    if not runs and (data.get("run") or "").strip():
+        runs = [(data.get("run") or "").strip()]
+    if not runs:
+        return jsonify({"error": "pick at least one clip run to compare against"}), 400
     env_extra, mtag = _model_env(data)
-    proc, err = _start_job(f"compare vs {run}{mtag}", "reference_compare.py",
-                           ["--run", run], env_extra)
+    label = runs[0] if len(runs) == 1 else f"{len(runs)} runs"
+    proc, err = _start_job(f"compare vs {label}{mtag}", "reference_compare.py",
+                           ["--runs", ",".join(runs)], env_extra)
     if err:
         return jsonify({"error": err}), 409
-    return jsonify({"status": "started", "job": "compare", "run": run}), 202
+    return jsonify({"status": "started", "job": "compare", "runs": runs}), 202
 
 
 @bp.route("/api/reference/stop", methods=["POST"])

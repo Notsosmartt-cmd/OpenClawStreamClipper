@@ -59,6 +59,7 @@ PIPELINE_PID_PATH = str(TEMP_DIR / "pipeline.pid")
 PIPELINE_DONE_PATH = str(TEMP_DIR / "pipeline.done")
 
 STAGE_FILE = TEMP_DIR / "pipeline_stage.txt"
+VOD_FILE = TEMP_DIR / "pipeline_vod.txt"     # per-VOD batch progress ({name,index,total})
 LOG_FILE = TEMP_DIR / "pipeline.log"
 STAGES_LOG = TEMP_DIR / "pipeline_stages.log"
 

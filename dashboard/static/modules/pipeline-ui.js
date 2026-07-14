@@ -313,6 +313,24 @@ export async function stopPipeline() {
     if (state.evtSource) { state.evtSource.close(); state.evtSource = null; }
 }
 
+// Multi-VOD batch progress line: "VOD 3/9 · <name>  (2 done, 6 left)".
+// Defensive: hidden when there's no batch progress (single-VOD runs, or an older
+// dashboard backend that doesn't send vod_progress yet).
+export function updateVodProgress(vp) {
+    const el = document.getElementById("vod-progress");
+    if (!el) return;
+    if (vp && vp.total > 1 && vp.index >= 1) {
+        const done = Math.max(0, vp.index - 1);
+        const left = Math.max(0, vp.total - vp.index);
+        const name = (vp.name || "").replace(/\.[^.]+$/, "");
+        el.textContent = `VOD ${vp.index}/${vp.total}` + (name ? ` · ${name}` : "")
+            + `  (${done} done, ${left} left)`;
+        el.style.display = "block";
+    } else {
+        el.style.display = "none";
+    }
+}
+
 // --- Status polling (3 s tick) ---
 
 export async function pollStatus() {
@@ -324,6 +342,7 @@ export async function pollStatus() {
 
         updateStatusBadge(data.running, data.stage || (data.running ? "Running..." : ""));
         updateStageDots(parseStageNumber(data.stage || ""));
+        updateVodProgress(data.running ? data.vod_progress : null);
         updateControls();
 
         const dockerBadge = document.getElementById("docker-badge");

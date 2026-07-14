@@ -357,6 +357,7 @@
                 <div id="stage-8" class="stage-dot" title="Summary"></div>
             </div>
             <div id="stage-label" class="stage-label">No pipeline running</div>
+            <div id="vod-progress" class="stage-label" style="display:none; opacity:0.85; font-size:0.9em;"></div>
             <div id="log-viewer" class="log-viewer"></div>
             <div id="stage-history" class="stage-history"></div>
         </div>
@@ -418,8 +419,8 @@
         </div>
         <div class="panel-body">
             <div class="control-group" style="width: 100%;">
-                <label class="field-label" title="A clip run = one past clipping session. The gap report compares the reference clips' style against the clips that run produced.">Compare against clip run</label>
-                <select id="ref-run" style="width: 100%;"><option value="">…</option></select>
+                <label class="field-label" title="A clip run = one past clipping session. The gap report compares the reference clips' style against the clips that run produced. Pick MULTIPLE runs (Ctrl/Cmd+click, or Shift for a range) to aggregate their clips into one steadier comparison.">Compare against clip run(s) — Ctrl/Cmd+click for multiple</label>
+                <select id="ref-run" multiple size="5" style="width: 100%;"><option value="">…</option></select>
             </div>
 
             <div class="control-group" style="width: 100%; margin-top: 8px;">

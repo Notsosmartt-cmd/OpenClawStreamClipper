@@ -177,9 +177,15 @@ export function analyzeNew() {
     startJob("/api/reference/analyze", { model: refModel() }, "analyzing new clips");
 }
 export function runCompare() {
-    const run = document.getElementById("ref-run")?.value;
-    if (!run) return;
-    startJob("/api/reference/compare", { run, model: refModel() }, `comparing vs run ${run}`);
+    const sel = document.getElementById("ref-run");
+    const runs = sel ? [...sel.selectedOptions].map(o => o.value).filter(Boolean) : [];
+    if (!runs.length) return;
+    const label = runs.length === 1 ? `run ${runs[0]}` : `${runs.length} runs`;
+    // Send BOTH `runs` (new multi-run backend) and `run` (first pick — so an
+    // older, not-yet-restarted dashboard backend still works). Defensive against
+    // a mid-run browser refresh landing new frontend on old routes (BUG 70 class).
+    startJob("/api/reference/compare",
+             { runs, run: runs[0], model: refModel() }, `comparing vs ${label}`);
 }
 export async function stopReferenceJob() {
     await apiPost("/api/reference/stop", {});

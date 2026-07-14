@@ -155,6 +155,11 @@ class Paths:
         return self.work_dir / "pipeline_stage.txt"
 
     @property
+    def vod_file(self) -> Path:
+        # Per-VOD batch progress for the dashboard: {"name","index","total"}.
+        return self.work_dir / "pipeline_vod.txt"
+
+    @property
     def stages_log(self) -> Path:
         return self.work_dir / "pipeline_stages.log"
 

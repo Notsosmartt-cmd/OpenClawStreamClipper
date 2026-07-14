@@ -348,6 +348,7 @@ def _poll_container_stages(container: str, proc) -> None:
     """Mirror stage + log files from Docker container to local temp dir."""
     remote_files = [
         ("/tmp/clipper/pipeline_stage.txt", _state.STAGE_FILE, "stage"),
+        ("/tmp/clipper/pipeline_vod.txt", _state.VOD_FILE, "stage"),
         ("/tmp/clipper/pipeline_stages.log", _state.STAGES_LOG, "stage"),
         ("/tmp/clipper/pipeline.log", _state.LOG_FILE, "log"),
     ]
