@@ -49,7 +49,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "bug",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -70,7 +70,8 @@
               "title": "Bookmarks"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -182,6 +183,9 @@
   },
   "active": "a870189fad8d850c",
   "lastOpenFiles": [
+    "wiki/log.md.tmp.55992.944580e5342f",
+    "wiki/entities/dashboard.md.tmp.55992.5e2bdbd7445c",
+    "wiki/concepts/bugs-and-fixes.md",
     "wiki/log.md.tmp.69080.9e568d269988",
     "wiki/hot.md.tmp.69080.3c963afe5f7c",
     "wiki/log.md.tmp.87280.0de6788b7d05",
@@ -191,8 +195,6 @@
     "wiki/hot.md.tmp.88412.0e9536e24773",
     "wiki/hot.md.tmp.88412.7e960b7eea40",
     "wiki/log.md.tmp.88412.b9d70f7335cb",
-    "wiki/index.md.tmp.88412.88e93ee40660",
-    "wiki/index.md.tmp.88412.3a09e7ffb446",
     "wiki/entities/visual-sense-module.md",
     "wiki/entities/audio-sense-module.md",
     "wiki/concepts/clip-forensics-research-2026-06.md",
@@ -216,7 +218,6 @@
     "wiki/concepts/detection-walkthrough.md",
     "wiki/concepts/clip-duration.md",
     "wiki/concepts/pass-b-false-negatives.md",
-    "wiki/concepts/clip-quality-remediation-2026-06.md",
-    "wiki/concepts/arc-aware-extraction.md"
+    "wiki/concepts/clip-quality-remediation-2026-06.md"
   ]
 }
