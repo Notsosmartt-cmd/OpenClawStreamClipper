@@ -14,6 +14,14 @@ constraint: no physical machine changes** — same RTX 5060 Ti 16 GB + RX 6700 X
 same LM Studio serving. Every quality-touching item ships default-off and promotes only
 through an owner gate (RED rubric: default-off = not integrated).
 
+**Owner mandate (2026-07-14, added same day)**: **WhisperX must be the REAL default —
+including multi-speaker diarization** — not just the preferred-on-paper backend that
+every recent run silently fell back from ([[entities/faster-whisper]] /
+[[entities/diarization]] warnings). This is Wave 0 below: it ships FIRST because it is
+a correctness/quality mandate (better word timing + speaker labels) that also changes
+the Stage-2 profile Wave A then optimizes. It is allowed to COST a little time before
+Wave A recovers it.
+
 Baseline (measured, [[concepts/pipeline-speed-findings-2026-07]] §10 — fresh 3 h talk
 VOD, ~10 clips, healthy LM Studio ≈ **90 min**):
 
@@ -37,6 +45,10 @@ the vision phase lean (image diet), overlap everything that can overlap.**
 |---|---|---|---|
 | W1/W2 | audio cache, threaded scan, C1 prefetch, C3/C4, moment-parallel=2, numba fix | ✅ SHIPPED | the current 90-min baseline already includes them |
 | S7 parallel renders | — | ✅ ALREADY SHIPPED | `stage7.py` ThreadPool — verified 2026-07-14, do not re-propose |
+| W0.1 | pin pipeline spawn to the repo `.venv` interpreter | **GO (Wave 0, owner-mandated)** | ends interpreter roulette; makes WhisperX + diarization actually run |
+| W0.2 | consolidate deps into `.venv` (scenedetect, easyocr, better-profanity) | GO (Wave 0) | one interpreter with the FULL dep set (Lab decompose detectors included) |
+| W0.3 | WhisperX + alignment + diarization verification run | GO (Wave 0) | owner mandate: wav2vec2 word times + multi-speaker labels default-on |
+| W0.4 | re-measure S2 on the WhisperX path | GO (Wave 0) | the 4.1 min/VOD-h S2 baseline was measured on the FALLBACK path |
 | A1 | audio-analysis under whisper (S2 overlap) | **GO (Wave A)** | byte-safe, −3.5 m |
 | A2 | S6↔S7 per-clip overlap | **GO (Wave A)** | NVENC-vs-LLM contention measured +0.1% (C1 A/B) |
 | A3 | LM Studio reload between batch VODs | **GO (Wave A)** | kills the measured +70% decay tail (batch reliability) |
@@ -61,11 +73,41 @@ the vision phase lean (image diet), overlap everything that can overlap.**
 
 ## 2. The waves
 
-### Wave A — structural overlaps (byte-safe, no owner gate, ship first)
+### Wave 0 — the WhisperX mandate (owner-directed, ships FIRST)
+Owner 2026-07-14: *"I want whisperx and default on pipeline with the multi-speaker
+detection stuff."* Everything is already configured (speech.json `backend=whisperx`,
+`alignment.enabled=true`, `diarization.enabled=true`, HF_TOKEN in .env, whisperx +
+pyannote installed in `.venv`) — recent runs just never reached it because the
+dashboard spawns the pipeline with `sys.executable` and a system-python dashboard has
+no whisperx.
+- **W0.1 — interpreter pin** (`dashboard/routes/pipeline_routes.py:120/190`, and
+  `reference_routes.py:135` for consistency): resolve the repo venv python explicitly
+  (`REPO/.venv/Scripts/python.exe`, fall back to `sys.executable` if absent) instead of
+  trusting the dashboard's own chain. Kills the whole "which interpreter launched the
+  dashboard" failure class.
+- **W0.2 — dep consolidation**: `pip install scenedetect easyocr better-profanity`
+  into `.venv` (they currently live only in the system python) so the pin doesn't
+  DEGRADE Reference-Lab decompose. One interpreter, full dep set, forever.
+- **W0.3 — verification run**: one VOD through Stage 2; log must show `WhisperX
+  backend` (not the fallback line), alignment, and diarization; `transcript.json`
+  segments carry non-None `speaker` fields; captions/SFX anchors consume the improved
+  word times unchanged. This re-activates: wav2vec2 word timing (±30-60 ms vs
+  ±0.2-0.5 s), Pass A/C banter boosts, Pass-B speaker annotation.
+- **W0.4 — re-baseline S2**: WhisperX = VAD-batched ASR (usually faster than the
+  fallback) + alignment pass + diarization (~25-30% of S2, CPU-bound). Expect S2
+  ~12-15 min sequential on a fresh 3 h VOD until Wave A hides the CPU passes.
+- **Gate**: none for the flip (owner already mandated it); W0.3 is a smoke test, and
+  the first WhisperX run's clips deserve one normal owner glance since segmentation
+  shifts slightly.
+
+### Wave A — structural overlaps (byte-safe, no owner gate, ship after Wave 0)
 - **A1 — S2 overlap** (`scripts/pipeline/stages/stage2.py`): start the CPU audio-events
   scan (+ any other CPU audio analysis) in a thread as soon as `audio.wav` exists, join
   before S3 consumes events. Whisper (GPU) and the scan (CPU threads) don't contend.
-  S2 12.5 → ~9 m. Validation: byte-identical events JSON + transcript vs serial run.
+  With Wave 0's diarization on, the overlap surface GROWS: the events scan and the
+  pyannote diarization pass are both CPU-heavy (24 threads available) — run them
+  concurrently with/after the GPU phases. Target S2 ≈ 9-11 m instead of Wave 0's
+  ~12-15 m sequential. Validation: byte-identical events JSON + transcript vs serial run.
 - **A2 — S6↔S7 overlap** (`stage6.py`/`stage7.py`): render clip N while clip N+1
   enriches. Keep the vision model loaded until the last enrichment (move the
   `stage7.py:751` unload later); NVENC/CPU-filter contention already measured ~0.
@@ -108,19 +150,27 @@ instrumentation of a real run to measure true prefix-reuse before touching promp
 
 | rung | S2 | S3 | S4 | S5.5+S6 | S7 | total |
 |---|---|---|---|---|---|---|
-| today (healthy) | 12.5 | 3 | 47 | 20 | 6 | **~90 m** |
-| + Wave A | 9 | 3 | 47 | 20 | ~2 (overlapped) | **~78 m** |
-| + B1 (9B Vulkan) | 9 | 3 | ~19 | 20 | ~2 | **~50 m** |
-| + B2 (CUDA) + B3 | 9 | 1 | ~15 | 20 | ~2 | **~45 m** ← target's upper edge |
-| + Wave C | 9 | 1 | ~15 | ~11 | ~2 | **~36 m** ← inside target |
-| + Wave D (if pursued) | 9 | 1 | ~11–13 | ~11 | ~2 | **~31–34 m** |
+| today (healthy, S2 = fallback path) | 12.5 | 3 | 47 | 20 | 6 | **~90 m** |
+| + Wave 0 (WhisperX + diarization) | ~13-15 | 3 | 47 | 20 | 6 | **~91-93 m** (a quality BUY, recovered next rung) |
+| + Wave A (overlaps) | ~9-11 | 3 | 47 | 20 | ~2 | **~78-81 m** |
+| + B1 (9B Vulkan) | ~10 | 3 | ~19 | 20 | ~2 | **~52 m** |
+| + B2 (CUDA) + B3 | ~10 | 1 | ~15 | 20 | ~2 | **~46 m** ← target's upper edge |
+| + Wave C | ~10 | 1 | ~15 | ~11 | ~2 | **~37 m** ← inside target |
+| + Wave D (if pursued) | ~10 | 1 | ~11–13 | ~11 | ~2 | **~33–35 m** |
 
-Floor honesty: S2's ~9 min of whisper + S7's render are real work with no remaining
-big lever (S7 already parallel; whisper already the fast distil model on CUDA) — so
-**~30 min is the practical floor** on this machine, and it requires most of Wave D.
-The robust landing zone for A+B+C is **~36–45 min**, squarely in the owner's target.
+Floor honesty: S2's whisper+alignment+diarization and S7's render are real work with
+no remaining big lever (S7 already parallel; whisper already the fast distil model on
+CUDA; diarization is the owner's explicit quality choice and worth its cost) — so
+**~31–33 min is the practical floor** on this machine with the WhisperX mandate in,
+and it requires most of Wave D. The robust landing zone for 0+A+B+C is **~37–46 min**,
+squarely in the owner's target. W0.4's measured S2 number replaces the ~estimates
+above before Wave B starts.
 
 ## 4. Validation protocol
+- Wave 0: smoke test — Stage-2 log shows `WhisperX backend` (NOT the fallback line) +
+  alignment + diarization; `transcript.json` has non-None `speaker` fields; word-SRT
+  consumed by captions unchanged; S2 wall time recorded (the new baseline). First
+  WhisperX run's clips get one normal owner glance (segmentation shifts slightly).
 - Wave A: byte-identical artifacts (events/transcript/clip files) vs a control run +
   `run_metrics.jsonl` stage rows. No owner time needed.
 - Wave B: ONE A/B pair on a known VOD (2xRaKai or Thetylilshow — cached transcripts
