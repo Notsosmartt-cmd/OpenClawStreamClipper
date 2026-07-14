@@ -440,6 +440,12 @@ established on the live box:
   gate (the Lab already proved 9B can categorize differently). Integration sketch:
   `common.load_model` grows a runtime-select wrapper used only around the Pass-B swap, with
   the select restored on every error path.
+- **Attribution follow-up (measured same day)**: 9B **on Vulkan** = 53 tok/s decode /
+  ~1,005 tok/s prefill / 8.25 s per Pass-B-shaped call → of the 6.4×, **~3.6× is the smaller
+  model** (config-only: `text_model_passb`, the stage4.py Phase-5.1 swap already exists) and
+  **~1.8× is the CUDA runtime** on top. Full call-site map, VRAM co-residence math, and the
+  L0–L4 rollout ladder: [[concepts/single-card-cuda-lane-2026-07]] (canonical for "where does
+  the CUDA lane apply").
 
 Related: [[concepts/pipeline-speed-findings-2026-07]] (§7 correction, §9 facts, §10 fresh-VOD
 baseline) · [[concepts/plan-pipeline-speed-2026-07]] (Wave 1, shipped) ·
