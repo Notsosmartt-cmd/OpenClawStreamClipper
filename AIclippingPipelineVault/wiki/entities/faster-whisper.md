@@ -3,7 +3,7 @@ title: "faster-whisper large-v3"
 type: entity
 tags: [model, transcription, whisper, whisperx, speech-to-text, gpu, cuda, infrastructure, stage-2, stage-7, audio, text]
 sources: 2
-updated: 2026-06-04
+updated: 2026-07-14
 ---
 
 # faster-whisper large-v3
@@ -24,6 +24,21 @@ Default model (2026-06-04): **`large-v3-turbo`** — a distilled large-v3 (decod
 > runs natively in the project venv (no Docker). The sections further down
 > (20-minute chunks, Docker image pre-bake, Ollama) describe the **legacy
 > faster-whisper-only** path and are kept for history.
+
+> [!warning] Interpreter roulette silently disables WhisperX (found 2026-07-14)
+> Every fresh transcription in the 20260713 9-VOD batch logged `whisperx package not
+> available; falling back to faster-whisper` — yet `import whisperx` works FINE in the
+> repo `.venv`. Cause: the dashboard spawns the pipeline with `sys.executable`
+> (`pipeline_routes.py:120/190`), so WHICH interpreter chain launched the dashboard
+> decides the speech backend. A dashboard started with the bare system python
+> (`C:\Program Files\Python312` — has faster-whisper but NOT whisperx) ran the whole
+> batch on the fallback: **Whisper-attention word timestamps (±0.2–0.5 s drift) instead
+> of WhisperX's wav2vec2 forced alignment (~±30–60 ms)** — quality that captions, SFX
+> beat anchoring, and jump-cut quote mapping all inherit. A `.venv`-launched dashboard
+> (the current venvlauncher chain) uses WhisperX. Fix candidate (not yet built): pin the
+> pipeline command to the repo venv interpreter instead of `sys.executable`. Note the
+> §10-of-speed-findings S2 rate (4.1 min/VOD-h) was measured on the FALLBACK path — the
+> WhisperX path (VAD-batched ASR + alignment pass) needs its own measured run.
 
 ### Two backends, one module ([[entities/speech-module]] / `scripts/lib/speech.py`)
 
