@@ -3,10 +3,21 @@ title: "Speaker diarization (Tier-2 M1)"
 type: entity
 tags: [diarization, whisperx, pyannote, hf-token, pass-a, pass-c, tier-2, m1, module, stage-2, stage-4, audio, signals]
 sources: 1
-updated: 2026-06-06
+updated: 2026-07-14
 ---
 
 # Speaker diarization
+
+> [!warning] Silently inert in recent runs (2026-07-14) — collateral of the interpreter roulette
+> `_maybe_diarize()` only exists on the **WhisperX path** of [[entities/speech-module]];
+> the faster-whisper fallback never diarizes. Since recent dashboard-launched runs fell
+> back ("whisperx package not available" — see the [[entities/faster-whisper]] warning),
+> the 20260713 batch log contains **zero** diarization mentions: every segment's
+> `speaker` was `None`, so the Pass A/Pass C banter boosts, the Pass-B speaker
+> annotation, and the gate's speaker signal were all no-ops. Everything is otherwise
+> ready (speech.json `diarization.enabled=true`, `HF_TOKEN` present in .env,
+> pyannote-audio installed in .venv) — it comes back the moment the pipeline runs under
+> the venv/WhisperX path. Expect Stage 2 to grow ~25-30% (CPU-bound) when it does.
 
 WhisperX + pyannote-audio integration that assigns a `speaker` label (e.g. `SPEAKER_00`, `SPEAKER_01`) to every Whisper segment after alignment. Lets the pipeline distinguish a 60 s solo monologue from 60 s of streamer + friend banter — different content profiles that previously looked identical to Pass A keyword scanning.
 
