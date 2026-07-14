@@ -287,12 +287,63 @@ def unload_model(log: Logger, llm_url: str, model: str) -> None:
     time.sleep(1)
 
 
-def load_model(log: Logger, llm_url: str, model: str, ctx: int) -> None:
+def _select_runtime(log: Logger, alias: str) -> bool:
+    """`lms runtime select <alias>` — B2 (plan-speed-wave3). Failure-soft."""
+    if not _LMS_BIN:
+        return False
+    try:
+        r = subprocess.run([_LMS_BIN, "runtime", "select", alias],
+                           capture_output=True, text=True, timeout=30)
+        ok = r.returncode == 0
+        log.log(f"[B2] runtime select {alias}: {'OK' if ok else 'FAILED'}")
+        return ok
+    except Exception as e:  # noqa: BLE001
+        log.warn(f"[B2] runtime select {alias} errored: {e}")
+        return False
+
+
+def load_model(log: Logger, llm_url: str, model: str, ctx: int,
+               runtime: str | None = None) -> None:
     """Best-effort pre-load. Prefers the `lms` CLI; falls back to REST. Skips
     when the model is already loaded. Sets an idle TTL (env CLIP_MODEL_TTL,
     default 3600 s) so abandoned models auto-evict instead of stranding VRAM.
-    Heartbeats the stage marker during the (blocking) load."""
+    Heartbeats the stage marker during the (blocking) load.
+
+    ``runtime="cuda"`` (B2, plan-speed-wave3): load THIS model under the CUDA
+    llama.cpp engine — `lms runtime select <cuda-pack>` → load → select the
+    previous engine back. The selection is global-per-format at load instant
+    only (the spawned llama-server keeps its engine for life), so the flipped
+    window is kept as narrow as possible and ALWAYS restored, error or not.
+    A model resident on the wrong runtime is unloaded first (the skip-if-loaded
+    shortcut can't tell engines apart). No-ops gracefully without lms/aliases.
+    """
     ttl = os.environ.get("CLIP_MODEL_TTL", "3600")
+
+    if runtime == "cuda" and _LMS_BIN:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+            import hw_profile as _hw  # noqa: WPS433
+            aliases = _hw.lms_runtime_aliases()
+        except Exception as e:  # noqa: BLE001
+            log.warn(f"[B2] hw_profile unavailable ({e}) — loading on the current runtime")
+            aliases = {"selected": None, "cuda": None}
+        cur, cuda = aliases.get("selected"), aliases.get("cuda")
+        if cuda and cur and cuda != cur:
+            log.log(f"[B2] CUDA text-lane load: '{model}' (ctx={ctx}) via {cuda}")
+            if model in _lms_loaded_ids():
+                # skip-if-loaded can't tell engines apart — reload deliberately.
+                unload_model(log, llm_url, model)
+            if _select_runtime(log, cuda):
+                try:
+                    load_model(log, llm_url, model, ctx, runtime=None)
+                finally:
+                    _select_runtime(log, cur)   # ALWAYS restore, error or not
+                return
+            log.warn("[B2] could not select the CUDA runtime — loading on the current one")
+        else:
+            log.log(f"[B2] CUDA lane requested but unavailable "
+                    f"(selected={cur}, cuda={cuda}) — loading on the current runtime")
+        # fall through to a normal load
 
     if _LMS_BIN:
         if model in _lms_loaded_ids():
@@ -349,6 +400,30 @@ def load_model(log: Logger, llm_url: str, model: str, ctx: int) -> None:
     else:
         log.log(f"  pre-load: HTTP {code} — continuing (JIT will load if needed)")
     time.sleep(2)
+
+
+def passb_lane(ctx) -> dict:
+    """B2 (plan-speed-wave3): should Stage 4's text phase load on the CUDA lane?
+
+    Delegates the hardware conditions to ``hw_profile.cuda_lane_status()``
+    (dual-vendor + lms + cuda pack + VRAM; CLIP_PASSB_RUNTIME=off/cuda
+    overrides). Adds one config guard: in ``auto`` mode the lane only engages
+    when the Pass-B model is a DEDICATED smaller model (different from the
+    Stage-6 vision model) — auto-loading the unified 22 GB model onto the
+    16 GB card would spill. A forced ``cuda`` skips the guard (explicit
+    operator choice). Failure-soft: any error resolves to inactive."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        import hw_profile as _hw  # noqa: WPS433
+        lane = _hw.cuda_lane_status()
+    except Exception as e:  # noqa: BLE001
+        return {"active": False, "reason": f"hw_profile unavailable ({e})"}
+    if lane.get("active") and lane.get("mode") == "auto" \
+            and ctx.text_model_passb == ctx.vision_model_stage6:
+        return {"active": False,
+                "reason": "auto lane skipped — Pass-B uses the unified vision model "
+                          "(configure a dedicated smaller text_model_passb to enable)"}
+    return lane
 
 
 def preflight_thinking(log: Logger, llm_url: str, model: str) -> None:

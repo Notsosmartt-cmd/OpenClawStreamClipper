@@ -26,9 +26,45 @@ export async function fetchHardware() {
     }
 }
 
+let lastGpuProfile = null;   // cached /api/hardware gpu_profile block (re-render safe)
+
+function gpuProfileSection(gp) {
+    // speed-wave3 §2b: detected profile + per-feature plain-language status +
+    // manual override. Defensive: absent block (old backend / probe error) → no section.
+    if (!gp) return "";
+    const override = pendingHardware.gpu_profile ?? gp.override ?? "auto";
+    const profiles = [
+        { value: "auto",        label: `Auto — detected: ${gp.detected}` },
+        { value: "dual_vendor", label: "Dual-vendor (NVIDIA + AMD)" },
+        { value: "nvidia_only", label: "NVIDIA only" },
+        { value: "amd_only",    label: "AMD only" },
+        { value: "cpu_only",    label: "CPU only" },
+    ].map(o =>
+        `<option value="${o.value}" ${override === o.value ? "selected" : ""}>${o.label}</option>`
+    ).join("");
+    const gpus = [
+        ...(gp.nvidia || []).map(g => `${g.name} (${(g.vram_mb / 1024).toFixed(0)} GB)`),
+        ...(gp.amd || []).map(g => g.name),
+    ].join(" + ") || "none detected";
+    const feats = (gp.features || []).map(f => {
+        const icon = f.status === "active" ? "🟢" : (f.status === "fallback" ? "🟡" : "⚪");
+        return `<div class="hw-hint" style="margin: 2px 0;">${icon} <strong>${f.label}</strong> — ${f.reason}</div>`;
+    }).join("");
+    return `
+            <div class="hw-field" style="margin-top: 14px;">
+                <label class="hw-label">GPU Profile <span class="hw-hint">(speed optimizations adapt to this)</span></label>
+                <div class="hw-hint" style="margin-bottom: 6px;">Detected hardware: ${gpus}</div>
+                <select class="model-select" id="sel-gpu_profile" onchange="onHardwareDropdown('gpu_profile', this.value)">
+                    ${profiles}
+                </select>
+                <div style="margin-top: 8px;">${feats}</div>
+            </div>`;
+}
+
 function renderHardware(data) {
     const grid = document.getElementById("hardware-grid");
     const config = data.config || {};
+    if (data.gpu_profile !== undefined) lastGpuProfile = data.gpu_profile;
     const whisperDevice = pendingHardware.whisper_device ?? config.whisper_device ?? "cuda";
 
     const whisperOptions = [
@@ -47,6 +83,7 @@ function renderHardware(data) {
                 </select>
                 <div class="hw-hint">${WHISPER_DESCS[whisperDevice] || ""}</div>
             </div>
+            ${gpuProfileSection(lastGpuProfile)}
             <div class="hw-hint hw-hint-note" style="margin-top: 10px;">
                 💡 LLM GPU assignment is managed in <strong>LM Studio</strong> — use its model load dialog to choose which GPU(s) each model uses. No restart required for LLM GPU changes.
             </div>
@@ -65,10 +102,17 @@ export function onHardwareDropdown(key, value) {
 function updateHardwareSaveBar() {
     const bar = document.getElementById("hardware-save-bar");
     const summary = document.getElementById("hardware-change-summary");
-    const changed = pendingHardware.whisper_device !== undefined &&
-                    pendingHardware.whisper_device !== currentHardware.whisper_device;
-    if (changed) {
-        summary.textContent = `Whisper: ${currentHardware.whisper_device} → ${pendingHardware.whisper_device}`;
+    const changes = [];
+    if (pendingHardware.whisper_device !== undefined &&
+        pendingHardware.whisper_device !== currentHardware.whisper_device) {
+        changes.push(`Whisper: ${currentHardware.whisper_device} → ${pendingHardware.whisper_device}`);
+    }
+    if (pendingHardware.gpu_profile !== undefined &&
+        pendingHardware.gpu_profile !== (currentHardware.gpu_profile ?? "auto")) {
+        changes.push(`GPU profile: ${currentHardware.gpu_profile ?? "auto"} → ${pendingHardware.gpu_profile}`);
+    }
+    if (changes.length) {
+        summary.textContent = changes.join("  ·  ");
         bar.style.display = "flex";
     } else {
         bar.style.display = "none";

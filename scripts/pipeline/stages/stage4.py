@@ -4,6 +4,7 @@ Port of stage4_moments.sh."""
 from __future__ import annotations
 
 import json
+import os
 
 from pipeline import common
 
@@ -16,10 +17,30 @@ def run(ctx) -> None:
     log.log(f"=== Stage 4/8 — Moment Detection (style: {ctx.style}) ===")
 
     # Phase 5.1: swap to the Pass-B text model when it differs from Stage 3's.
-    if ctx.text_model_passb != ctx.text_model:
-        log.log(f"Phase 5.1: swapping text model {ctx.text_model} -> {ctx.text_model_passb}")
+    # B2 (plan-speed-wave3): on a dual-vendor rig the Pass-B model loads on the
+    # NVIDIA-only CUDA lane (measured 1.8× per call over the same model on the
+    # Vulkan split; 6.4× over the unified 35B). hw_profile keeps this INERT on
+    # cpu-only / nvidia-only / amd-only installs; CLIP_PASSB_RUNTIME=off|cuda
+    # overrides. The lane caps context at CLIP_PASSB_CUDA_CTX (default 16384 —
+    # the documented Pass-B safe floor) so the KV cache fits the 16 GB card.
+    lane = common.passb_lane(ctx)
+    _runtime = "cuda" if lane.get("active") else None
+    if _runtime:
+        log.log(f"[B2] Pass-B CUDA lane ACTIVE — {lane.get('reason')}")
+    elif lane.get("reason"):
+        log.log(f"[B2] Pass-B CUDA lane inactive — {lane.get('reason')}")
+    if ctx.text_model_passb != ctx.text_model or _runtime:
+        log.log(f"Phase 5.1: swapping text model {ctx.text_model} -> {ctx.text_model_passb}"
+                + (" (CUDA lane)" if _runtime else ""))
         common.unload_model(log, ctx.llm_url, ctx.text_model)
-        common.load_model(log, ctx.llm_url, ctx.text_model_passb, ctx.context_length)
+        _ctx_len = ctx.context_length
+        if _runtime:
+            try:
+                _cap = int(os.environ.get("CLIP_PASSB_CUDA_CTX", "16384") or 16384)
+            except ValueError:
+                _cap = 16384
+            _ctx_len = min(_ctx_len, _cap)
+        common.load_model(log, ctx.llm_url, ctx.text_model_passb, _ctx_len, runtime=_runtime)
 
     # BUG 67 fail-fast guard: one tiny probe of the (now-loaded) Pass-B model. Aborts in
     # ~1 s if the model ignores no-think (permanent reasoning -> would fail every chunk).

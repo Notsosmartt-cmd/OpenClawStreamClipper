@@ -184,7 +184,10 @@ Full detail: [[concepts/single-card-cuda-lane-2026-07]].
   path; `CLIP_PASSB_RUNTIME=cuda9b` default-off; unload-first (never trust
   skip-if-loaded across runtimes). Pre-warm note: first-ever CUDA load of a model ≈
   6.5 m one-time (Blackwell JIT), 4.7 s warm after. S4 → ~13–18 m.
-- **B3**: `text_model` → 9B as well (S3 on the lane, vision stays explicit 35B). −2 m.
+- **B3 — DEFERRED (2026-07-14 implementation finding)**: flipping `text_model` to the
+  9B would change the model id every non-S3/S4 text call requests by name (a Stage-6-era
+  judge asking for `text_model` would JIT-load the 9B mid-vision → VRAM thrash). Needs a
+  call-site audit first; −2 m forfeited, revisit in Wave D / fine-tuning.
 - **Fallback Q** (only if B1's A/B fails): 9B triages all chunks, 35B deep-passes the
   top-K — keeps the 35B as finder at ~half the savings.
 

@@ -37,6 +37,25 @@ def _detect_capabilities() -> dict:
     return caps
 
 
+def _gpu_profile_block() -> dict | None:
+    """speed-wave3 §2b: detected GPU profile + per-feature activation status.
+    Failure-soft — any probe/import error returns None and the panel hides
+    the section (a detection bug must never break the dashboard)."""
+    try:
+        import hw_profile  # scripts/lib is on sys.path (see _state)
+        info = hw_profile.detect(refresh=True)
+        return {
+            "detected": info["detected"],
+            "override": info["override"],
+            "profile": info["profile"],
+            "nvidia": info["nvidia"],
+            "amd": info["amd"],
+            "features": hw_profile.feature_matrix(),
+        }
+    except Exception:
+        return None
+
+
 @bp.route("/api/hardware")
 def api_hardware():
     config = load_hardware_config()
@@ -45,6 +64,7 @@ def api_hardware():
         "config": config,
         "defaults": _state.DEFAULT_HARDWARE,
         "capabilities": caps,
+        "gpu_profile": _gpu_profile_block(),
         "restart_required": False,
     })
 
@@ -85,6 +105,12 @@ def api_hardware_update():
 
     if "whisper_device" in data:
         config["whisper_device"] = data["whisper_device"]
+
+    # speed-wave3 §2b: manual GPU-profile override ("auto" = detect live).
+    if "gpu_profile" in data:
+        v = str(data["gpu_profile"]).strip().lower()
+        if v in ("auto", "dual_vendor", "nvidia_only", "amd_only", "cpu_only"):
+            config["gpu_profile"] = v
 
     save_hardware_config(config)
     return jsonify({
