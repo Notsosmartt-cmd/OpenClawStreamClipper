@@ -84,13 +84,21 @@ passes through the owner handoff — including Track E shape guidance.
   1c note: re-card 100/101 (1 card failed — non-blocking); anti-lazy held (irl_other 19%,
   all with real rejection reasoning); story/controversy categories collapsed into
   irl_moment on re-card (their SHAPE now visible via arc + subtype instead).
-- [ ] **1g. Pipeline session + review-bundle prep (owner-sequenced 2026-07-15)**: after the
-  re-card completes → **full pipeline session** (`--all --force` over the 4 remaining VODs,
-  ~2 h cached — generates the NEW clip run WITH subtype labels + music GT + first live
-  caption_judge_multi) → then jump-cuts sample + news-compile sample for the sit-down.
-  **The owner then combines the new run + the new reference cards into a Compare
-  themselves** — that Compare IS the Phase-2 entry point. (Fresh-VOD benchmark deferred:
-  no un-transcribed VOD remains on disk; a --force run reuses transcript caches.)
+- [x] **1g. Pipeline session — DONE 2026-07-15**: `--all --force`, 4 VODs, **69 clips under
+  ONE stamp `20260715_145230`** (tbvnks 22 / Lacy 18 / Raud 15 / RaKai 14), 3 h 57 m total
+  (full re-detection, not the cached-moments path). **Music GT: 69/69 `added: false`** —
+  stream-native beds now proven per clip by the log. **Pipeline subtype flowing**: 26/69
+  labeled (banter_roast 11, other 9, performance_rap 5, wholesome 1); 43 `None` = non-LLM
+  detection lanes (arc/anomaly) + 9B omissions → **known limitation 1d-bis** (emit subtype
+  from the other lanes + prompt emphasis) — harmless for the Compare, which joins on the
+  CARD-side subtype. caption_judge_multi: no adverse log evidence; detailed validation =
+  owner review.
+  **Samples deferred with reasons**: jump-cuts sample would OVERWRITE the fresh Raud clips
+  in `clips/` (title-based filenames) — run it AFTER the owner reviews the vanilla set, or
+  add an out-dir knob first. News sample = one dashboard click (`News Compile (N)`) on the
+  new run's clips at the sit-down (kokoro ear-check happens then anyway).
+  → **READY: the owner combines run `20260715_145230` + the v3 reference cards into a
+  Compare — the Phase-2 entry point.**
 
 ## Phase 2 — THE owner review handoff (the only eyeball gate)
 
