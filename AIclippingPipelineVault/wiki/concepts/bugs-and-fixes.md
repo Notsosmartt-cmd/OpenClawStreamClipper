@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 74 bugs (highest number BUG 74; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest (2026-07-14/15, both from the Wave-3 speed campaign): [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 75 bugs (highest number BUG 75; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest: [[#BUG 75]] reference SFX density inflated ~10× by a vocal CLAP prompt (2026-07-15); from the Wave-3 speed campaign: [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1840,6 +1840,50 @@ FIRST — one stack dump ended a day of plausible-but-wrong theories (OpenMP, FI
 Tool: `scripts/research/bench_audio_scan.py` (serial/threads/procs micro-bench on a real WAV).
 
 ---
+
+## BUG 75 — Reference SFX density inflated ~10× by a VOCAL CLAP prompt ("bruh" matched all speech) + OCR-resampled caption wps
+
+> [!success] Status: FIXED 2026-07-15 (`attribute_cards.py` editor-SFX-like counting + caption first-appearance dedup; `audio_sense_labels.json` `sfx_countable` flags + raised thresholds; all 86 reference cards facts-refreshed IN PLACE — no VLM re-run; gap report regenerated).
+
+**Symptom (owner-caught):** the gap report claimed reference clips place **30.27 SFX per 30 s**
+(≈1 per second) and its narrative demanded "match ~30 beats per 30 seconds"; an earlier
+comparison had phrased the same inflated number as "SFX frequently throughout" — the owner
+noticed the two reports describing the metric differently and asked why. Caption wps compared
+reference **17–27** vs ours 2.8 — i.e. 5–10× human speech rate.
+
+**Cause (two independent counting artifacts):**
+1. `sfx_grammar.count_per_30s` counted **len(ALL audio_events)**. The `bruh` CLAP label — a
+   VOCAL prompt ("the bruh meme sound effect") — is indistinguishable from ordinary speech at
+   CLAP resolution: it fired on essentially every 0.5 s hop (median inter-event gap **0.50 s**,
+   median score 0.365 vs the 0.30 floor) → **2,458 of ~3,350 reference events (73%)**.
+   Runner-up: `sad_trombone` (264 — melodic prompt matching music beds; the "same-instrument"
+   issue the backlog predicted).
+2. `captions.words_per_s` summed every sampled OCR frame's word count — a caption persisting
+   across N samples was counted N times (raw OCR median 21.6 "wps").
+
+**Fix:** count only **editor-SFX-like cues** — config `sfx_countable: false` on vocal/content/
+bed labels (bruh, music, suspense_music, laughter, cheering), same-label window-chains merged
+at ≤0.6 s gap; caption wps = words counted at FIRST on-screen appearance (2-frame flicker
+memory). New `attribute_cards.py --refresh-facts [--cards-dir]` patches the deterministic card
+fields from cached timelines without re-running the VLM. **Result: reference sfx 30.27 →
+1.81/30 s median; caption wps 17.07 → 2.92 vs ours 2.8 — convergence to speech rate is the
+sanity proof. The SFX "gap" inverted: ours (3.26) is ABOVE the measurable reference floor.**
+
+**Caveats (by design):** CLAP under-detects real SFX under speech (only 9 `boom` events across
+86 clips at the 0.30 floor) → 1.81 is a **floor**, not ground truth — the owner's ear stays the
+density arbiter. The raised bruh (0.50) / sad_trombone (0.40) thresholds only affect FUTURE
+decomposes; `sfx_countable` neutralizes the already-cached events post-hoc.
+
+**Same commit — TikTok outro `trim_end="auto"`:** per-clip detection (last cut in the final
+~6 s + speechless tail + TikTok/@ OCR confirm when text exists; speech-to-the-end → certain-no
+→ trim 0; unsure → the 4 s blanket). The corpus is "most but NOT all downloads" (owner), so the
+old blanket cut 4 real seconds off the non-outro clips. Census: all 86 existing timelines were
+already trimmed — the outro never leaked into current metrics. Live-verified on a real download
+(outro cut found @21.07 s, OCR-confirmed).
+
+**Rule:** never give a zero-shot audio tagger a VOCAL-meme prompt and count its hits as editor
+SFX — anything voice-like matches speech. And never diff an OCR-frame-resampled count against a
+transcript-derived rate; measure both sides the same way before calling something a gap.
 
 ## BUG 74 — Phase-unpinned judge-model ids JIT-summon the OTHER phase's model (ghost co-residence, ×2 in one day)
 

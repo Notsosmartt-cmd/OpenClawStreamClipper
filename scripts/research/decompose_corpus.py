@@ -48,8 +48,10 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--ocr", dest="ocr", action="store_true", default=True)
     ap.add_argument("--no-ocr", dest="ocr", action="store_false")
-    ap.add_argument("--trim-end", type=float, default=4.0,
-                    help="drop the last N s (TikTok download outro); default 4")
+    ap.add_argument("--trim-end", type=str, default="auto",
+                    help="drop the last N s (TikTok download outro), or 'auto' "
+                         "(default): detect the outro per clip — trims exactly the "
+                         "clips that have one, unsure falls back to 4s")
     args = ap.parse_args()
     if not (args.missing or args.all or args.clip):
         args.missing = True  # safest default

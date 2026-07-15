@@ -266,13 +266,18 @@ def main() -> int:
     if narrative:
         md += ["", "## Narrative", "", narrative.strip()]
     md += ["", "---", f"_Method: deterministic aggregates from attribute cards; OUR sfx counts use "
-                      f"effects_log ground truth where present. Gap threshold 25% relative. "
+                      f"effects_log ground truth where present. REFERENCE sfx = editor-SFX-like "
+                      f"events (sfx-policy v2 / BUG 75: vocal-meme + music/content labels excluded, "
+                      f"window-chains merged — v1 counted raw CLAP windows and ran ~10x hot). "
+                      f"Reference caption wps = first-appearance dedup when OCR text exists. "
+                      f"Gap threshold 25% relative. "
                       f"Cards: reference_clips/.cache + clips/.diagnostics/cards/{{{','.join(runs)}}}._"]
 
     out_md = DIAG / f"corpus_diff_{date}.md"
     out_js = DIAG / f"corpus_diff_{date}.json"
     out_md.write_text("\n".join(md), encoding="utf-8")
-    out_js.write_text(json.dumps({"run": run_label, "runs": runs, "date": date, "items": items},
+    out_js.write_text(json.dumps({"run": run_label, "runs": runs, "date": date,
+                                  "sfx_policy": "v2-editor-sfx-like", "items": items},
                                  indent=2), encoding="utf-8")
     _log(f"wrote {out_md.name} ({len(items)} gap items) + {out_js.name}")
     print("\n".join(md))
