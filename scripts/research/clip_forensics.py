@@ -79,6 +79,7 @@ _STAGE_DEADLINES = {
     "onset": 60.0,          # numpy onset (fast; was librosa, which hung)
     "scenedetect": 180.0,   # PySceneDetect
     "motion": 180.0,        # cv2 frame-diff (Phase 3, default on)
+    "music_bed": 120.0,     # numpy gap-tonality bed scan (owner req 2026-07-15)
     "caption_ocr": 600.0,   # EasyOCR (Phase 3, opt-in; downloads + slower)
     "style_profile": 150.0,  # local-LLM synthesis (Phase 4b)
 }
@@ -605,6 +606,16 @@ def decompose(clip: Path, *, device: str | None = None,
         _log(f"trim: analyzing [{win_start:.2f}, {win_end:.2f}]s of {dur:.2f}s "
              f"(dropped {dur - analyzed:.2f}s of intro/outro)")
 
+    # Music-bed scan (owner req 2026-07-15): sustained background-music coverage
+    # + pattern (none/full/half...) from gap-tonality — CLAP's music prompt
+    # under-detects ducked beds. Runs on the TRIMMED window so the (musical)
+    # TikTok outro never votes. Uses the FULL cached word list (absolute times).
+    music_bed, st_musicbed = _with_deadline(
+        "music_bed", _cap("music_bed"),
+        lambda: audio_sense.music_bed_scan(
+            str(clip), words=words, t_start=win_start, t_end=win_end,
+            cache_path=str(cache_dir / f"{stem}.musicbed.json")), None)
+
     timeline = {
         "clip": clip.name,
         "duration_s": analyzed,                              # true (analyzed) footage
@@ -615,6 +626,7 @@ def decompose(clip: Path, *, device: str | None = None,
         "n_words": len(words),
         "audio_events": events,
         "music": _music_bed(events, words, onsets),          # Phase 2: spans + `added` heuristic
+        "music_bed": music_bed,                              # gap-tonality coverage/pattern (2026-07-15)
         "cuts": cuts,
         "censor": _detect_censor(words, events),             # Phase 2: profanity + censor-SFX
         "motion": motion,                                    # Phase 3a: cv2 motion punches
@@ -623,7 +635,8 @@ def decompose(clip: Path, *, device: str | None = None,
         # hung stage visible in the output instead of looking like "no events".
         "_stages": {"audio_sense": st_events, "transcribe": st_words,
                     "onset": st_onset, "scenedetect": st_cuts,
-                    "motion": st_motion, "caption_ocr": st_caption},
+                    "motion": st_motion, "music_bed": st_musicbed,
+                    "caption_ocr": st_caption},
         # --- Phase 4 stubs (deferred) ---
         "sfx_matches": [],  # TODO Phase 4a: audfprint vs a seeded SFX library
         "style_profile": None,  # Phase 4b: filled by _synthesize_style_profile below

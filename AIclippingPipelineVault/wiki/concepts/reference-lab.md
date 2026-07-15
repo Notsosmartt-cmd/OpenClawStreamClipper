@@ -137,7 +137,42 @@ Three counting rules every report since 2026-07-15 uses (the md footer discloses
   already-trimmed (the outro never polluted current metrics).
 
 To re-apply the numeric policy to cached cards after a counting change (no VLM re-run):
-`python scripts/research/attribute_cards.py --refresh-facts [--cards-dir <dir>]`.
+`python scripts/research/attribute_cards.py --refresh-facts [--cards-dir <dir>] [--scan-audio]`.
+
+## Music-bed detection (owner req 2026-07-15: "know if there is music in the background")
+
+CLAP's "background music playing" prompt under-detects ducked beds (34/86 timelines had ANY
+music span; median 0%). The replacement — `audio_sense.music_bed_scan` — uses the signal a bed
+can't hide from: **energy persisting through the gaps between words**, classified by
+POWER-spectrum features calibrated 2026-07-15 (in-band power flatness: music 0.03–0.10 vs
+white-ish noise 0.56; top-5%-bins concentration: music 0.80–0.94 vs single-tone hum 1.00;
+adaptive rms floor = speech p95 − 32 dB). Pure numpy on the ffmpeg decoder — NO librosa
+(deadlock hazard, BUG 71c).
+
+Semantics that matter when reading the numbers:
+- **coverage_pct = music ratio among OBSERVABLE gap moments** ("of the moments we can hear
+  the background, X% carry music") — NOT summed span time; dense speech would under-measure
+  a full bed to whatever its longest pause shows. Beds persist through speech; gaps are
+  sampling points.
+- **pattern** ∈ none / full / first_half / second_half / partial / intermittent — from
+  per-third gap-music ratios (the owner's described corpus shapes). **confidence: low** when
+  a third is unobservable (dense speech) — the pattern is then best-effort.
+- The scan runs on the TRIMMED window (the TikTok outro is itself musical — it must not vote).
+- Validated: bare clip 0%, −18 dB bed mix 83% full, pure music 91% full, white noise 0%.
+  Corpus read matches the owner's description: **36 full / 27 none / 17 partial / 6 half**
+  across the 86 reference clips.
+
+Where it lands: timeline `music_bed` block → card `music_grammar` {bed_coverage_pct,
+bed_pattern, added_by_editor} → report **music-bed column** + `music_bed_pct_med` gap metric
+(measured the SAME way on both sides). First read's per-category insight: reference gaming =
+12.5% (game audio is the bed; we add music 73%), reference story = 72.5% full (ours 11% —
+the real music gap), reference irl = 68% vs ours 41%.
+
+**Music vs soundboard SFX separation** is two-sided: (1) `sfx_countable:false` labels never
+count as SFX (BUG 75); (2) `music_confusable:true` labels (boing, quack, sad_trombone, riser
+— melodic/toy prompts CLAP hears inside melodies) need score ≥ 0.35 to count while a bed is
+detected (clip-wide at ≥40% coverage, else inside bed spans). Guard effect on the reference
+corpus: sfx median 1.81 → **1.14/30s**.
 
 ## Verdicts, the queue, and the JUDGED report export
 
