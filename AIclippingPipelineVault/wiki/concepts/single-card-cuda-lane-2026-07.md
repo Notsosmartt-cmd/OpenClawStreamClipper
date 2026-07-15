@@ -3,8 +3,8 @@ title: "Single-card CUDA lane — where a smaller text model fits the pipeline (
 type: concept
 tags: [performance, speed, cuda, vulkan, lm-studio, runtime, stage-3, stage-4, pass-b, serving, gpu, reference]
 sources: 0
-status: planned
-updated: 2026-07-14
+status: shipped
+updated: 2026-07-15
 ---
 
 # Single-card CUDA lane — where qwen3.5-9b-class models fit for speed
@@ -127,6 +127,27 @@ is pure config; only the RUNTIME choice needs new code.
   must check more than the id, or unload first.
 - **Quality doctrine**: default-off until the owner promotes (RED rubric). L1's A/B is
   the decision point for everything above it.
+
+## 6. SHIPPED — production results + the two operational laws (2026-07-15)
+
+The ladder shipped through L3 (L0 available, L1+L2 = Waves B1/B2, L3 = B3). Production
+measurements (Raud 3.47 h + FirstFullAudio 1.19 h, [[concepts/pipeline-speed-findings-2026-07]] §11):
+
+- **S4 on the lane: 3.9–5.0 min/VOD-h** (was ~15 on the unified 35B — ~3.5×), zero call
+  failures once the two laws below were honored. **S3 on the 9B: 89.7 s vs 274 s (3.1×)**.
+- **Law 1 — the context POOL ([[concepts/bugs-and-fixes#BUG 73]])**: llama.cpp shares the
+  loaded ctx across ALL in-flight requests. Lane loads at **32768** (KV ≈ 6.1 GiB total)
+  and runs **2 workers**; `workers ≤ ctx / (max prompt + worst-case gen)`. Slots are not
+  free — 4 workers × big prompts = every call failing with "Context size has been exceeded".
+- **Law 2 — phase-pin every judge model id ([[concepts/bugs-and-fixes#BUG 74]])**: any env
+  fallback (`CLIP_TEXT_MODEL`) that names the OTHER phase's model JIT-summons it — a 22 GB
+  ghost beside the 9B (VRAM spill) or a CPU-placed 9B beside the 35B (offload 0). Stage 4
+  pins judges to `text_model_passb`, Stage 6 to `vision_model_stage6`. The `ctx 16384 +`
+  unexpected-placement combo in `lms ps` is the JIT-ghost fingerprint — both instances were
+  owner-spotted in LM Studio's UI.
+- Ops notes: one ~6.5 min first-ever CUDA load per model (Blackwell JIT, then 4.7 s warm);
+  runtime selection restored in a `finally` on every path; hardware profiles keep the lane
+  auto-inert off dual-vendor rigs ([[concepts/plan-speed-wave3-2026-07]] §2b).
 
 ## Related
 
