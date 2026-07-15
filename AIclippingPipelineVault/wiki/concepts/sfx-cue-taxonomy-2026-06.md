@@ -4,7 +4,7 @@ type: concept
 tags: [research, sfx, audio, originality, edit-plan, sound-design, reference, tiktok]
 sources: 0
 status: shipped
-updated: 2026-07-09
+updated: 2026-07-15
 ---
 
 # SFX Cue Taxonomy (2026-06 research)
@@ -292,3 +292,26 @@ beat that fires a hit per diss/laughter burst within rap/roast segments (max_cue
   333-file `impact/` pack (which includes footsteps and dish clatter — a bad draw waiting to
   happen).
 - `fart/` (NEW dedicated kind): dry_fart + fart_reverb — available for beat wiring per above.
+
+## Fry-timer beep added (2026-07-15, owner req: "stereotypical fast-food beeping like McDonald's")
+
+That sound = the **fry-station timer alarm** (the piezo sounder on the fryer). **Synthesized
+in-repo** rather than downloaded (numpy band-limited square: 2.9 kHz + odd harmonics 3/5,
+3 ms declick ramps) — public domain by construction, no rip, no license question for a
+monetized channel. Placement follows the taco_bong precedent:
+
+- **LIVE**: `pop/fry_timer_short.mp3` (3 beeps, 0.59 s) joins the `punchline_light` rotation
+  (now **7 files**) — fires on laughter markers + secondary peaks in funny/reactive clips,
+  ducked −8 dB. Non-vocal, so the "no vocal memes in this lane" doctrine holds. One manifest
+  line to remove if the owner's ear rejects it.
+- **INVENTORY**: new `fry_timer/` kind (short burst + full 2.4 s ~12-beep alarm w/ fade-out),
+  wired as a LATER option on `fail` (−7 dB) and `awkward_silence` (−10 dB, the "somebody's
+  fries are done" dead-air gag) — never auto-picked while scratch/crickets are stocked;
+  promoting it = moving it up that beat's list in `config/sfx_cues.json`.
+- Hygiene: `kind_sources.pop.have_assets` was stale `false` (missed in the 07-11 flip) →
+  fixed; the field is informational-only (code uses live `sfx_inject.has_assets`).
+- Verified through real code paths: pop pool 7/7 distinct draws across 60 seeds incl. the new
+  file; `has_assets('fry_timer')` true; funny-moment `build()` smoke unchanged (riser→boom).
+- Reminder: audio files are **untracked by repo policy** (only the 13→14 `library.json`
+  manifests are committed) — the mp3s live on this machine; the synth is reproducible from
+  the [[log]] entry's parameters.

@@ -61,6 +61,11 @@
         "gain_db": -8.0
       },
       {
+        "kind": "fry_timer",
+        "offset_s": 0.3,
+        "gain_db": -7.0
+      },
+      {
         "kind": "whoosh",
         "offset_s": 0.05,
         "gain_db": -7.0
@@ -103,6 +108,11 @@
         "kind": "crickets",
         "offset_s": 2.5,
         "gain_db": -12.0
+      },
+      {
+        "kind": "fry_timer",
+        "offset_s": 2.5,
+        "gain_db": -10.0
       }
     ],
     "disbelief": [
@@ -241,8 +251,8 @@
       "label": "cartoon boing"
     },
     "pop": {
-      "have_assets": false,
-      "via": "needs CC0 +soundboard 2026-07-11",
+      "have_assets": true,
+      "via": "seeded 2026-07-09 +soundboard 2026-07-11 +fry_timer 2026-07-15 (stale have_assets:false fixed 2026-07-15 — informational only, code uses live sfx_inject.has_assets)",
       "label": "percussive pop/beep"
     },
     "bruh": {
@@ -254,6 +264,11 @@
       "have_assets": true,
       "via": "myinstants 2026-07-11",
       "label": "streamer meme screams (aughhh / needs-milk / why-running)"
+    },
+    "fry_timer": {
+      "have_assets": true,
+      "via": "synthesized in-repo 2026-07-15 (owner req)",
+      "label": "fast-food fry-timer beep alarm (McDonald's-style piezo)"
     }
   }
 }
