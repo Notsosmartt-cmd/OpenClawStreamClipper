@@ -609,7 +609,11 @@ def decompose(clip: Path, *, device: str | None = None,
         if trim_end.strip().lower() == "auto":
             outro_info = _detect_outro(dur, cuts, words, captions)
             if outro_info["start"] is not None:
-                trim_end = max(0.0, dur - float(outro_info["start"]))
+                # end the window a hair BEFORE the outro's own cut — that splice
+                # is the TikTok download boundary, not a creator edit; landing
+                # the window exactly ON it counted it as a cut (ref cuts/30s
+                # measured 1.98 -> 3.68 before this epsilon)
+                trim_end = max(0.0, dur - float(outro_info["start"]) + 0.05)
             elif outro_info["certain_no"]:
                 trim_end = 0.0
             else:
