@@ -49,7 +49,14 @@ def main() -> int:
     ap.add_argument("--trim-end", type=str, default="auto",
                     help="seconds, or 'auto' (default): per-clip TikTok-outro detection; "
                          "unsure falls back to the 4s blanket")
+    # cpu default HERE (unlike decompose_corpus): this job INTERLEAVES decompose
+    # with 35B card calls — CUDA CLAP resident beside LM Studio's ~14GB on the
+    # 16GB card is the exact contention the Lab's cpu doctrine exists for.
+    ap.add_argument("--device", default="cpu", choices=("auto", "cpu", "cuda"),
+                    help="cpu (default — card calls need LM Studio on the CUDA card "
+                         "mid-job); auto/cuda for decompose-heavy runs at your own risk")
     args = ap.parse_args()
+    device = cf.resolve_lab_device(args.device)
 
     targets: list[Path] = []
     if args.clips:
@@ -83,9 +90,9 @@ def main() -> int:
         try:
             tl_path = CACHE / f"{stem}.timeline.json"
             if not tl_path.exists():
-                print("    decomposing (audio events, cuts, motion, captions — CPU, ~1-3 min)...",
-                      flush=True)
-                tl = cf.decompose(clip, device="cpu", ocr=True, llm=False,
+                print(f"    decomposing (audio events, cuts, motion, captions — "
+                      f"{device}, ~0.5-3 min)...", flush=True)
+                tl = cf.decompose(clip, device=device, ocr=True, llm=False,
                                   trim_end=args.trim_end)
                 tl_path.write_text(json.dumps(tl, indent=2), encoding="utf-8")
             card_path = CACHE / f"{stem}.card.json"

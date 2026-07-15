@@ -65,24 +65,35 @@ recorded `_model: qwen3.5-9b` — and notably re-categorized the clip (`story` v
 `irl_moment`), a concrete demonstration that model choice changes card judgment. Each card
 stamps its `_model` for provenance.
 
-## Under the hood: why decompose is CPU-only
+## Under the hood: decompose device policy (CPU-only doctrine REVISED 2026-07-15)
 
-Both Lab entry points hardcode `device="cpu"` (`reference_analyze.py:86`,
-`decompose_corpus.py:70`) — deliberate, three reasons:
-1. **The GPU is already spoken for.** The same Analyze job's very next step is the card call,
-   which needs the 35B resident in LM Studio — and LM Studio's Vulkan pool spans BOTH cards,
-   including the 16 GB NVIDIA card that is the *only* device torch/CUDA can see. CUDA
-   CLAP/whisper/EasyOCR would fight the served model on that same card (OOM or unload/reload
-   thrash inside one job). CPU decompose = LM Studio never has to unload.
-2. **Windows-CUDA stability.** CUDA checkpoint loads can hang whisper/PANNs (in-code warning
-   at `clip_forensics.py:567`; the panns torch≥2.9 deadlock landmine) — an uncatchable stall
-   is fatal to an unattended background job. CPU is the always-finishes path; R0 even
-   survived a mid-run PC crash and resumed off cached timelines.
-3. **The economics don't need a GPU.** Decompose is a once-per-clip *cached* cost (~1–3 min
-   on the i9) over 20–60 s clips. Contrast the main pipeline, where whisper DOES run CUDA —
-   but on multi-hour VODs, and before the LLM stages need the card.
+Owner workflow fact (2026-07-15): *"I only use the reference lab when not using or after
+using the main pipeline, so LM Studio should always be free."* That plus CLAP **batching**
+changed the policy — but only where it's actually safe:
 
-Escape hatch: the `clip_forensics.py` CLI has `--cuda` for one-off runs; the Lab never passes it.
+| Entry point | Default | Why |
+|---|---|---|
+| `decompose_corpus.py` (bulk R0, NO LLM in-process) | **auto** → cuda when ≥3 GB VRAM free, else cpu (`clip_forensics.resolve_lab_device`) | pure decompose; LM Studio isn't involved, and the free-VRAM guard degrades to cpu instead of OOMing if the workflow assumption is ever violated |
+| `reference_analyze.py` / `reference_compare.py` | **cpu** (flag available) | these INTERLEAVE decompose with 35B card calls in one job — CUDA CLAP/OCR resident beside LM Studio's ~14 GB on the 16 GB card is exactly the contention the old doctrine warned about. Reason #1 below still rules here |
+
+The original three reasons, updated:
+1. **The GPU is spoken for — only in interleaved jobs.** Analyze/Compare's next step per clip
+   is the 35B card call; those keep cpu. Pure-decompose batches don't have this problem.
+2. **Windows-CUDA stability** — still real (panns torch≥2.9 landmine), but every stage runs
+   under a hard `_with_deadline` cap now, so a CUDA stall degrades to a stage timeout, not a
+   zombie job.
+3. **The economics** — changed twice on 2026-07-15: CLAP windows are now **batched**
+   (`CLIP_CLAP_BATCH`, default 16, one forward per batch instead of per 0.5 s window;
+   validated byte-identical, **6.7× faster** on the CLAP stage on cuda) and cuda roughly
+   halves the rest (EasyOCR + whisper-on-miss follow the device flag). A full-corpus
+   re-decompose is no longer a multi-hour commitment.
+
+Multi-clip parallel workers (2–3 processes overlapping CPU stages with GPU stages) were
+evaluated and **parked** (fine-tuning plan Track D): after batching, the remaining per-clip
+time is mostly scenedetect/motion/ffmpeg; workers would duplicate models in VRAM (~4 GB
+each), pay Windows-spawn startup per worker, and add race surface on the module-global model
+caches — for a job class that is rare (bulk re-decompose) or small (steady-state Analyze of
+a few new clips). Revisit only if bulk re-decomposes become routine.
 
 ## How gap items are minted — and their limits
 

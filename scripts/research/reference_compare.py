@@ -25,7 +25,7 @@ import our_clip_cards as occ     # noqa: E402
 import corpus_diff               # noqa: E402
 
 
-def _card_run(run: str) -> int:
+def _card_run(run: str, device: str = "cpu") -> int:
     """Card OUR clips for one run (missing only). Returns the number carded."""
     cache_dir = occ.DIAG / "cards" / run
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -47,8 +47,8 @@ def _card_run(run: str) -> int:
         try:
             tl_path = cache_dir / f"{stem}.timeline.json"
             if not tl_path.exists():
-                print("    decomposing (CPU)...", flush=True)
-                tl = cf.decompose(clip, device="cpu", ocr=False, llm=False,
+                print(f"    decomposing ({device})...", flush=True)
+                tl = cf.decompose(clip, device=device, ocr=False, llm=False,
                                   cache_dir=cache_dir)
                 tl_path.write_text(json.dumps(tl, indent=2), encoding="utf-8")
             card = ac.build_card(clip, cache_dir=cache_dir)
@@ -71,6 +71,10 @@ def main() -> int:
     ap.add_argument("--run", help="single clip-run stamp (effects_log)")
     ap.add_argument("--runs", help="comma-separated run stamps — aggregate several runs' clips "
                     "into ONE comparison against the reference corpus")
+    # cpu default: interleaves decompose with 35B card calls (see reference_analyze)
+    ap.add_argument("--device", default="cpu", choices=("auto", "cpu", "cuda"),
+                    help="cpu (default — card calls need LM Studio on the CUDA card "
+                         "mid-job); auto/cuda for decompose-heavy runs at your own risk")
     args = ap.parse_args()
     runs = [r.strip() for r in (args.runs or "").split(",") if r.strip()] or \
            ([args.run.strip()] if args.run else [])
@@ -78,8 +82,9 @@ def main() -> int:
         print("[compare] need --run or --runs", flush=True)
         return 1
 
+    device = cf.resolve_lab_device(args.device)
     for run in runs:
-        _card_run(run)
+        _card_run(run, device=device)
 
     print(f"[compare] generating the gap report over {len(runs)} run(s)...", flush=True)
     sys.argv = ["corpus_diff", "--runs", ",".join(runs)]
