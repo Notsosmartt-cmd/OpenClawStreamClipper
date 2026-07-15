@@ -184,10 +184,14 @@ Full detail: [[concepts/single-card-cuda-lane-2026-07]].
   path; `CLIP_PASSB_RUNTIME=cuda9b` default-off; unload-first (never trust
   skip-if-loaded across runtimes). Pre-warm note: first-ever CUDA load of a model ≈
   6.5 m one-time (Blackwell JIT), 4.7 s warm after. S4 → ~13–18 m.
-- **B3 — DEFERRED (2026-07-14 implementation finding)**: flipping `text_model` to the
-  9B would change the model id every non-S3/S4 text call requests by name (a Stage-6-era
-  judge asking for `text_model` would JIT-load the 9B mid-vision → VRAM thrash). Needs a
-  call-site audit first; −2 m forfeited, revisit in Wave D / fine-tuning.
+- **B3 — SHIPPED (2026-07-14, after the call-site audit)**: audit found Stage 6's
+  caption judge ALREADY pinned to `VISION_MODEL` ("swap-safe" comment at
+  `stage6_vision.py:407`), Stage 3 requests the model it loads, Stage 4's judges were
+  scoped same-day, and the only remaining `CLIP_TEXT_MODEL` fallback (`cut_inference`)
+  is dormant (jump-cuts default-off; would JIT the small 9B if enabled — acceptable).
+  `models.json text_model = qwen/qwen3.5-9b`; verified chain: text/passb/passd = 9B,
+  vision/stage6 = 35B. S3 runs on the 9B-Vulkan (~274 s → ~2 min expected); on the lane
+  Stage 4 reloads the same 9B onto CUDA (~25 s swap).
 - **Fallback Q** (only if B1's A/B fails): 9B triages all chunks, 35B deep-passes the
   top-K — keeps the 35B as finder at ~half the savings.
 
@@ -205,6 +209,26 @@ D1 re-bench moment-parallel at 2/4 on the 9B-CUDA lane; D2 batch grounding judge
 D3 cards trim; D4 optional 2B-draft spec-decode bench on the 9B (CUDA single-card —
 the Vulkan no-go does not apply, but decode is only ~40% of the 9B call); D5 TTFT
 instrumentation of a real run to measure true prefix-reuse before touching prompt order.
+
+## 2c. Session-end dispositions (2026-07-14, after the measured runs)
+
+- **SHIPPED beyond the waves**: run-START LM Studio health probe (`CLIP_RUN_LLM_PROBE`,
+  extends A3 to single runs — the 3rd Raud run paid ~10 min of Stage-6 decay timeouts at
+  server-hour ~20); B3 (above); D1 net effect = the POOL RULE (workers 2, lane ctx 32768).
+- **D6 (S6∥S7 per-moment render overlap) — DEFERRED with design**: the win is real
+  (−5-8 m; the whisper/VRAM blocker is gone since A2′) but stage6_vision runs as a
+  SUBPROCESS — per-moment handoff needs IPC/file-watch (stage7 consumer watching
+  enriched-moment sidecars, renders as each lands, joins at manifest time). A careful
+  design+test pass, not a rush job; top item for the fine-tuning session.
+- **S6 "output diet" — SKIPPED with reason**: S6's cost is legitimate sub-calls (caption
+  fidelity/voice gates the owner promoted, A/B variant captions, arc verification), not
+  verbosity — max_tokens=8000 is a Gemma-safety ceiling qwen never approaches. Trimming
+  = quality decisions that need owner eyes.
+- **Judge shortlist trim, D2 judge-batching, D3 cards-trim, D4 9B spec-decode, D5 TTFT
+  instrumentation — SKIPPED with reasons**: shortlist is selection-coupled (−1 m);
+  D2/D3's targets became cheap on the fixed lane (cards 1.5 s, S4 total 13.4 m); D4 is
+  diminishing returns at 3.9 min/VOD-h; D5's question (prefix-reuse) stopped mattering
+  once S4 went decode-bound. All revisitable if fine-tuning changes the balance.
 
 ## 3. Composite arithmetic (fresh 3 h talk VOD, ~10 clips)
 

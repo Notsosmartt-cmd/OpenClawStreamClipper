@@ -1,5 +1,5 @@
 {
-  "text_model": "qwen/qwen3.6-35b-a3b",
+  "text_model": "qwen/qwen3.5-9b",
   "vision_model": "qwen/qwen3.6-35b-a3b",
   "whisper_model": "large-v3-turbo",
   "llm_url": "http://host.docker.internal:1234",

@@ -359,6 +359,34 @@ def main(argv: list[str]) -> int:
     _news_stems: list[str] = []   # VODs completed this run (for CLIP_NEWS_AFTER)
     try:
         common.clear_vod()  # no stale batch marker from a previous run
+
+        # A3 extension (2026-07-14): run-START LM Studio health check — the third
+        # Raud run threw 48 vision-call timeouts because the server had decayed
+        # over ~20 h of uptime and single runs (unlike batches) never probed it.
+        # Cheap by design: a dead server (GET /v1/models unreachable) or a
+        # decayed RESIDENT model (tiny timed completion > 20 s) triggers ONE
+        # recycle; a healthy or empty server costs one GET. No model is force-
+        # loaded (the fresh path would just unload it again). Kill switch:
+        # CLIP_RUN_LLM_PROBE=0. Failure-soft: never blocks the run.
+        if not ctx.list_mode and os.environ.get("CLIP_RUN_LLM_PROBE", "1").strip().lower() in (
+                "1", "true", "yes", "on"):
+            try:
+                _models = common._http_get_json(f"{ctx.llm_url}/v1/models", timeout=8)
+                if _models is None:
+                    log.warn("[A3] LM Studio unreachable at run start — recycling the server...")
+                    common.lms_server_restart(log)
+                else:
+                    _resident = common._lms_loaded_ids()
+                    if _resident:
+                        _lat = common.timed_probe(log, ctx.llm_url, _resident[0], timeout=45)
+                        if _lat is None or _lat > 20.0:
+                            log.warn(f"[A3] resident model decayed at run start "
+                                     f"({'DEAD' if _lat is None else f'{_lat:.1f}s'}) — recycling the server...")
+                            common.lms_server_restart(log)
+                        else:
+                            log.log(f"[A3] run-start LM Studio probe: {_lat:.1f}s (healthy)")
+            except Exception as _pe:  # noqa: BLE001
+                log.warn(f"[A3] run-start probe skipped ({_pe})")
         if (args.all or args.vods) and not ctx.list_mode:
             if args.vods:
                 # Explicit multi-select (dashboard): process exactly these,
