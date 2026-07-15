@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "_note": "Fast-food fry-timer beep alarm (the McDonald's fry-station piezo, owner req 2026-07-15). Synthesized in-repo (numpy, 2.9 kHz band-limited square) - public domain, no source recording, safe for monetized clips. Wired as a LATER option on the fail + awkward_silence beats in config/sfx_cues.json (never auto-picked while scratch/crickets are stocked - promote it by moving it up that beat's list). The 3-beep short burst ALSO rotates live in assets/sfx/pop/ (punchline_light lane).",
+  "entries": [
+    {
+      "file": "fry_timer_alarm.mp3",
+      "tags": [
+        "fry_timer",
+        "beep",
+        "alarm",
+        "mcdonalds",
+        "fast_food",
+        "piezo",
+        "synth"
+      ],
+      "license": "synthesized in-repo (public domain, no source recording)",
+      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz, ~12 beeps, 2.4 s w/ fade)",
+      "added": "2026-07-15"
+    },
+    {
+      "file": "fry_timer_short.mp3",
+      "tags": [
+        "fry_timer",
+        "beep",
+        "alarm",
+        "short",
+        "synth"
+      ],
+      "license": "synthesized in-repo (public domain, no source recording)",
+      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz, 3 beeps, 0.6 s)",
+      "added": "2026-07-15"
+    }
+  ]
+}

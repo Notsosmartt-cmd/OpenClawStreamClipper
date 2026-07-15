@@ -56,6 +56,21 @@
       "source": "myinstants.com (streamer-soundboard staples, owner req 2026-07-11)",
       "note": "taco bell bong",
       "added": "2026-07-11"
+    },
+    {
+      "file": "fry_timer_short.mp3",
+      "tags": [
+        "pop",
+        "beep",
+        "fry_timer",
+        "mcdonalds",
+        "fast_food",
+        "alarm",
+        "synth"
+      ],
+      "license": "synthesized in-repo (public domain, no source recording)",
+      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz) — owner req: 'stereotypical fast-food beeping'. 3-beep burst; full 12-beep alarm lives in assets/sfx/fry_timer/",
+      "added": "2026-07-15"
     }
   ]
 }
