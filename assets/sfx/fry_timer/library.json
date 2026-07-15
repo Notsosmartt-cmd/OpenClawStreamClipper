@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_note": "Fast-food fry-timer beep alarm (the McDonald's fry-station piezo, owner req 2026-07-15). Synthesized in-repo (numpy, 2.9 kHz band-limited square) - public domain, no source recording, safe for monetized clips. Wired as a LATER option on the fail + awkward_silence beats in config/sfx_cues.json (never auto-picked while scratch/crickets are stocked - promote it by moving it up that beat's list). The 3-beep short burst ALSO rotates live in assets/sfx/pop/ (punchline_light lane).",
+  "_note": "Fast-food fry-timer beep alarm (the McDonald's kitchen timer, owner req 2026-07-15). REAL recording from myinstants ('McDonalds Beeping Sound' - 1k/1.5kHz timer beeps over kitchen ambience); replaced the same-day synthesized placeholder per owner directive: 'get the actual fryer sound' + channels are NON-MONETIZED (owner policy), so meme rips are fine. The unlisted mcdonalds_beeping_raw.mp3 is the full 15s source kept for re-trimming - NOT in the pick pool (manifest-gated). Wired as a LATER option on the fail + awkward_silence beats in config/sfx_cues.json (never auto-picked while scratch/crickets are stocked - promote it by moving it up that beat's list). The short cut ALSO rotates live in assets/sfx/pop/ (punchline_light lane).",
   "entries": [
     {
       "file": "fry_timer_alarm.mp3",
@@ -10,11 +10,10 @@
         "alarm",
         "mcdonalds",
         "fast_food",
-        "piezo",
-        "synth"
+        "kitchen"
       ],
-      "license": "synthesized in-repo (public domain, no source recording)",
-      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz, ~12 beeps, 2.4 s w/ fade)",
+      "license": "meme sound, owner-directed 2026-07-15 (channels are non-monetized, owner policy)",
+      "source": "https://www.myinstants.com/media/sounds/mcdonalds-beeping-sound.mp3 — cut 2.95-5.70s (5 beeps incl. the long one), +12dB to -0.9dB peak, 0.25s fade-out",
       "added": "2026-07-15"
     },
     {
@@ -23,11 +22,10 @@
         "fry_timer",
         "beep",
         "alarm",
-        "short",
-        "synth"
+        "short"
       ],
-      "license": "synthesized in-repo (public domain, no source recording)",
-      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz, 3 beeps, 0.6 s)",
+      "license": "meme sound, owner-directed 2026-07-15 (channels are non-monetized, owner policy)",
+      "source": "https://www.myinstants.com/media/sounds/mcdonalds-beeping-sound.mp3 — cut 3.00-3.75s (long beep + short beep), +14.5dB to -1.3dB peak",
       "added": "2026-07-15"
     }
   ]

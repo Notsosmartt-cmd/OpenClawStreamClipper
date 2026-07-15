@@ -88,6 +88,14 @@ All values are **starting defaults to tune**, not measured. Frames assume the so
 > [!warning] License hygiene for a monetized pipeline
 > "Royalty-free" ≠ CC0. Pixabay/Mixkit grant under *their own* licenses (fine for use, but not public-domain and not redistributable as a bundle). For a redistributable seed pack ([[concepts/asset-libraries]] / `seed_libraries.py`), prefer **Freesound CC0** and **ZapSplat CC0** — true public-domain dedication, safe to bundle and ship. **Exclude CC-BY-NC** from any monetized-channel pipeline. The "vine boom" itself is meme-ubiquitous but originates from a copyrighted source clip — use a **CC0 re-creation** from Freesound, not a rip.
 
+> [!note] OWNER POLICY (2026-07-15): the channels are NOT monetized and won't be
+> The monetization-driven caution above is **moot for this project**: meme rips via the
+> established myinstants route are fine to use directly. And the owner prefers the **real
+> sounds** over synthesized substitutes ("get the actual fryer sound … don't make sounds") —
+> when asked to add a sound, download the actual recording; do NOT synthesize a stand-in.
+> The CC0 guidance only becomes relevant again if a seed pack is ever redistributed or a
+> channel is ever monetized.
+
 ---
 
 ## 5. JSON cue taxonomy (drop-in for edit_plan.py / sfx_inject.py)
@@ -295,23 +303,28 @@ beat that fires a hit per diss/laughter burst within rap/roast segments (max_cue
 
 ## Fry-timer beep added (2026-07-15, owner req: "stereotypical fast-food beeping like McDonald's")
 
-That sound = the **fry-station timer alarm** (the piezo sounder on the fryer). **Synthesized
-in-repo** rather than downloaded (numpy band-limited square: 2.9 kHz + odd harmonics 3/5,
-3 ms declick ramps) — public domain by construction, no rip, no license question for a
-monetized channel. Placement follows the taco_bong precedent:
+That sound = the **fry-station timer alarm** (the McDonald's kitchen timer). First shipped as
+an in-repo synth (2.9 kHz piezo guess); **same day the owner rejected the synth** ("get the
+actual fryer sound … don't make sounds" + declared the non-monetized policy above) → replaced
+with the REAL recording: myinstants **"McDonalds Beeping Sound"**
+(`mcdonalds-beeping-sound.mp3`, 15 s kitchen recording; the actual timer beeps at **1 kHz /
+1.5 kHz alternating tones** — notably LOWER than the 2.9 kHz stereotype, the synth was wrong).
+Spectral-mapped the beep runs (densest cluster 3.0–5.7 s), cut + normalized:
 
-- **LIVE**: `pop/fry_timer_short.mp3` (3 beeps, 0.59 s) joins the `punchline_light` rotation
-  (now **7 files**) — fires on laughter markers + secondary peaks in funny/reactive clips,
-  ducked −8 dB. Non-vocal, so the "no vocal memes in this lane" doctrine holds. One manifest
-  line to remove if the owner's ear rejects it.
-- **INVENTORY**: new `fry_timer/` kind (short burst + full 2.4 s ~12-beep alarm w/ fade-out),
-  wired as a LATER option on `fail` (−7 dB) and `awkward_silence` (−10 dB, the "somebody's
-  fries are done" dead-air gag) — never auto-picked while scratch/crickets are stocked;
-  promoting it = moving it up that beat's list in `config/sfx_cues.json`.
+- **LIVE**: `pop/fry_timer_short.mp3` (cut 3.00–3.75 s: long beep + short beep, −1.3 dB peak)
+  in the `punchline_light` rotation (**7 files**) — fires on laughter markers + secondary
+  peaks in funny/reactive clips, ducked −8 dB. Non-vocal ✓. One manifest line to remove if
+  the owner's ear rejects it.
+- **INVENTORY**: `fry_timer/` kind — `fry_timer_alarm.mp3` (cut 2.95–5.70 s, 5 beeps incl.
+  the long one, −0.9 dB peak, fade-out) + the short cut; wired as a LATER option on `fail`
+  (−7 dB) and `awkward_silence` (−10 dB, the "somebody's fries are done" dead-air gag) —
+  never auto-picked while scratch/crickets are stocked; promote by moving it up that beat's
+  list in `config/sfx_cues.json`. The unlisted `mcdonalds_beeping_raw.mp3` (full 15 s) sits
+  in the folder for re-trimming — manifest-gated out of the pick pool.
 - Hygiene: `kind_sources.pop.have_assets` was stale `false` (missed in the 07-11 flip) →
   fixed; the field is informational-only (code uses live `sfx_inject.has_assets`).
 - Verified through real code paths: pop pool 7/7 distinct draws across 60 seeds incl. the new
   file; `has_assets('fry_timer')` true; funny-moment `build()` smoke unchanged (riser→boom).
 - Reminder: audio files are **untracked by repo policy** (only the 13→14 `library.json`
-  manifests are committed) — the mp3s live on this machine; the synth is reproducible from
-  the [[log]] entry's parameters.
+  manifests are committed) — the mp3s + the raw source live on this machine; the manifest
+  entries record the exact URL + cut points to reproduce them.
