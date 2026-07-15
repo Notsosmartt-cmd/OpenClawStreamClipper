@@ -44,7 +44,9 @@ def _master_slice() -> bool:
     Returns False (having written NOTHING) when inputs are absent/invalid so
     the caller can fall back to the Whisper path."""
     master_path = os.path.join(temp_dir, "transcript.json")
-    windows_path = os.path.join(temp_dir, "clip_windows.json")
+    # D6: the overlap consumer slices ONE clip at a time via a per-T windows
+    # file; the default remains stage7's all-clips manifest.
+    windows_path = os.environ.get("CLIP_WINDOWS_FILE") or os.path.join(temp_dir, "clip_windows.json")
     if caption_source != "master":
         return False
     if not (os.path.exists(master_path) and os.path.exists(windows_path)):

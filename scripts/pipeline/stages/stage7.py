@@ -115,40 +115,47 @@ def _scrub(s) -> str:
     return s.replace("|", "-").replace("\r", " ").replace("\n", " ").strip()
 
 
+def _row_from_moment(m: dict) -> dict:
+    """One manifest row from one enriched moment. D6: shared by
+    ``_generate_manifest`` AND the stage-6 overlap consumer so early renders
+    are built from EXACTLY the same row shape."""
+    title = m["title"].replace("/", "-").replace("\\", "-").replace("|", "-").replace('"', "")
+    title = "".join(c for c in title if c.isalnum() or c in " -")[:50].strip()
+    if not title:
+        title = f"Clip T{m['timestamp']}"
+    # Anomaly-lane provenance in the FILENAME (owner req 2026-07-08): clips the
+    # cross-modal anomaly lane proposed are prefixed ANOMALY_ so they're identifiable
+    # at a glance in the clips folder (and thus in effects_log, which keys by title).
+    # `src` survives from Stage 4 (hype_moments) through Stage 6 (preserved there).
+    if str(m.get("src", "")).upper() == "ANOMALY":
+        title = f"ANOMALY_{title}"
+    clip_start = m.get("clip_start", max(0, m["timestamp"] - 15))
+    clip_duration = m.get("clip_duration", 30)
+    score = m["score"]
+    score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
+    return {
+        "t": m["timestamp"],
+        "title": title,
+        "score": score_str,
+        "category": _scrub(m.get("category", "unknown")),
+        "description": _scrub(m.get("description", ""))[:500],
+        "hook": _scrub(m.get("hook", "")),
+        "segment_type": _scrub(m.get("segment_type", "unknown")),
+        "clip_start": clip_start,
+        "clip_duration": clip_duration,
+        # P-TIGHT exemption inputs (owner review 2026-07-08): pattern survives
+        # Stage 6 now; without it the rap/freestyle exemption never fired.
+        "primary_pattern": _scrub(m.get("primary_pattern") or ""),
+    }
+
+
 def _generate_manifest(ctx) -> list[dict]:
     p = ctx.paths
     moments = json.loads(p.scored_moments.read_text(encoding="utf-8"))
     rows: list[dict] = []
     lines: list[str] = []
     for m in moments:
-        title = m["title"].replace("/", "-").replace("\\", "-").replace("|", "-").replace('"', "")
-        title = "".join(c for c in title if c.isalnum() or c in " -")[:50].strip()
-        if not title:
-            title = f"Clip T{m['timestamp']}"
-        # Anomaly-lane provenance in the FILENAME (owner req 2026-07-08): clips the
-        # cross-modal anomaly lane proposed are prefixed ANOMALY_ so they're identifiable
-        # at a glance in the clips folder (and thus in effects_log, which keys by title).
-        # `src` survives from Stage 4 (hype_moments) through Stage 6 (preserved there).
-        if str(m.get("src", "")).upper() == "ANOMALY":
-            title = f"ANOMALY_{title}"
-        clip_start = m.get("clip_start", max(0, m["timestamp"] - 15))
-        clip_duration = m.get("clip_duration", 30)
-        score = m["score"]
-        score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
-        row = {
-            "t": m["timestamp"],
-            "title": title,
-            "score": score_str,
-            "category": _scrub(m.get("category", "unknown")),
-            "description": _scrub(m.get("description", ""))[:500],
-            "hook": _scrub(m.get("hook", "")),
-            "segment_type": _scrub(m.get("segment_type", "unknown")),
-            "clip_start": clip_start,
-            "clip_duration": clip_duration,
-            # P-TIGHT exemption inputs (owner review 2026-07-08): pattern survives
-            # Stage 6 now; without it the rap/freestyle exemption never fired.
-            "primary_pattern": _scrub(m.get("primary_pattern") or ""),
-        }
+        row = _row_from_moment(m)
         rows.append(row)
         lines.append("|".join(str(x) for x in (
             row["t"], row["title"], row["score"], row["category"],
@@ -610,6 +617,12 @@ def _extract_moment(scored_path: Path, T, out: Path) -> bool:
         out.write_text(json.dumps(m, indent=2), encoding="utf-8")
         return True
     except Exception:
+        # D6: during the Stage-6 overlap, scored_moments.json doesn't exist yet —
+        # the consumer PRE-STAGES moment_<T>.json from the enrichment sidecar.
+        # Honor a pre-staged file so early renders keep the profile-mode path
+        # instead of silently degrading to the legacy renderer.
+        if out.exists():
+            return True
         return False
 
 
@@ -842,20 +855,33 @@ def run(ctx) -> None:
     speed_audio_filter = (f"rubberband=tempo={ctx.clip_speed}:pitch={ctx.clip_speed}"
                           if ctx.clip_speed != "1.0" else "")
 
+    # D6 (plan-speed-wave3): clips the stage-6 overlap consumer already rendered
+    # (while enrichment was still running) are skipped here — everything else
+    # (manifest, captions, stitch groups, summary) still covers the full set.
+    _early = getattr(ctx, "early_rendered", None) or set()
+    if _early:
+        _skipped = [r["t"] for r in rows if r["t"] in _early]
+        rows_to_render = [r for r in rows if r["t"] not in _early]
+        log.log(f"  [D6] {len(_skipped)} clip(s) already rendered during Stage 6 "
+                f"(T={_skipped[:6]}{'...' if len(_skipped) > 6 else ''}) — rendering "
+                f"the remaining {len(rows_to_render)}.")
+    else:
+        rows_to_render = rows
+
     render_workers = _resolve_render_workers()
-    if render_workers <= 1 or len(rows) <= 1:
-        for row in rows:
+    if render_workers <= 1 or len(rows_to_render) <= 1:
+        for row in rows_to_render:
             try:
                 _render_clip(ctx, row, speed_vf, speed_audio_filter)
             except Exception as e:  # noqa: BLE001
                 log.warn(f"render error for T={row['t']}: {e}")
     else:
-        log.log(f"  [parallel] dispatching {len(rows)} renders across "
+        log.log(f"  [parallel] dispatching {len(rows_to_render)} renders across "
                 f"{render_workers} workers...")
         with ThreadPoolExecutor(max_workers=render_workers) as pool:
             futs = {
                 pool.submit(_render_clip, ctx, row, speed_vf, speed_audio_filter): row
-                for row in rows
+                for row in rows_to_render
             }
             for fut in as_completed(futs):
                 row = futs[fut]
