@@ -124,7 +124,7 @@ Discovery → Transcription → Segment Detection → Moment Detection → Frame
 
 User interfaces:
 - Discord bot (primary): natural language → OpenClaw → exec → pipeline
-- Web dashboard (secondary): Flask on port 5000, docker exec bridge on Windows
+- Web dashboard (secondary): Flask, default port 5001 (rolls forward to the next free port when 5001 is squatted — typically **5002** on this rig; pin with `DASHBOARD_PORT`). Port 5000 was the docker-era mapping only.
 
 Full details in the wiki.
 
