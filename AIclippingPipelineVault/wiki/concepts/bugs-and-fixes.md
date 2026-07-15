@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-07-13
+updated: 2026-07-15
 ---
 
 # Bugs and Fixes
@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 72 bugs (highest number BUG 72; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 74 bugs (highest number BUG 74; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest (2026-07-14/15, both from the Wave-3 speed campaign): [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1840,6 +1840,42 @@ FIRST — one stack dump ended a day of plausible-but-wrong theories (OpenMP, FI
 Tool: `scripts/research/bench_audio_scan.py` (serial/threads/procs micro-bench on a real WAV).
 
 ---
+
+## BUG 74 — Phase-unpinned judge-model ids JIT-summon the OTHER phase's model (ghost co-residence, ×2 in one day)
+
+> [!success] Status: FIXED 2026-07-14/15 (`stage4.py` 4ec689a + `stage6.py` 3fc0a48). Both stage wrappers now pin `CLIP_GROUNDING_JUDGE_MODEL` to their phase-resident model (stage 4 → `text_model_passb`, stage 6 → `vision_model_stage6`), matching the caption judge's pre-existing `VISION_MODEL` pin.
+
+**Symptom (owner-observed both times in LM Studio's UI):** two models loaded simultaneously
+mid-stage. Form 1 (during Stage 4): the 22 GB 35B resident at **ctx 16384** beside the CUDA 9B
+→ ~21 GB wanted on the 16 GB NVIDIA card → **spilled weights, both models degraded**, Stage 4
+crawled. Form 2 (during Stage 6, exposed by B3): the 9B resident at **ctx 16384 + GPU offload
+0** (LM Studio placed it entirely on CPU because the 35B held all VRAM) → slow judge-tier calls.
+`ctx 16384` is the JIT fingerprint — the pipeline always loads at 32768.
+
+**Cause:** `grounding._resolve_judge_model()` falls back to env `CLIP_TEXT_MODEL`. With the
+phase-split (9B text phase / 35B vision phase), whichever model that env names is the WRONG one
+for one of the phases — and LM Studio's JIT loader turns a wrong model id into a silent load.
+Pre-B3 the fallback happened to equal the loaded model, so the class was invisible for weeks.
+
+**Rule (twice-confirmed):** *every* judge/LLM model id resolved from env fallbacks must be
+**phase-pinned** by the stage wrapper that knows what's loaded. Audit new call sites for this
+before any model-split change.
+
+## BUG 73 — Concurrent LLM requests share ONE context pool → 4 Pass-B workers overflowed 16384 and ALL 28 chunks failed
+
+> [!success] Status: FIXED 2026-07-14 (`stage4.py` ddbfc30). CUDA-lane loads at `CLIP_PASSB_CUDA_CTX` default **32768** (lms estimate: 6.1 GiB total — 9B KV is tiny) and moment workers reverted to **2**. Pool rule documented in-code: `workers ≤ loaded_ctx / (max prompt + worst-case generation)`.
+
+**Symptom:** Raud run 1 (D1's workers=4): Stage 4 took 62 min; the log shows 28× `LLM call
+failed` and `Re-queueing 28 failed chunk(s)` — **every chunk's primary call failed** and the
+serial end-of-pass re-queue did all the real work (whose recovered moments only get LIGHT
+grounding → a quality-degraded clip set on top of the slowdown).
+
+**Cause (bench-proven):** llama.cpp's loaded context is a **pool shared by all in-flight
+requests**, not per-request. 4 concurrent × (~6-10k prompt + generation) > the 16384 pool →
+`"Context size has been exceeded"` (HTTP 400) on every call. Bench: N=1 → 49 tok/s OK; N=2 →
+72 tok/s aggregate OK; **N=4 → 4/4 context errors**. Corollary: adding parallel workers to an
+LLM stage requires pool arithmetic first; more concurrency must come from smaller
+prompts/outputs, not more slots.
 
 ## BUG 72 — Dashboard Stop orphans pipeline stage children (non-tree kill) → they keep writing into the shared work dir and sabotage the next launch
 

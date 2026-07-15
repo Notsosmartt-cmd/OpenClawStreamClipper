@@ -3,7 +3,7 @@ title: "Pipeline Speed — Empirical Findings (validation testing, 2026-07)"
 type: concept
 tags: [performance, speed, testing, validation, findings, reference, llm-determinism, gpu, whisper, stage-4, audio-events]
 sources: 0
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Pipeline Speed — Empirical Findings
@@ -316,6 +316,9 @@ transcript windows), ~2700 tok each, `max_tokens=512`, temp 0.
   batch → promoted default-on (`CLIP_BATCH_PREFETCH`). Chose the micro-bench over a ~2.5 h full
   batch because C1 is byte-safe, so contention was its only failure mode.
 
+> [!warning] §10's rates are the PRE-Wave-3 baseline — superseded by §11 (2026-07-15)
+> Keep §10 for the before/after record; the CURRENT stage rates live in §11 below.
+
 ## 10. Fresh-VOD baseline + LM Studio decay curve (measured 2026-07-14, 9-VOD batch)
 
 Mined from the 20260713_223856 batch (`pipeline_stages.log` stage marks + persistent log;
@@ -348,6 +351,29 @@ Studio death; VODs 5–7 were fully FRESH (no cached transcript/audio/segments).
   `cleanup()` fires once at process exit, so a crashed batch leaves zero rows and the
   history under-represents exactly the long runs that stress the system. Per-VOD rows would
   need a `cleanup()`-equivalent inside the batch loop.
+
+## 11. CURRENT stage rates — post-Wave-3 final system (measured 2026-07-14/15)
+
+Sources: Raud 3.47 h (fresh S2 run + the clean lane run + the D6 run) and FirstFullAudio
+1.19 h (2 runs). System: WhisperX+diarization default, A1 S2-overlap, 9B-CUDA text lane
+(pool-fixed), 640:360 frames, judge cap 20, master-slice captions, D6 render-overlap.
+
+| stage | rate (per VOD-hour) | notes / per-unit |
+|---|---|---|
+| S1 discovery | ~8 s fixed | |
+| S2 transcribe (FRESH) | **2.4–2.5 min/VOD-h** | WhisperX VAD-ASR + wav2vec2 align + diarization + events scan, scan overlapped (A1). Cached: seconds. |
+| S3 segment votes (9B) | **~0.4 min/VOD-h** | 89.7 s / 3.47 h (was 274 s on the 35B — B3 3.1×). C4 cache hit → ~0. |
+| S4 moments (9B-CUDA lane) | **3.9–5.0 min/VOD-h** | talk VOD 3.9, gaming ~4.8–5.0 (denser chunks). Zero failures post-BUG-73/74 fixes. |
+| S6 model load | 30–70 s fixed | 35B Vulkan warm load |
+| S5.5 vision judge | **1.9–2.9 min/VOD-h** | ≈37–55 s per shortlisted moment at cap 20 / 640:360 frames. ⚠ open item: one run logged "40 comparisons" vs the 20 cap + 601 s — accounting/behavior to check. |
+| S6 enrichment **+ absorbed renders (D6)** | **~5.3–5.8 min/VOD-h** | ≈80–110 s per clip INCLUDING its render (D6 folds S7 in). Carried the BUG-74 CPU-9B ghost in the 07-15 run — expect −1-2 min next run. |
+| S7 residual | **~8 s fixed** | D6 leaves only manifest/stitch/post steps (was 6-7 min + variants) |
+| S8 summary | ~2.5 s | |
+
+**Aggregates:** fresh ≈ **14.5–16.5 min per VOD-hour** (3 h VOD ≈ 44–49 min; ~40–45 once
+the BUG-74 pin applies) vs the §10 pre-wave 26–30. Cached re-run measured **13.9 min/VOD-h**
+(Raud D6 run, 48 m 14 s). Quality additions not present in the §10 baseline: speaker
+diarization, wav2vec2 word timing, caption-transcript consistency (master-slice).
 
 ## Bottom line
 
