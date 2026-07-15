@@ -7,6 +7,9 @@ Grep recent: `grep "^## \[" wiki/log.md | head -10`
 
 ---
 
+## [2026-07-15] update | Hotfix: Reference Lab 500 — missing pathlib import in the runs rewrite (owner-reported blank Lab)
+The UX-round `_effects_runs()` rewrite used `Path(...)` without importing it — py_compile passes (NameError is runtime-only), so it shipped and EVERY `/api/reference/corpus` request 500'd, blanking the whole Lab (clips + runs + "undefined/undefined"). Fix: `from pathlib import Path`; dashboard restarted; endpoint verified live this time: 86 clips, 1 run = `22 clips · FirstFullAudio4-20 + 20260712_Raud` (the session grouping rendering exactly as designed). **Lesson filed: after route changes, exercise the CHANGED endpoint, not just any endpoint** (I verified /api/hardware and called it done). Pages: [[hot]].
+
 ## [2026-07-15] update | VERIFICATION BATCH PASS — everything proven in one run; Raud cached 26m17s (7.6 min/VOD-h); fresh-3h projection ~31-40 min
 The 2-VOD batch (FirstFullAudio + Raud, cached, 37m53s total = 8.1 min/VOD-h) verified every open item at once: **ghost fix** (S5.5 407-715s -> 89.2s, S6 1210-1694s -> 756.5s incl all renders — the CPU-9B drag + decay were most of the vision cost); **session grouping** (ONE run stamp `20260714_232815`, 22 render_plans across BOTH VODs — the Lab now shows one labeled batch); **A3 between-VOD probe** fired (baseline 2.6s); **D6** 4/4 + 11/11 early-rendered, S7 6-8s; **batch progress UI** live. Raud stage split: S4 654s, S5.5 89s, S6 757s (69s/clip WITH render), S7 6.8s. **Fresh-3h projection at these healthy rates: ~31-40 min — AT the 30-45 target's floor** (variance: clip count, content density, server freshness). Clips folder is the clean 15-clip set for owner review. Pages: [[concepts/pipeline-speed-findings-2026-07]] (§11 aggregates hold, vision rates improved), [[hot]].
 
