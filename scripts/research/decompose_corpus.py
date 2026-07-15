@@ -52,11 +52,11 @@ def main() -> int:
                     help="drop the last N s (TikTok download outro), or 'auto' "
                          "(default): detect the outro per clip — trims exactly the "
                          "clips that have one, unsure falls back to 4s")
-    ap.add_argument("--device", default="cpu", choices=("cpu", "cuda"),
-                    help="inference device for CLAP/whisper/EasyOCR. Default cpu "
-                         "(the safe default — LM Studio usually owns the CUDA card "
-                         "mid-job); pass cuda when the card is verified free "
-                         "(~2x faster end-to-end: CLAP+OCR dominate per-clip time)")
+    ap.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"),
+                    help="inference device for CLAP/whisper/EasyOCR. Default auto "
+                         "(owner workflow: the Lab never runs beside the pipeline, "
+                         "so the card is normally free): cuda when >=3GB VRAM free, "
+                         "else cpu. Force with cpu/cuda.")
     args = ap.parse_args()
     if not (args.missing or args.all or args.clip):
         args.missing = True  # safest default
@@ -66,15 +66,16 @@ def main() -> int:
     if not targets:
         print("[decompose_corpus] nothing to do (all decomposed?)")
         return 0
+    device = cf.resolve_lab_device(args.device)
     print(f"[decompose_corpus] {len(targets)} clip(s) to decompose "
-          f"(ocr={args.ocr}, no-llm, {args.device}, trim_end={args.trim_end})", flush=True)
+          f"(ocr={args.ocr}, no-llm, device={device}, trim_end={args.trim_end})", flush=True)
 
     done = 0
     for i, clip in enumerate(targets, 1):
         stem = clip.stem
         print(f"[{i}/{len(targets)}] {clip.name} ...", flush=True)
         try:
-            tl = cf.decompose(clip, device=args.device, ocr=args.ocr, llm=False,
+            tl = cf.decompose(clip, device=device, ocr=args.ocr, llm=False,
                               trim_end=args.trim_end)
             (CACHE / f"{stem}.timeline.json").write_text(
                 json.dumps(tl, indent=2), encoding="utf-8")

@@ -85,6 +85,28 @@ _STAGE_DEADLINES = {
 }
 
 
+def resolve_lab_device(pref: str | None = "auto") -> str:
+    """Lab-job device policy (owner 2026-07-15: 'I only use the reference lab
+    when not using the main pipeline, so LM Studio should always be free').
+    'auto' → cuda when torch sees a card with ≥3 GB free (CLAP ~1-2 GB +
+    EasyOCR ~2-3 GB), else cpu — so the old safety (LM Studio holding the
+    card) degrades gracefully instead of OOMing if the assumption is ever
+    violated. Pass 'cpu'/'cuda' to force."""
+    p = (pref or "auto").strip().lower()
+    if p != "auto":
+        return p
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free, _total = torch.cuda.mem_get_info()
+            if free >= 3 * (1024 ** 3):
+                return "cuda"
+            _log(f"auto-device: CUDA card busy ({free / 2**30:.1f} GB free) -> cpu")
+    except Exception:
+        pass
+    return "cpu"
+
+
 def _with_deadline(label: str, seconds: float, fn, default):
     """Run fn() under a hard wall-clock cap. A daemon worker does the work; if it
     overruns we log, ABANDON the thread (it dies when the process exits), and

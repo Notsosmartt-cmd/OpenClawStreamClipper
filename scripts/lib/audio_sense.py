@@ -279,14 +279,12 @@ def _clap_events(media: str, labels_cfg: dict, device: str,
         win = max(1, int(window_s * sr))
         hop = max(1, int(hop_s * sr))
         out: list[dict] = []
-        starts = list(range(0, max(1, audio.size - win + 1), hop))
-        for s0 in starts:
-            chunk = audio[s0:s0 + win]
-            if chunk.size < win // 2:
-                continue
-            sims = _clap_window_sims(chunk, sr)
+        starts = [s0 for s0 in range(0, max(1, audio.size - win + 1), hop)
+                  if audio[s0:s0 + win].size >= win // 2]
+
+        def _emit(s0: int, sims) -> None:
             if sims is None:
-                continue
+                return
             t0 = round(s0 / sr, 3)
             for li, sc in enumerate(sims):
                 nm = names[li]
@@ -294,10 +292,58 @@ def _clap_events(media: str, labels_cfg: dict, device: str,
                     out.append({"t": t0, "end": round(t0 + window_s, 3),
                                 "label": nm, "score": round(float(sc), 3),
                                 "source": "clap"})
+
+        # Batched inference (2026-07-15, owner: "would batching be possible?"):
+        # one forward per CLIP_CLAP_BATCH windows instead of one per window —
+        # the per-call overhead (CPU mel featurization + launch) dominated the
+        # per-window loop, which is why GPU alone barely helped. Only
+        # FULL-length windows batch (identical shapes => identical results);
+        # the shorter tail window keeps the single-window path. Failure-soft:
+        # any batch error falls back to per-window for that group.
+        B = max(1, int(os.environ.get("CLIP_CLAP_BATCH", "16")))
+        full = [s0 for s0 in starts if audio.size - s0 >= win]
+        tail = [s0 for s0 in starts if audio.size - s0 < win]
+        for i in range(0, len(full), B):
+            grp = full[i:i + B]
+            chunks = [audio[s0:s0 + win] for s0 in grp]
+            rows = _clap_batch_sims(chunks, sr) if len(grp) > 1 else None
+            if rows is None:
+                rows = [_clap_window_sims(c, sr) for c in chunks]
+            for s0, sims in zip(grp, rows):
+                _emit(s0, sims)
+        for s0 in tail:
+            _emit(s0, _clap_window_sims(audio[s0:s0 + win], sr))
         return out
     except Exception as e:
         _log(f"CLAP inference failed ({type(e).__name__}: {e}); skipping")
         return []
+
+
+def _clap_batch_sims(chunks: list, sr: int):
+    """Cosine sims for a batch of EQUAL-LENGTH windows — one model forward.
+    Returns a list of per-window sim rows, or None to trigger the per-window
+    fallback (never raises)."""
+    try:
+        if _CLAP["backend"] == "hf":
+            import torch
+            with torch.no_grad():
+                ai = _CLAP["proc"](audio=[c for c in chunks], sampling_rate=sr,
+                                   return_tensors="pt")
+                ai = {k: v.to(_CLAP["model"].device) for k, v in ai.items()}
+                aemb = _CLAP["model"].get_audio_features(**ai)
+                aemb = aemb / aemb.norm(dim=-1, keepdim=True)
+                sims = (aemb @ _CLAP["text_emb"].T).cpu().numpy()
+            return [sims[i] for i in range(sims.shape[0])]
+        elif _CLAP["backend"] == "laion":
+            import numpy as np
+            x = np.stack(chunks)
+            aemb = _CLAP["model"].get_audio_embedding_from_data(x=x, use_tensor=False)
+            aemb = aemb / (np.linalg.norm(aemb, axis=-1, keepdims=True) + 1e-9)
+            sims = aemb @ _CLAP["text_emb"].T
+            return [sims[i] for i in range(sims.shape[0])]
+    except Exception as e:  # noqa: BLE001
+        _log(f"CLAP batch failed ({type(e).__name__}); per-window fallback")
+    return None
 
 
 def _clap_window_sims(chunk, sr):
