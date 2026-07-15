@@ -134,6 +134,12 @@ def run(ctx) -> None:
     # (GPU offload 0 — no VRAM left). Pin every Stage-6 grounding judge to the
     # phase-resident vision model, same as the caption judge already is.
     env["CLIP_GROUNDING_JUDGE_MODEL"] = ctx.vision_model_stage6
+    # BUG-74 audit closure (2026-07-15): cut_inference (jump-cuts lane) is the
+    # last CLIP_TEXT_MODEL faller-backer, and D6 renders — where it fires when
+    # enabled — run DURING this vision phase. Pin it process-wide (os.environ:
+    # the D6 consumer's _render_clip children AND stage7 residual renders both
+    # build their env from it) so enabling CLIP_JUMP_CUTS can't summon a ghost.
+    os.environ["CLIP_CUT_MODEL"] = ctx.vision_model_stage6
 
     # D6 — render-as-enriched overlap (see module docstring).
     _overlap = os.environ.get("CLIP_S6_S7_OVERLAP", "1").strip().lower() in (

@@ -456,6 +456,90 @@ def caption_judge(
     return out
 
 
+_CAPTION_JUDGE_MULTI_PROMPT = """/no_think
+You judge the short-form video caption fields for ONE livestream clip. Score each field against what ACTUALLY happens in the clip (the transcript window below, plus the neutral description).
+
+FIELDS TO JUDGE:
+{fields_block}
+
+TRANSCRIPT (what is actually said in the clip):
+{transcript_window}
+
+NEUTRAL_DESCRIPTION (what is visibly happening):
+{description}
+
+For EACH field independently, score two dimensions, each 0-10:
+1. fidelity (0-10): does the field describe what actually happens in THIS clip? 10 = names the real payoff/topic; 5 = vaguely related; 0 = describes something not in the clip, or is generic filler that would fit any clip.
+2. human_voice (0-10): would a real short-form creator write this? 10 = sounds like a person texting a friend about the clip; 0 = AI headline voice (Title Case, scare-quotes around invented names, "The 'X' Y", clickbait adjectives like epic/insane/ensues).
+
+Respond with ONLY JSON: {{{schema}}}"""
+
+
+def caption_judge_multi(
+    claims: Dict[str, str],
+    transcript_window: str,
+    description: str = "",
+    lm_studio_model: Optional[str] = None,
+    url: Optional[str] = None,
+    timeout: float = 30.0,
+) -> Optional[Dict[str, Dict]]:
+    """Speed consolidation (2026-07-15): score SEVERAL caption fields in ONE
+    LLM call — identical dimensions, criteria wording, and clamping as
+    ``caption_judge`` (whose per-field prompt this mirrors), just batched.
+    Returns ``{field: {fidelity, human_voice, rationale}}`` for the fields the
+    model scored, or None on ANY failure — callers fall back to per-field
+    ``caption_judge`` calls, so this can only save time, never change gating."""
+    claims = {k: (v or "").strip() for k, v in (claims or {}).items() if (v or "").strip()}
+    if not claims or not (transcript_window or "").strip():
+        return None
+    chat = _import_lmstudio()
+    if chat is None:
+        return None
+    fields_block = "\n".join(f"{k.upper()}: {v[:300]}" for k, v in claims.items())
+    schema = ", ".join(
+        f'"{k}": {{"fidelity": <0-10>, "human_voice": <0-10>, "rationale": "<one short sentence>"}}'
+        for k in claims)
+    prompt = _CAPTION_JUDGE_MULTI_PROMPT.format(
+        fields_block=fields_block,
+        transcript_window=transcript_window[:3000],
+        description=(description[:600] or "(none)"),
+        schema=schema,
+    )
+    text = chat(
+        prompt,
+        model=_resolve_judge_model(lm_studio_model),
+        url=url or os.environ.get("CLIP_LLM_URL", "http://host.docker.internal:1234"),
+        timeout=timeout,
+        response_json=True,
+        max_tokens=200 + 150 * len(claims),
+    )
+    if not text:
+        return None
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        obj = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    out: Dict[str, Dict] = {}
+    for field in claims:
+        fo = obj.get(field)
+        if not isinstance(fo, dict):
+            continue
+        rec: Dict = {}
+        for k in ("fidelity", "human_voice"):
+            try:
+                rec[k] = max(0.0, min(10.0, float(fo.get(k, 0))))
+            except (TypeError, ValueError):
+                rec[k] = 0.0
+        rec["rationale"] = str(fo.get("rationale") or "")[:200]
+        out[field] = rec
+    return out or None
+
+
 # Default per-dimension weights and pass threshold. Tunable via
 # ``config/grounding.json::judge``. Sum should be 1.0 for the weighted-mean
 # to land in [0, 10]; pass_threshold is on that 0-10 scale.

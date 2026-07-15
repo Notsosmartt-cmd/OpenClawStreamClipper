@@ -323,9 +323,14 @@ def format_snapshot_line(snap: Dict[str, Any]) -> str:
             free = max(0, total - used) if total else 0
         util = a.get("util_pct")
         util_str = f", {util}% util" if util is not None else ""
+        # 2026-07-15 (post-bugcheck-0x50 forensics): temp_c was already captured
+        # per snapshot but never printed — surface it so every persistent log
+        # carries a per-stage thermal history for crash investigations.
+        temp = a.get("temp_c")
+        temp_str = f", {temp}°C" if temp is not None else ""
         parts.append(
             f"{a.get('vendor','?')}({a.get('name','?')[:24]}): "
-            f"{used}/{total} MB used, {free} free{util_str}"
+            f"{used}/{total} MB used, {free} free{util_str}{temp_str}"
         )
     loaded = snap.get("lm_studio_loaded") or []
     if loaded:

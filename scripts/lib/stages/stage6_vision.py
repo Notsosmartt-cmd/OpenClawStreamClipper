@@ -374,7 +374,7 @@ def _hook_from_template(category, title, T):
 _CREATIVE_FIELDS = ("title", "hook")
 
 
-def _caption_gate(field, claim, refs, description, chk):
+def _caption_gate(field, claim, refs, description, chk, pre=None):
     """Part 1 (P1.4 then P1.2) — the quality gate the creative fields lacked.
     Mutates ``chk`` to failed when the caption reads AI-generated (deterministic
     linter) or doesn't describe the clip (LLM fidelity judge). Only ever called
@@ -398,7 +398,10 @@ def _caption_gate(field, claim, refs, description, chk):
         if cj_cfg.get("enabled", True):
             try:
                 window = "\n".join(r for r in refs if r)
-                cj = _grounding.caption_judge(
+                # Consolidation (2026-07-15): ``pre`` carries this field's score
+                # from ONE batched caption_judge_multi call covering all fields
+                # of the moment; the single-field call remains the fallback.
+                cj = pre if pre is not None else _grounding.caption_judge(
                     field, claim, window, description or "",
                     # Pin to the model already resident for Stage 6 (VISION_MODEL);
                     # the default resolve chain would pick CLIP_TEXT_MODEL and force
@@ -419,9 +422,11 @@ def _caption_gate(field, claim, refs, description, chk):
                 pass
 
 
-def _ground_field(field, claim, refs, hard_events, description=""):
+def _ground_field(field, claim, refs, hard_events, description="", caption_pre=None):
     """Field-aware grounding check. Returns the cascade/check_claim result dict
-    (always carries `passed`, `reason`, `tier`)."""
+    (always carries `passed`, `reason`, `tier`). ``caption_pre`` optionally
+    carries a precomputed caption-judge score for this field (from the batched
+    caption_judge_multi call) so the gate skips its own LLM call."""
     if _grounding is None:
         return {"passed": True, "reason": "no_grounding", "tier": 0}
     if field in _CREATIVE_FIELDS:
@@ -436,7 +441,7 @@ def _ground_field(field, claim, refs, hard_events, description=""):
         # caption linter + fidelity judge (the semantic check these fields
         # never had). A Tier-1 FAIL is left as-is (denylist/hard-event wins).
         if chk.get("passed"):
-            _caption_gate(field, claim, refs, description, chk)
+            _caption_gate(field, claim, refs, description, chk, pre=caption_pre)
         return chk
     return _grounding.cascade_check(
         claim, refs, GROUNDING_DENYLIST, GROUNDING_CONFIG,
@@ -1044,12 +1049,30 @@ Respond ONLY with JSON: {{
                 field_results = {}
                 if _grounding is not None and (local_transcript or transcript_why):
                     refs = [local_transcript, transcript_why]
+                    # Consolidation (2026-07-15): ONE batched judge call scores
+                    # all creative fields' {fidelity, human_voice} up front
+                    # (was one LLM call per field). Failure-soft: on None the
+                    # per-field fallback inside _caption_gate fires as before.
+                    _cj_multi = None
+                    if _CAPTION_JUDGE and (GROUNDING_CONFIG.get("caption_judge", {}) or {}).get("enabled", True):
+                        try:
+                            _cj_multi = _grounding.caption_judge_multi(
+                                {f: (parsed.get(f) or "").strip()
+                                 for f in ("title", "hook", "description")},
+                                "\n".join(r for r in refs if r),
+                                parsed.get("description", "") or "",
+                                lm_studio_model=VISION_MODEL,
+                                url=os.environ.get("CLIP_LLM_URL", LLM_URL),
+                            )
+                        except Exception:
+                            _cj_multi = None
                     for _field in ("title", "hook", "description"):
                         _claim = (parsed.get(_field) or "").strip()
                         if not _claim:
                             continue
                         _chk = _ground_field(_field, _claim, refs, hard_events,
-                                             description=parsed.get("description", ""))
+                                             description=parsed.get("description", ""),
+                                             caption_pre=(_cj_multi or {}).get(_field))
                         field_results[_field] = _chk
 
                 # --- Phase 1.1: regenerate once when the first response failed. ---
