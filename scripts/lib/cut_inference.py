@@ -125,7 +125,13 @@ Respond with ONLY JSON: {{"cuts": [{{"quote": "<verbatim words to delete>", "rea
 def _resolve_llm(model, url):
     if model and url:
         return model, url
-    return (model or os.environ.get("CLIP_TEXT_MODEL") or "",
+    # BUG-74 audit (2026-07-15): CLIP_CUT_MODEL is the phase pin — renders run
+    # during Stage 6 (D6) with the VISION model loaded, and the bare
+    # CLIP_TEXT_MODEL fallback would JIT-summon the text model beside it
+    # (the exact ghost class fixed in stages 4/6). stage6.py sets the pin.
+    return (model
+            or os.environ.get("CLIP_CUT_MODEL")
+            or os.environ.get("CLIP_TEXT_MODEL") or "",
             url or os.environ.get("CLIP_LM_URL") or "http://localhost:1234/v1")
 
 
