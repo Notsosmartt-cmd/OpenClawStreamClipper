@@ -47,7 +47,10 @@ CACHE = cf.REF_DIR / ".cache"
 # v2 (2026-07-11): engagement.chat_overlay split into source_chat_visible vs
 # added_chat_overlay — v1 conflated the stream's own chat panel with an
 # editor-composited overlay (owner catch; the 89%-vs-31% diff line was an artifact).
-CARD_SCHEMA_VERSION = 2
+# v3 (2026-07-15): `subtype` field — irl_moment was 66% of the corpus, a mixture of
+# genuinely different species (owner: "should irl be broken up?"). category stays
+# the stable JOIN KEY between reference and our cards; subtype refines within it.
+CARD_SCHEMA_VERSION = 3
 
 
 def _log(msg: str) -> None:
@@ -272,6 +275,7 @@ Automated signals (already measured — do NOT recompute these numbers, use them
 Respond with ONLY a JSON object (no prose, no markdown fences):
 {{
   "category": "street_interview|news_compilation|irl_moment|reaction|rap_freestyle|gaming|story|skill|controversy|other",
+  "subtype": "for irl_moment pick ONE: banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|other. For any other category: a 1-2 word sub-genre in snake_case, or 'none'",
   "hook": {{"mechanic": "how the first ~2s grabs attention, 1 sentence", "first_2s": "what literally happens in frame 1-2", "text_hook_style": "the on-screen text hook if any (quote it), else 'none'"}},
   "arc": {{"shape": "setup_payoff|escalation|instant|list|story", "setup_s": <seconds or null>, "payoff_s": <seconds the payoff/punchline lands, or null>}},
   "comedy": {{"device": "what makes it funny/engaging, 1 phrase", "verbal_vs_visual": "verbal|visual|both"}},

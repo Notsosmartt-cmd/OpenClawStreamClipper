@@ -50,9 +50,13 @@ passes through the owner handoff — including Track E shape guidance.
   Boundary-cut epsilon fix shipped (the TikTok splice was counted as a cut when the window
   ended exactly ON it: ref cuts 1.98 → 3.68 → **2.46** honest). 15 never-analyzed clips got
   timelines (cards arrive with the 1c re-card).
-- [ ] **1b. Cuts-metric native-vs-added audit (A2)** — ours:gaming reads 10 cuts/30s; verify
-  against raw-VOD windows (the music-bed A/B method). Fix or re-document the metric as
-  "visual cut rate the video carries". No verdicting cuts gap items until this lands.
+- [x] **1b. Cuts-metric audit (A2) — DONE 2026-07-15**: raw-VOD A/B on the two highest-cut
+  clips. Gaming (Lacy): raw **15.6/30s** vs rendered 14.4 → **source-native game cams**.
+  Reaction (tbvnks): raw 6.5 vs rendered **10.7** → the excess is OUR render effects
+  (zoom punches / freezes / meme cutaways read as shot changes by scenedetect). Metric
+  re-documented as "visual cut rate the video CARRIES"; the cuts gap's honest lever =
+  style-profile effect density, NOT clip_cuts/jump-cuts. Cuts verdicts unblocked for the
+  Phase-2 sit-down.
 - [ ] **1c. SUBTYPE layer — Reference Lab side**: `subtype` field in the card prompt
   (irl vocabulary: `banter_roast / prank_public / freakout_overreaction / performance_rap /
   wholesome / other`; non-irl categories may fill it or 'none'); `category` stays the stable
