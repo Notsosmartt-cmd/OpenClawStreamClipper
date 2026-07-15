@@ -313,18 +313,22 @@ export async function stopPipeline() {
     if (state.evtSource) { state.evtSource.close(); state.evtSource = null; }
 }
 
-// Multi-VOD batch progress line: "VOD 3/9 · <name>  (2 done, 6 left)".
-// Defensive: hidden when there's no batch progress (single-VOD runs, or an older
-// dashboard backend that doesn't send vod_progress yet).
+// Per-VOD progress line (owner req 2026-07-15: ALWAYS show which VOD is being
+// worked on). Batch: "VOD 3/9 · <name> — 2 done · 6 left". Single: "VOD · <name>".
+// Defensive: hidden only when there's no marker at all (older backend / no run).
 export function updateVodProgress(vp) {
     const el = document.getElementById("vod-progress");
     if (!el) return;
-    if (vp && vp.total > 1 && vp.index >= 1) {
-        const done = Math.max(0, vp.index - 1);
-        const left = Math.max(0, vp.total - vp.index);
+    if (vp && vp.index >= 1 && (vp.name || vp.total > 1)) {
         const name = (vp.name || "").replace(/\.[^.]+$/, "");
-        el.textContent = `VOD ${vp.index}/${vp.total}` + (name ? ` · ${name}` : "")
-            + `  (${done} done, ${left} left)`;
+        if (vp.total > 1) {
+            const done = Math.max(0, vp.index - 1);
+            const left = Math.max(0, vp.total - vp.index);
+            el.textContent = `VOD ${vp.index}/${vp.total}` + (name ? ` · ${name}` : "")
+                + ` — ${done} done · ${left} left`;
+        } else {
+            el.textContent = `VOD · ${name}`;
+        }
         el.style.display = "block";
     } else {
         el.style.display = "none";

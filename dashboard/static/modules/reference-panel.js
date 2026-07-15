@@ -68,19 +68,74 @@ export async function fetchReferenceCorpus() {
         syncRefChecks();
         updateRefControls();
 
-        // run picker (newest first; ✓ = that run's clips already carded)
-        const sel = document.getElementById("ref-run");
-        if (sel) {
-            const cur = sel.value;
-            sel.innerHTML = (d.runs || []).map(r =>
-                `<option value="${esc(r.stamp)}">${esc(r.stamp)}${r.carded ? " ✓" : ""} — ${r.renders} clips</option>`
-            ).join("") || `<option value="">no clip runs yet — clip a VOD first</option>`;
-            if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
-        }
+        // Run picker (newest first; ✓ = that run's clips already carded).
+        // Owner req 2026-07-15: SAME checkbox pattern as the corpus table (the
+        // Ctrl-click multi-select was inconsistent + confusing), and each run —
+        // now one entry per SESSION — is labeled with its clip count and the
+        // VODs it covered.
+        renderRunsList(d.runs || []);
         loadModelPicker(d.default_model || "");
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="5" class="fx-warn">Failed: ${esc(e.message)}</td></tr>`;
     }
+}
+
+// ---- clip-run picker (checkbox list, mirrors the corpus-table pattern) ------
+let runsSelected = [];   // stamps the user checked
+let runsKnown = [];      // all stamps currently listed
+
+function fmtStamp(s) {
+    // "20260715_103000" -> "2026-07-15 10:30"
+    const m = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/.exec(s || "");
+    return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : (s || "");
+}
+
+function renderRunsList(runs) {
+    const box = document.getElementById("ref-runs-list");
+    if (!box) return;
+    runsKnown = runs.map(r => r.stamp);
+    runsSelected = runsSelected.filter(s => runsKnown.includes(s));
+    if (!runs.length) {
+        box.innerHTML = `<div class="hw-hint">no clip runs yet — clip a VOD first</div>`;
+        syncRunChecks();
+        return;
+    }
+    box.innerHTML = runs.map(r => {
+        const vods = (r.vods || []).map(v => esc(v.replace(/^\d{8}_/, ""))).join(" + ");
+        return `<label style="display: block; padding: 3px 2px; cursor: pointer;">
+            <input type="checkbox" class="run-check" data-run="${esc(r.stamp)}"
+                   style="vertical-align: middle; margin-right: 6px;">
+            <strong>${esc(fmtStamp(r.stamp))}</strong>${r.carded ? " ✓" : ""} · ${r.renders} clips
+            ${vods ? `<div class="hw-hint" style="margin-left: 22px;">${vods}</div>` : ""}
+        </label>`;
+    }).join("");
+    box.querySelectorAll(".run-check").forEach(cb =>
+        cb.addEventListener("change", () => {
+            const s = cb.dataset.run;
+            const i = runsSelected.indexOf(s);
+            if (cb.checked && i < 0) runsSelected.push(s);
+            if (!cb.checked && i >= 0) runsSelected.splice(i, 1);
+            syncRunChecks();
+        }));
+    syncRunChecks();
+}
+
+function syncRunChecks() {
+    document.querySelectorAll("#ref-runs-list .run-check").forEach(cb => {
+        cb.checked = runsSelected.includes(cb.dataset.run);
+    });
+    const all = document.getElementById("ref-runs-all");
+    if (all) {
+        const n = runsSelected.length, t = runsKnown.length;
+        all.checked = t > 0 && n === t;
+        all.indeterminate = n > 0 && n < t;
+    }
+    updateRefControls();
+}
+
+export function toggleAllRuns(checked) {
+    runsSelected = checked ? [...runsKnown] : [];
+    syncRunChecks();
 }
 
 // ---- analysis-model picker (same source as the Clipper's Models panel) ------
@@ -150,7 +205,12 @@ function updateRefControls() {
         analyze.textContent = n > 1 ? `Analyze Selected (${n})` : "Analyze Selected";
     }
     if (analyzeNew) analyzeNew.disabled = refState.jobRunning;
-    if (compare) compare.disabled = refState.jobRunning;
+    if (compare) {
+        const r = runsSelected.length;
+        compare.disabled = refState.jobRunning || r === 0;
+        compare.textContent = r > 1 ? `Compare → Gap Report (${r} runs merged)`
+            : "Compare → Gap Report";
+    }
     if (stop) stop.style.display = refState.jobRunning ? "inline-block" : "none";
 }
 
@@ -177,13 +237,12 @@ export function analyzeNew() {
     startJob("/api/reference/analyze", { model: refModel() }, "analyzing new clips");
 }
 export function runCompare() {
-    const sel = document.getElementById("ref-run");
-    const runs = sel ? [...sel.selectedOptions].map(o => o.value).filter(Boolean) : [];
+    const runs = runsSelected.slice();
     if (!runs.length) return;
-    const label = runs.length === 1 ? `run ${runs[0]}` : `${runs.length} runs`;
-    // Send BOTH `runs` (new multi-run backend) and `run` (first pick — so an
-    // older, not-yet-restarted dashboard backend still works). Defensive against
-    // a mid-run browser refresh landing new frontend on old routes (BUG 70 class).
+    const label = runs.length === 1 ? `run ${fmtStamp(runs[0])}` : `${runs.length} runs (merged)`;
+    // Send BOTH `runs` (multi-run backend: ALL selected runs' clips aggregate
+    // into ONE comparison pool) and `run` (first pick — so an older,
+    // not-yet-restarted dashboard backend still works; BUG 70 class).
     startJob("/api/reference/compare",
              { runs, run: runs[0], model: refModel() }, `comparing vs ${label}`);
 }
@@ -218,7 +277,12 @@ async function pollJob() {
         if (logEl) { logEl.textContent = d.log || ""; logEl.scrollTop = logEl.scrollHeight; }
         if (d.running) {
             refState.jobRunning = true;
-            if (st) st.textContent = `▶ ${d.name}… ${d.elapsed}s`;
+            // Owner req 2026-07-15: show WHICH item + how far, not just a timer.
+            const p = d.progress;
+            const prog = p && p.total
+                ? ` — ${p.index}/${p.total}${p.current ? ` · ${p.current}` : ""}`
+                : "";
+            if (st) st.textContent = `▶ ${d.name}…${prog}  (${d.elapsed}s)`;
         } else {
             clearInterval(jobPoll); jobPoll = null;
             refState.jobRunning = false;

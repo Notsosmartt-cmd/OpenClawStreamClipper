@@ -35,13 +35,13 @@ import {
 import {
     fetchReferenceCorpus, analyzeSelected, analyzeNew, runCompare,
     stopReferenceJob, initReferenceTab, toggleRef, toggleAllRefs,
-    copyJudgedReport,
+    toggleAllRuns, copyJudgedReport,
 } from "./modules/reference-panel.js";
 
 // Inline onclick= handlers in HTML need these on window.
 Object.assign(window, {
     toggleVod, toggleAllVods,
-    toggleRef, toggleAllRefs,
+    toggleRef, toggleAllRefs, toggleAllRuns,
     onModelChange, resetModel, applyRecommendedContext,
     onHardwareDropdown,
     onFoldersChange, browseFolderFor, saveFolders,

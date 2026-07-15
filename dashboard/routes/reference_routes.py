@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -79,8 +80,10 @@ def _corpus() -> list[dict]:
 
 def _effects_runs() -> list[dict]:
     """Distinct clip-run stamps from effects_log (the stamp our_clip_cards/corpus_diff
-    key on — pipeline START time), newest first, marked if our-cards already exist."""
-    stamps: dict[str, int] = {}
+    key on — SESSION start time since 2026-07-15, so a multi-VOD batch is ONE run),
+    newest first, with clip counts + the VOD names in the batch (owner req: label a
+    30-clip batch entry with its member VODs instead of timestamp fragments)."""
+    stamps: dict[str, dict] = {}
     if EFFECTS_LOG.exists():
         for line in EFFECTS_LOG.read_text(encoding="utf-8", errors="replace").splitlines():
             try:
@@ -89,11 +92,16 @@ def _effects_runs() -> list[dict]:
                 continue
             run = r.get("run")
             if run and r.get("type") == "render_plan":
-                stamps[run] = stamps.get(run, 0) + 1
+                agg = stamps.setdefault(run, {"renders": 0, "vods": []})
+                agg["renders"] += 1
+                vod = Path(str(r.get("vod") or "")).stem
+                if vod and vod not in agg["vods"]:
+                    agg["vods"].append(vod)
     runs = []
     for stamp in sorted(stamps, reverse=True):
         carded = (DIAG / "cards" / stamp).is_dir()
-        runs.append({"stamp": stamp, "renders": stamps[stamp], "carded": carded})
+        runs.append({"stamp": stamp, "renders": stamps[stamp]["renders"],
+                     "vods": stamps[stamp]["vods"], "carded": carded})
     return runs
 
 
@@ -249,12 +257,22 @@ def api_ref_job():
     j = _state.reference_job
     running = _job_running()
     tail = ""
+    progress = None
     try:
         if JOB_LOG.exists():
-            tail = "\n".join(
-                JOB_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-60:])
+            _lines = JOB_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+            tail = "\n".join(_lines[-60:])
+            # Owner req 2026-07-15: surface WHICH item the job is on + counts.
+            # Jobs print "[i/N] <clip-or-step name>" progress markers — parse the
+            # newest one so the panel can show "Analyzing 17/86 — <name>".
+            for _ln in reversed(_lines[-200:]):
+                _m = re.search(r"\[(\d+)/(\d+)\]\s*(\S.*)?$", _ln.strip())
+                if _m:
+                    progress = {"index": int(_m.group(1)), "total": int(_m.group(2)),
+                                "current": (_m.group(3) or "").strip()[:80]}
+                    break
     except Exception:
-        pass
+        progress = None
     rc = None
     if j and j.get("proc") and not running:
         rc = j["proc"].poll()
@@ -263,6 +281,7 @@ def api_ref_job():
         "name": (j or {}).get("name"),
         "elapsed": int(time.time() - (j or {}).get("started", time.time())) if j else 0,
         "returncode": rc,
+        "progress": progress,
         "log": tail,
     })
 
