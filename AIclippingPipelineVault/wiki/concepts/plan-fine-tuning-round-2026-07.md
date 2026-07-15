@@ -82,8 +82,18 @@ non-deterministic smaller model that can lead to bias or over-fitting"?
 path). Current corpus already profiles cleanly: irl = instant arcs, payoff ~79% in, ~25s;
 story = story-arcs, payoff at the END, ~64s; news = list-shape 5/5; gaming refs run 46s vs
 our 34s median. Steps when promoted:
-1. Aggregate per-category profiles from the (re-decomposed) cards → a `reference-shape-guide`
-   wiki page — **owner reviews/approves per line** (same flow as gap items).
+0. **irl SUBTYPE layer first** (owner question 2026-07-15: "should irl be broken up?" → yes,
+   as a subtype, NOT a top-level split): 57/86 cards = one bucket = mixture-average profiles
+   (rap performances + banter + freakouts + pranks blended; the enum's `rap_freestyle` got 0
+   cards — everything collapsed into irl_moment). Add `subtype` to the card prompt (irl:
+   banter_roast / prank_public / freakout_overreaction / performance_rap / wholesome /
+   other); `category` stays the stable join key for comparisons; distill by subtype only
+   where n≥8. Needs a re-card pass (~86 × ~40s on the 35B) — do it right after the A1
+   re-decompose since some clips' analysis windows changed (outro auto-trim) and editorial
+   fields were grounded on old frames.
+1. Aggregate per-category profiles from the (re-decomposed, subtyped) cards → a
+   `reference-shape-guide` wiki page — **owner reviews/approves per line** (same flow as
+   gap items).
 2. Approved lines land as: Pass-B per-category prompt guidance blocks (S4), Pass-D rubric
    wording, per-category duration constants, Stage-6 hook guidance. All git-diffable text.
 3. Later: R5 retrieval few-shot (frozen embedder, gated) replaces static exemplars.
