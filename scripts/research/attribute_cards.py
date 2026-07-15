@@ -101,15 +101,49 @@ def _sfx_countable_labels() -> set[str]:
         return set(_NON_COUNTABLE_FALLBACK)
 
 
-def _sfx_like_cues(events: list[dict]) -> list[dict]:
-    """Editor-SFX-like cues: countable labels only, same-label chains merged."""
+_MUSIC_CONFUSABLE_FALLBACK = {"boing", "quack", "sad_trombone", "riser"}
+
+
+def _music_confusable_labels() -> set[str]:
+    """Melodic/toy-prompt labels that CLAP confuses with musical elements —
+    inside a detected music bed they need a HIGHER score to count as SFX
+    (config `music_confusable: true`; falls back to the built-in set)."""
+    try:
+        import audio_sense
+        defs = (audio_sense.load_labels() or {}).get("clap_labels") or []
+        out = {str(d.get("label")) for d in defs if d.get("music_confusable") is True}
+        return out or set(_MUSIC_CONFUSABLE_FALLBACK)
+    except Exception:
+        return set(_MUSIC_CONFUSABLE_FALLBACK)
+
+
+def _sfx_like_cues(events: list[dict], music_bed: dict | None = None) -> list[dict]:
+    """Editor-SFX-like cues: countable labels only, same-label chains merged.
+    Music/soundboard separation (owner req 2026-07-15): when a music BED is
+    detected, melodic/toy labels (music_confusable) need score >= 0.35 — CLAP
+    hears boings/trombones in melodies. Bed coverage >= 40% applies the guard
+    clip-wide (the bed is effectively everywhere); below that, only inside the
+    detected bed spans."""
     skip = _sfx_countable_labels()
+    confusable = _music_confusable_labels()
+    bed = music_bed if isinstance(music_bed, dict) else {}
+    bed_cov = float(bed.get("coverage_pct") or 0.0)
+    bed_spans = [(float(s.get("start", 0)), float(s.get("end", 0)))
+                 for s in (bed.get("spans") or [])]
+
+    def _guarded(t: float) -> bool:
+        if bed_cov >= 40.0:
+            return True
+        return any(s <= t <= e for s, e in bed_spans)
+
     ev = sorted((e for e in events if str(e.get("label")) not in skip),
                 key=lambda e: float(e.get("t", 0)))
     cues: list[dict] = []
     for e in ev:
         t, end = float(e.get("t", 0)), float(e.get("end", e.get("t", 0)))
         lab = str(e.get("label"))
+        if (lab in confusable and float(e.get("score", 0)) < 0.35 and _guarded(t)):
+            continue
         if cues and cues[-1]["label"] == lab and t - cues[-1]["end"] <= _SFX_MERGE_GAP_S:
             cues[-1]["end"] = max(cues[-1]["end"], end)
             continue
@@ -148,9 +182,10 @@ def _facts(timeline: dict, words: list[dict]) -> dict:
     censor = timeline.get("censor") or []
     caps = timeline.get("captions") if isinstance(timeline.get("captions"), dict) else None
     n_words = int(timeline.get("n_words") or len(words) or 0)
+    bed = timeline.get("music_bed") if isinstance(timeline.get("music_bed"), dict) else None
     per30 = (lambda n: round(n / dur * 30.0, 2)) if dur else (lambda n: None)
     labels = Counter(str(e.get("label")) for e in events)
-    sfx_like = _sfx_like_cues(events)
+    sfx_like = _sfx_like_cues(events, music_bed=bed)
     cap_wps = _caption_wps_dedup(caps, dur)
     return {
         "duration_s": round(dur, 2),
@@ -166,6 +201,11 @@ def _facts(timeline: dict, words: list[dict]) -> dict:
         "sfx_like_labels_top": Counter(c["label"] for c in sfx_like).most_common(6),
         "n_motion_spikes": len(motion),
         "music_added_by_editor": any(m.get("added") for m in music),
+        # gap-tonality bed scan (owner req 2026-07-15): sustained background
+        # music — coverage of observable gap moments + shape (none/full/half…)
+        "music_bed_pct": (bed or {}).get("coverage_pct"),
+        "music_bed_pattern": (bed or {}).get("pattern"),
+        "music_bed_confidence": (bed or {}).get("confidence"),
         "n_censor": len(censor),
         "n_words": n_words,
         "speech_words_per_s": round(n_words / dur, 2) if dur else None,
@@ -332,6 +372,10 @@ def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
     editorial["sfx_grammar"]["count_per_30s"] = facts["sfx_like_per_30s"]
     editorial.setdefault("captions", {})
     editorial["captions"]["density_wps"] = facts["caption_words_per_s"] or facts["speech_words_per_s"]
+    editorial.setdefault("music_grammar", {})
+    editorial["music_grammar"]["bed_coverage_pct"] = facts["music_bed_pct"]
+    editorial["music_grammar"]["bed_pattern"] = facts["music_bed_pattern"]
+    editorial["music_grammar"]["added_by_editor"] = facts["music_added_by_editor"]
     card = {
         "clip": clip.name,
         "_schema": CARD_SCHEMA_VERSION,
@@ -351,14 +395,37 @@ def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
 # ---------------------------------------------------------------------------
 # Facts refresh — patch existing cards' deterministic fields WITHOUT the VLM
 # ---------------------------------------------------------------------------
-def refresh_facts(cards_dir: Path) -> tuple[int, int]:
+def _resolve_media_for_stem(stem: str, cards_dir: Path) -> Path | None:
+    """Find the media file behind a card: the reference dir for the reference
+    cache, else clips/ + clips/archive_*/ for OUR run-scoped card dirs."""
+    exts = (".mp4", ".MP4", ".mkv", ".webm", ".mov", ".m4v", ".avi")
+    if Path(cards_dir).resolve() == CACHE.resolve():
+        for ext in exts:
+            p = cf.REF_DIR / f"{stem}{ext}"
+            if p.exists():
+                return p
+        return None
+    clips_root = REPO / "clips"
+    for folder in [clips_root, *sorted(clips_root.glob("archive_*"))]:
+        for ext in exts:
+            p = folder / f"{stem}{ext}"
+            if p.exists():
+                return p
+    return None
+
+
+def refresh_facts(cards_dir: Path, scan_audio: bool = False) -> tuple[int, int]:
     """Recompute the Python-authoritative numerics from each cached timeline and
     patch them into the existing card, leaving every VLM editorial field (and
     _ground_truth) untouched. This is how a counting-policy fix (BUG 75) reaches
-    the corpus without re-running 86 vision calls. Returns (patched, skipped)."""
+    the corpus without re-running 86 vision calls. With `scan_audio`, timelines
+    missing a `music_bed` block also get the gap-tonality bed scan (needs the
+    media file — a few seconds of numpy per clip) and are rewritten.
+    Returns (patched, skipped)."""
     patched = skipped = 0
     for cf_ in sorted(Path(cards_dir).glob("*.card.json")):
         stem = cf_.name[:-len(".card.json")]
+        tl_path = Path(cards_dir) / f"{stem}.timeline.json"
         timeline = _load_timeline(stem, Path(cards_dir))
         if timeline is None:
             skipped += 1
@@ -368,7 +435,27 @@ def refresh_facts(cards_dir: Path) -> tuple[int, int]:
         except Exception:
             skipped += 1
             continue
-        facts = _facts(timeline, _load_words(stem, Path(cards_dir)))
+        words = _load_words(stem, Path(cards_dir))
+        if scan_audio and not isinstance(timeline.get("music_bed"), dict):
+            media = _resolve_media_for_stem(stem, Path(cards_dir))
+            if media is not None:
+                try:
+                    import audio_sense
+                    aw = timeline.get("analysis_window") or {}
+                    bed = audio_sense.music_bed_scan(
+                        str(media), words=words,
+                        t_start=float(aw.get("start") or 0.0),
+                        t_end=(float(aw["end"]) if aw.get("end") else None),
+                        cache_path=str(Path(cards_dir) / f"{stem}.musicbed.json"))
+                    if bed is not None:
+                        timeline["music_bed"] = bed
+                        tl_path.write_text(json.dumps(timeline, indent=2),
+                                           encoding="utf-8")
+                except Exception as e:  # noqa: BLE001
+                    _log(f"{stem}: music_bed scan failed ({type(e).__name__}: {e})")
+            else:
+                _log(f"{stem}: media not found for music scan — skipping scan")
+        facts = _facts(timeline, words)
         card.setdefault("edit_grammar", {})
         card["edit_grammar"]["cuts_per_30s"] = facts["cuts_per_30s"]
         card["edit_grammar"]["avg_shot_s"] = facts["avg_shot_s"]
@@ -376,6 +463,10 @@ def refresh_facts(cards_dir: Path) -> tuple[int, int]:
         card["sfx_grammar"]["count_per_30s"] = facts["sfx_like_per_30s"]
         card.setdefault("captions", {})
         card["captions"]["density_wps"] = facts["caption_words_per_s"] or facts["speech_words_per_s"]
+        card.setdefault("music_grammar", {})
+        card["music_grammar"]["bed_coverage_pct"] = facts["music_bed_pct"]
+        card["music_grammar"]["bed_pattern"] = facts["music_bed_pattern"]
+        card["music_grammar"]["added_by_editor"] = facts["music_added_by_editor"]
         card["_facts"] = facts
         card["_facts_refreshed"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         cf_.write_text(json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -409,11 +500,14 @@ def _cli() -> int:
     ap.add_argument("--cards-dir", default=None,
                     help="with --refresh-facts: card/timeline dir (default = the "
                          "reference cache; pass clips/.diagnostics/cards/<run> for ours)")
+    ap.add_argument("--scan-audio", action="store_true",
+                    help="with --refresh-facts: run the music-bed gap-tonality scan "
+                         "for timelines that lack one (needs the media files)")
     args = ap.parse_args()
 
     if args.refresh_facts:
         d = Path(args.cards_dir) if args.cards_dir else CACHE
-        patched, skipped = refresh_facts(d)
+        patched, skipped = refresh_facts(d, scan_audio=args.scan_audio)
         _log(f"refresh-facts: {patched} card(s) patched, {skipped} skipped in {d}")
         return 0
 

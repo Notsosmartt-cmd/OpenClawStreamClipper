@@ -98,6 +98,11 @@ def _agg(cards: list[dict], ours: bool) -> dict:
         "duration_med": med([_duration(c) for c in cards]),
         "zooms_med": med([_num((c.get("edit_grammar") or {}).get("zooms")) for c in cards]),
         "caption_wps_med": med([_num((c.get("captions") or {}).get("density_wps")) for c in cards]),
+        # gap-tonality bed scan (owner req 2026-07-15) — % of observable gap
+        # moments carrying sustained music; measured the SAME way on both sides
+        "music_bed_pct_med": med([_num((c.get("music_grammar") or {}).get("bed_coverage_pct")) for c in cards]),
+        "music_pattern_top": Counter((c.get("music_grammar") or {}).get("bed_pattern") or "?"
+                                     for c in cards).most_common(3),
         "pct_text_hook": round(100 * sum(1 for h in hooks if h and h.lower() != "none") / len(cards)) if cards else None,
         "cut_alignment_top": align.most_common(2),
         "caption_casing_top": casings.most_common(2),
@@ -122,6 +127,7 @@ _LEVERS = {
     "pct_text_hook": ("config/hook_templates.json + CLIP_HOOK_CAPTION", "hook-card presence/phrasing (voice contract already governs style)"),
     "caption_casing_top": ("config/caption_style.json (P1.5 voice bank)", "curate + enable; the voice contract bans Title Case already"),
     "caption_wps_med": ("scripts/lib/kinetic_captions.py preset", "caption pacing/word-grouping"),
+    "music_bed_pct_med": ("assets/music/ + style_profiles music pools", "sustained background-music bed presence — reference beds usually run the whole video (owner); check per-category music_pattern_top in the stats"),
     "chat_overlay_pct": ("style_profiles chat_overlay flag (render feature, needs a chat dump)",
                          "EDITOR-ADDED overlays only (schema v2); the stream's own on-screen chat doesn't count"),
     "cut_alignment_top": ("clip_cuts seed/beats", "align cuts to punchline beats vs loose"),
@@ -137,7 +143,7 @@ def _gap_items(ref_by_cat: dict, ours_by_cat: dict, ref_all: dict, ours_all: dic
     def _cmp(scope: str, ref: dict, ours: dict):
         for metric in ("sfx_per_30s_med", "cuts_per_30s_med", "zooms_med",
                        "pct_text_hook", "caption_wps_med", "chat_overlay_pct",
-                       "sfx_offset_ms_med", "duration_med"):
+                       "sfx_offset_ms_med", "duration_med", "music_bed_pct_med"):
             r, o = ref.get(metric), ours.get(metric)
             if r is None or o is None:
                 continue
@@ -203,7 +209,9 @@ def _narrative(ref_by_cat, ours_by_cat, items) -> str | None:
 
 
 def _fmt_stats(title: str, s: dict) -> str:
+    pat = (s.get("music_pattern_top") or [("?", 0)])[0][0]
     return (f"| {title} | {s['n']} | {s['cuts_per_30s_med']} | {s['sfx_per_30s_med']} | "
+            f"{s['music_bed_pct_med']}% ({pat}) | "
             f"{s['zooms_med']} | {s['pct_text_hook']}% | {s['caption_casing_top'][0][0] if s['caption_casing_top'] else '?'} | "
             f"{s['chat_overlay_pct']}% |")
 
@@ -249,8 +257,8 @@ def main() -> int:
           f"Reference cards: **{len(ref)}** ({', '.join(f'{k}:{len(v)}' for k, v in sorted(ref_by_cat.items()))})",
           f"Our cards: **{len(ours)}** ({', '.join(f'{k}:{len(v)}' for k, v in sorted(ours_by_cat.items()))})",
           "",
-          "| set | n | cuts/30s | sfx/30s | zooms | text-hook | casing | chat-ovl |",
-          "|---|---|---|---|---|---|---|---|",
+          "| set | n | cuts/30s | sfx/30s | music-bed | zooms | text-hook | casing | chat-ovl |",
+          "|---|---|---|---|---|---|---|---|---|",
           _fmt_stats("REFERENCE (all)", ref_all),
           _fmt_stats("OURS (all)", ours_all)]
     for cat in sorted(set(ref_by_cat) & set(ours_by_cat)):

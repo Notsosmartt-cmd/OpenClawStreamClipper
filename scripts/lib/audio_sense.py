@@ -356,6 +356,159 @@ def music_segments(media: str, *, cache_path: str | None = None) -> list[dict]:
     return out
 
 
+def music_bed_scan(media: str, *, words: list[dict] | None = None,
+                   sr: int = 22050, cache_path: str | None = None,
+                   t_start: float = 0.0, t_end: float | None = None) -> dict | None:
+    """Sustained BACKGROUND-MUSIC BED detection (owner req 2026-07-15).
+
+    The reference corpus reality: TikTok clips usually run a music bed for the
+    WHOLE video, or none for the first half and a bed for the rest — rarely a
+    brief sting. CLAP's "background music playing" prompt under-detects ducked
+    beds under speech (34/86 reference timelines had ANY music span; median
+    coverage 0%), so this uses the signal a bed cannot hide from: **energy that
+    persists through the GAPS between words**, gated by a tonality test
+    (spectral flatness) + a band-energy test so room tone / AC hum / silence
+    don't count. Distinguishing music from soundboard SFX is structural: SFX
+    are SHORT discrete hits (the sfx counter merges 1s windows), while this
+    only accepts runs >= min_span_s (default 3s) bridged across speech.
+
+    Pure numpy + the ffmpeg decoder (NO librosa — its onset/numba path
+    deadlocks on this env, BUG 71c). Failure-soft: returns None on any error.
+
+    Returns {"coverage_pct", "pattern", "spans": [{"start","end"}],
+             "gap_windows", "gap_music_windows", "duration_s"}.
+    pattern ∈ none | full | first_half | second_half | partial | intermittent.
+    """
+    want_window = [round(float(t_start), 2),
+                   round(float(t_end), 2) if t_end is not None else None]
+    if cache_path and os.path.exists(cache_path):
+        try:
+            cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+            if cached.get("window") == want_window:   # trim bounds may change (auto)
+                return cached
+        except Exception:
+            pass
+    try:
+        import numpy as np
+        y = _extract_audio(media, sr)
+        # analysis window (e.g. the TikTok outro is itself musical — it must
+        # not vote): slice the audio and shift word times into window space.
+        off = max(0.0, float(t_start))
+        a0 = int(off * sr)
+        a1 = int(float(t_end) * sr) if t_end is not None else y.size
+        y = y[a0:max(a0, a1)]
+        words = [{**w, "start": float(w.get("start", 0)) - off,
+                  "end": float(w.get("end", 0)) - off} for w in (words or [])]
+        dur = y.size / sr
+        if dur < 3.0:
+            return {"coverage_pct": 0.0, "pattern": "none", "confidence": "low",
+                    "thirds": [None, None, None], "spans": [], "window": want_window,
+                    "gap_windows": 0, "gap_music_windows": 0, "duration_s": round(dur, 2)}
+        # Small windows so BREATH-LENGTH pauses become sampling points — dense
+        # speech leaves few long gaps, and a bed is only observable in gaps.
+        hop_s, win_s = 0.125, 0.25
+        hop, win = int(hop_s * sr), int(win_s * sr)
+        n = max(1, (y.size - win) // hop)
+        nfft = 1 << (win - 1).bit_length()
+        hann = np.hanning(win)
+        freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
+        band = (freqs >= 150) & (freqs <= 8000)      # music body
+        # Calibrated 2026-07-15 on POWER-spectrum features (magnitude flatness
+        # does NOT separate — music measured ~0.50 on it): in-band power
+        # flatness — music 0.03-0.10 / white-ish noise 0.56 / pure tone 0.0;
+        # top-5%-bins power share (concentration) — music 0.80-0.94 / noise
+        # 0.20 / single-tone hum 1.00. The adaptive rms floor (speech p95 - 32)
+        # rejects faint room residue while keeping beds ducked under speech.
+        rms_db = np.empty(n)
+        pflat = np.empty(n)
+        conc = np.empty(n)
+        for i in range(n):
+            seg = y[i * hop: i * hop + win] * hann
+            rms_db[i] = 20.0 * np.log10(float(np.sqrt((seg ** 2).mean())) + 1e-9)
+            pwr = np.abs(np.fft.rfft(seg, nfft)) ** 2 + 1e-24
+            pb = pwr[band]
+            pflat[i] = float(np.exp(np.log(pb).mean()) / pb.mean())
+            srt = np.sort(pb)[::-1]
+            conc[i] = float(srt[: max(1, pb.size // 20)].sum() / pb.sum())
+        p95 = float(np.percentile(rms_db, 95))
+        floor_db = max(-55.0, p95 - 32.0)
+        # vote gate is STRICTER than the raw class boundaries (music pflat is
+        # 0.03-0.10) — voiced speech tails leaking past loose whisper word
+        # timestamps are tonal too, and they poisoned the bare-clip validation
+        # at 0.30 (27.6% false coverage -> 0 after this + the pad + run rule).
+        musicish = ((rms_db > floor_db) & (pflat < 0.22)
+                    & (conc > 0.35) & (conc < 0.985))
+        # observability mask: frames NOT overlapping any transcribed word.
+        # 0.15s pad absorbs whisper-base timestamp looseness.
+        t0 = np.arange(n) * hop_s
+        t1 = t0 + win_s
+        in_speech = np.zeros(n, dtype=bool)
+        for w in (words or []):
+            ws, we = float(w.get("start", 0)) - 0.15, float(w.get("end", 0)) + 0.15
+            in_speech |= (t0 < we) & (t1 > ws)
+        gap = ~in_speech
+        n_gap = int(gap.sum())
+        vote = gap & musicish
+        # a bed sustains: require 2 consecutive voting frames (isolated votes
+        # are speech-boundary residue)
+        vote &= (np.roll(vote, 1) | np.roll(vote, -1))
+        # COVERAGE SEMANTICS: a bed persists through speech, and gaps are our
+        # sampling points — so coverage = the music ratio among OBSERVABLE gap
+        # frames ("of the moments we can hear the background, X% carry music"),
+        # NOT the summed span time (dense speech would under-measure a full
+        # bed to whatever its longest pause shows).
+        ratio = float(vote.sum() / n_gap) if n_gap >= 8 else 0.0
+        # thirds profile — the owner's described shapes are half/half or full,
+        # so classify from per-third gap-music ratios (None = unobservable).
+        thirds: list[float | None] = []
+        for k in range(3):
+            m = gap & (t0 >= dur * k / 3) & (t0 < dur * (k + 1) / 3)
+            thirds.append(round(float((m & vote).sum() / m.sum()), 3)
+                          if int(m.sum()) >= 4 else None)
+        eff = [ratio if v is None else v for v in thirds]
+        if ratio < 0.12 and all(v < 0.25 for v in eff):
+            pattern = "none"
+        elif all(v >= 0.55 for v in eff):
+            pattern = "full"
+        elif eff[0] < 0.25 and eff[2] >= 0.55:
+            pattern = "second_half"
+        elif eff[0] >= 0.55 and eff[2] < 0.25:
+            pattern = "first_half"
+        elif ratio >= 0.12:
+            pattern = "partial"
+        else:
+            pattern = "none"
+        # display spans (approximate): voting frames merged, bridging speech
+        # stretches <= 8s (a bed doesn't stop while someone talks) and gap
+        # dropouts <= 1.5s; short stings dropped (owner: beds are sustained)
+        spans: list[list[float]] = []
+        for i in np.flatnonzero(vote):
+            s_t, e_t = float(t0[i]), float(t1[i])
+            if spans and s_t - spans[-1][1] <= (8.0 if in_speech[max(0, i - 1)] else 1.5):
+                spans[-1][1] = e_t
+            else:
+                spans.append([s_t, e_t])
+        spans = [s for s in spans if (s[1] - s[0]) >= 3.0]
+        # confidence: LOW when a third is unobservable (dense speech) or the
+        # clip offers few sampling points — the pattern is then best-effort.
+        confidence = "high" if (n_gap >= 24 and all(v is not None for v in thirds)) else "low"
+        out = {"coverage_pct": round(ratio * 100.0, 1), "pattern": pattern,
+               "confidence": confidence, "thirds": thirds, "window": want_window,
+               "spans": [{"start": round(s + off, 2), "end": round(e + off, 2)}
+                         for s, e in spans],
+               "gap_windows": n_gap, "gap_music_windows": int(vote.sum()),
+               "duration_s": round(dur, 2)}
+        if cache_path:
+            try:
+                Path(cache_path).write_text(json.dumps(out), encoding="utf-8")
+            except OSError:
+                pass
+        return out
+    except Exception as e:  # noqa: BLE001
+        _log(f"music_bed_scan failed ({type(e).__name__}: {e}); None")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Phase 2 — word-level transcription (faster-whisper) for censor detection
 # ---------------------------------------------------------------------------
