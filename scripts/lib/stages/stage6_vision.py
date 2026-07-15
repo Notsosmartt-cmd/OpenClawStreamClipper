@@ -703,6 +703,8 @@ def _process_moment(moment):
         # rap/freestyle/storytell exemption NEVER fired (T=9567 rap_battle_freestyle got
         # trimmed). Carry it forward.
         "primary_pattern": moment.get("primary_pattern"),
+        # 1d (2026-07-15): content-species subtype — label-only carry (4→6→7→log).
+        "subtype": moment.get("subtype"),
     }
 
     # Check stage timeout before attempting vision (OR with the outage flag

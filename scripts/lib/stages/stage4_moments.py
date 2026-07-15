@@ -1235,6 +1235,15 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
             if isinstance(s, (str,)) and (not PATTERN_IDS or str(s).strip() in PATTERN_IDS)
         ]
 
+        # Fine-tuning plan 1d (2026-07-15): content-species subtype — LABEL-ONLY
+        # (zero scoring/behavior effect; flows 4→6→7→effects_log so Lab compares
+        # can join ours↔reference by subtype). Same vocabulary as the Lab cards.
+        _SUBTYPE_IDS = {"banter_roast", "prank_public", "freakout_overreaction",
+                        "performance_rap", "wholesome", "other"}
+        subtype = str(m.get("subtype") or "").strip().lower()
+        if subtype not in _SUBTYPE_IDS:
+            subtype = ""
+
         result_entry = {
             "timestamp": ts,
             "score": norm_score,
@@ -1244,6 +1253,8 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
             "source": "llm",
             "why": str(m.get("why", m.get("reason", "")))[:200]
         }
+        if subtype:
+            result_entry["subtype"] = subtype
         if primary_pattern:
             result_entry["primary_pattern"] = primary_pattern
         if secondary_patterns:
@@ -2175,7 +2186,7 @@ When in doubt, lean toward INCLUDING with a lower score (3-5) over skipping — 
 Transcript (timestamps MM:SS from stream start):
 {chunk_text}
 
-Respond with ONLY a single JSON object: {{"moments": [ ... ]}}. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "primary_pattern": "<pattern_id>", "secondary_patterns": ["<pattern_id>", ...], "why": "one sentence naming WHICH pattern signature is satisfied and HOW the transcript+shape evidence it"}}
+Respond with ONLY a single JSON object: {{"moments": [ ... ]}}. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "subtype": "banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|other — the closest CONTENT species regardless of category; 'other' ONLY if none fits (most clips fit one)", "primary_pattern": "<pattern_id>", "secondary_patterns": ["<pattern_id>", ...], "why": "one sentence naming WHICH pattern signature is satisfied and HOW the transcript+shape evidence it"}}
 
 IMPORTANT — start_time and end_time define the CLIP BOUNDARIES:
 - start_time: where the moment BEGINS (include setup/context). For storytimes, this is where the story starts.
@@ -3842,6 +3853,9 @@ for m in final:
         # still trimmed after the first fix). Emit it here so it flows Stage 4→6→7.
         # (segment_type already emitted above.)
         "primary_pattern": m.get("primary_pattern"),
+        # 1d (2026-07-15): content-species subtype — label-only, same emit-or-lose
+        # pathway BUG 66 documented for primary_pattern.
+        "subtype": m.get("subtype"),
     }
     output.append(entry)
 
