@@ -164,9 +164,19 @@ Semantics that matter when reading the numbers:
 
 Where it lands: timeline `music_bed` block → card `music_grammar` {bed_coverage_pct,
 bed_pattern, added_by_editor} → report **music-bed column** + `music_bed_pct_med` gap metric
-(measured the SAME way on both sides). First read's per-category insight: reference gaming =
-12.5% (game audio is the bed; we add music 73%), reference story = 72.5% full (ours 11% —
-the real music gap), reference irl = 68% vs ours 41%.
+(measured the SAME way on both sides).
+
+> [!warning] Read the metric as "music the video CARRIES", not "music the editor added"
+> The scan cannot tell added beds from source-native music — and **our pipeline has NEVER
+> added music** (owner-confirmed 2026-07-15 + verified: `music_bed` config is `""` in the
+> live config, the default, and the example — `profile_render` mixes no music input without
+> it; and raw-VOD A/B proved it: the top "music" clips read ~98% on the RENDERED clip and
+> ~98–99% on the SAME window of the RAW VOD — it's the streamers' own in-stream rap/game
+> music). So per-category reads mean: reference gaming edits carry LESS audible music
+> (12.5%) than our raw gameplay slices (73% — stream-native); reference story runs beds
+> (72.5%) where our story windows are quiet (11%). Whether to ADD beds (the `music_bed`
+> config + `assets/music/` are ready) is an owner call, not a detector instruction.
+> Owner preference on the SFX side (2026-07-15): keep the current frequent-SFX density.
 
 **Music vs soundboard SFX separation** is two-sided: (1) `sfx_countable:false` labels never
 count as SFX (BUG 75); (2) `music_confusable:true` labels (boing, quack, sad_trombone, riser
