@@ -65,11 +65,10 @@
         "fry_timer",
         "mcdonalds",
         "fast_food",
-        "alarm",
-        "synth"
+        "alarm"
       ],
-      "license": "synthesized in-repo (public domain, no source recording)",
-      "source": "generated 2026-07-15 (numpy piezo-buzzer synth, 2.9 kHz) — owner req: 'stereotypical fast-food beeping'. 3-beep burst; full 12-beep alarm lives in assets/sfx/fry_timer/",
+      "license": "meme sound, owner-directed 2026-07-15 (channels are non-monetized, owner policy)",
+      "source": "https://www.myinstants.com/media/sounds/mcdonalds-beeping-sound.mp3 ('McDonalds Beeping Sound') — cut 3.00-3.75s, +14.5dB to -1.3dB peak. REAL kitchen recording (1k/1.5kHz timer beeps); replaced the earlier same-day synth per owner: 'get the actual fryer sound'. Full alarm cut lives in assets/sfx/fry_timer/",
       "added": "2026-07-15"
     }
   ]
