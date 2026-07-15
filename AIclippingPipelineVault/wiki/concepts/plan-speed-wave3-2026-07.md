@@ -3,7 +3,7 @@ title: "Speed Wave 3 — fresh 3h VOD to 30–45 min, same hardware (plan)"
 type: concept
 tags: [performance, speed, plan, stage-2, stage-4, stage-6, stage-7, cuda, vulkan, overlap, vision, pass-b, wave-3]
 sources: 0
-status: planned
+status: shipped
 updated: 2026-07-14
 ---
 
