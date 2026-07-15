@@ -101,6 +101,10 @@ def run(ctx) -> None:
     ctx.vod_path = vod_path
     ctx.vod_basename = vod_path.name
     log.log(f"Processing: {ctx.vod_basename}")
+    # Owner req 2026-07-15: the dashboard must always show WHICH VOD is being
+    # worked on — single runs included. Batch runs pass their position via
+    # ctx.batch_pos; single runs show as 1/1 (the UI renders just the name).
+    common.set_vod(ctx.vod_basename, *(getattr(ctx, "batch_pos", None) or (1, 1)))
 
     # Verify the file is fully transferred (size stable across a short wait).
     try:

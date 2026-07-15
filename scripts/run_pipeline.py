@@ -311,6 +311,12 @@ def _reset_work_artifacts(p) -> None:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     paths.load_dotenv()  # pull HF_TOKEN / other secrets from .env into the env
+    # SESSION-level run stamp (owner req 2026-07-15): ONE stamp per invocation,
+    # so a multi-VOD batch's clips all group under a single effects_log run id
+    # (the Reference Lab then shows "30 clips · VOD A + VOD B" instead of three
+    # timestamp fragments). Ctx instances pick this up via os.environ, so the
+    # per-VOD vctx's in the batch loop no longer mint their own stamps.
+    os.environ.setdefault("CLIP_RUN_STAMP", time.strftime("%Y%m%d_%H%M%S"))
     ctx = Ctx(args)
     p = ctx.paths
     p.ensure_dirs()
@@ -466,6 +472,7 @@ def main(argv: list[str]) -> int:
                     style=args.style, vod=vod_name, type=args.type,
                     list=False, force=batch_force, all=False))
                 vctx.log = log
+                vctx.batch_pos = (i + 1, len(targets))   # stage1 refreshes the VOD marker
                 hook = None
                 if prefetch_on and i + 1 < len(targets):
                     _next = targets[i + 1]

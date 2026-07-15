@@ -282,7 +282,7 @@ def run_judge(
     print(
         f"[JUDGE] rank churn: {_moved}/{N} clips moved; "
         f"#1 {'CHANGED' if _top_changed else 'unchanged'} "
-        f"({total_games} comparisons). If churn stays ~0 across runs, Stage 5.5 "
+        f"({total_games // 2} pairwise comparisons). If churn stays ~0 across runs, Stage 5.5 "
         f"isn't earning its cost — set judge.json enabled=false to skip it.",
         file=sys.stderr,
     )
@@ -347,8 +347,13 @@ def main(argv: Sequence[str]) -> int:
     ranked = [m for m in new_moments if m.get("vision_rank")]
     ranked.sort(key=lambda m: m["vision_rank"])
     order_str = " > ".join(f"T={m['timestamp']}(#{m['vision_rank']})" for m in ranked[:8])
-    print(f"[JUDGE] re-ranked {info['ranked']} clips in {info['games']} comparisons, "
-          f"{time.time()-t0:.1f}s — {order_str}", file=sys.stderr)
+    # Accounting fix (owner-flagged 2026-07-15): info['games'] sums each CLIP's
+    # game count — every pair increments BOTH players, so it reads 2× the pair
+    # count and looked like the max_comparisons cap was being violated (it never
+    # was: "40 comparisons" = 20 pairs at cap 20). Log pairs, keep games visible.
+    _pairs = int(info.get("games", 0)) // 2
+    print(f"[JUDGE] re-ranked {info['ranked']} clips in {_pairs} pairwise comparisons "
+          f"({info['games']} clip-games), {time.time()-t0:.1f}s — {order_str}", file=sys.stderr)
     for m in ranked:
         print(f"  [JUDGE] #{m['vision_rank']} T={m['timestamp']} wins={m.get('vision_win_count')} "
               f"raw {m.get('pass_c_raw_score')}->{m.get('raw_score')} — {m.get('judge_rationale','')[:50]}",
