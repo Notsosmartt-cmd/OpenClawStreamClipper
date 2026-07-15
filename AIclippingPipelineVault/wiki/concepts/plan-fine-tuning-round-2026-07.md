@@ -42,9 +42,14 @@ passes through the owner handoff — including Track E shape guidance.
 
 ## Phase 1 — Agent build (no owner eyes needed)
 
-- [x] **1a. Reference re-decompose (A1)** — 101 clips, batched-CUDA, auto-outro, raised CLAP
-  thresholds, fresh music_bed. Then `--refresh-facts` + report regen. *(running — chain
-  auto-completes on the batch notification)*
+- [x] **1a. Reference re-decompose (A1) — DONE 2026-07-15**: 101/101, 0 failures, ~50 min
+  batched-CUDA. Source events 3,350 → **974** (bruh 2,458 → 108 high-conf); metrics STABLE
+  vs the post-hoc fixes (sfx 1.10/30s, music 50%, caption wps 2.44 ≈ speech rate) = counting
+  policy validated at the source. Outro census: **76 detected / 20 certain-no (each
+  recovered ~4 s of real tail) / 5 fallback** — the owner's "most but not all", measured.
+  Boundary-cut epsilon fix shipped (the TikTok splice was counted as a cut when the window
+  ended exactly ON it: ref cuts 1.98 → 3.68 → **2.46** honest). 15 never-analyzed clips got
+  timelines (cards arrive with the 1c re-card).
 - [ ] **1b. Cuts-metric native-vs-added audit (A2)** — ours:gaming reads 10 cuts/30s; verify
   against raw-VOD windows (the music-bed A/B method). Fix or re-document the metric as
   "visual cut rate the video carries". No verdicting cuts gap items until this lands.
