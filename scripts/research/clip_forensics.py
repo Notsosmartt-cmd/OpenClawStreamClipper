@@ -462,6 +462,46 @@ def _synthesize_style_profile(timeline: dict, *, timeout: float = 90.0) -> dict 
     return obj
 
 
+def _detect_outro(dur: float, cuts: list[dict], words: list[dict],
+                  captions) -> dict:
+    """Detect the TikTok DOWNLOAD OUTRO (logo animation + @handle, ~2.5-3.5 s,
+    auto-appended to downloaded TikToks) so `trim_end="auto"` can trim exactly
+    the clips that have one — the owner's corpus is "most but NOT all", and a
+    blanket 4 s cut costs real content on the clips without it.
+
+    Shape: a hard CUT in the last ~6 s, NO speech after it (outros are always
+    speechless), optionally confirmed by OCR text containing 'tiktok'/'@' after
+    the cut. Returns {"start": float|None, "certain_no": bool, "why": str}."""
+    last_word_end = max((float(w.get("end", 0) or 0) for w in words), default=0.0)
+    if dur and last_word_end >= dur - 1.0:
+        return {"start": None, "certain_no": True,
+                "why": f"speech runs to {last_word_end:.1f}s of {dur:.1f}s — no outro"}
+    cand = None
+    for c in cuts:
+        t = float(c.get("t", 0) or 0)
+        if dur - 6.0 <= t <= dur - 1.2:
+            cand = t if cand is None else max(cand, t)
+    if cand is None:
+        return {"start": None, "certain_no": False, "why": "no cut in the last 6s"}
+    if last_word_end > cand + 0.3:
+        return {"start": None, "certain_no": False,
+                "why": f"speech continues past the last cut ({last_word_end:.1f}s > {cand:.1f}s)"}
+    tail_txt = ""
+    if isinstance(captions, dict):
+        for s in captions.get("samples") or []:
+            if float(s.get("t", 0) or 0) >= cand - 0.2:
+                tail_txt += " " + str(s.get("text", "") or "")
+    txt = tail_txt.lower()
+    if txt.strip():
+        if "tiktok" in txt or "@" in txt:
+            return {"start": cand, "certain_no": False,
+                    "why": f"cut@{cand:.2f}s + TikTok/@handle text after it"}
+        return {"start": None, "certain_no": False,
+                "why": "tail text after the last cut has no TikTok/@ marker"}
+    return {"start": cand, "certain_no": False,
+            "why": f"cut@{cand:.2f}s + speechless tail (no OCR text to confirm)"}
+
+
 def _trim_signals(dur, trim_start, trim_end, events, words, onsets, cuts, motion, captions):
     """Restrict every signal to the analysis window [start, end], dropping
     intro/outro artifacts that aren't the creator's edit — most importantly the
@@ -495,7 +535,8 @@ def _trim_signals(dur, trim_start, trim_end, events, words, onsets, cuts, motion
 def decompose(clip: Path, *, device: str | None = None,
               window_s: float = 1.0, hop_s: float = 0.5,
               deadline_scale: float = 1.0, ocr: bool = False,
-              llm: bool = True, trim_start: float = 0.0, trim_end: float = 0.0,
+              llm: bool = True, trim_start: float = 0.0,
+              trim_end: float | str = 0.0,   # float seconds, or "auto" (outro detection)
               cache_dir: Path | None = None) -> dict:
     import audio_sense  # lazy; from LIB_DIR
     import visual_sense  # lazy; from LIB_DIR
@@ -536,6 +577,25 @@ def decompose(clip: Path, *, device: str | None = None,
     else:
         captions, st_caption = None, "skipped"
 
+    # trim_end="auto" (2026-07-15): detect the outro per clip instead of a blanket
+    # cut — the corpus is "most but not all TikTok downloads". Detected -> trim at
+    # the outro's own cut; certain-no (speech to the end) -> trim 0; unsure -> the
+    # legacy 4.0s blanket (safe default for a TikTok-download corpus).
+    outro_info = None
+    if isinstance(trim_end, str):
+        if trim_end.strip().lower() == "auto":
+            outro_info = _detect_outro(dur, cuts, words, captions)
+            if outro_info["start"] is not None:
+                trim_end = max(0.0, dur - float(outro_info["start"]))
+            elif outro_info["certain_no"]:
+                trim_end = 0.0
+            else:
+                trim_end = 4.0
+            outro_info["trim_end_applied"] = round(float(trim_end), 3)
+            _log(f"outro auto: {outro_info['why']} -> trim_end={trim_end:.2f}s")
+        else:
+            trim_end = float(trim_end or 0)
+
     # Drop intro/outro (e.g. the TikTok download outro) BEFORE building music/
     # censor, so the derived signals + the LLM profile never see the artifact.
     trimmed = (float(trim_start or 0) > 0) or (float(trim_end or 0) > 0)
@@ -550,6 +610,7 @@ def decompose(clip: Path, *, device: str | None = None,
         "duration_s": analyzed,                              # true (analyzed) footage
         "source_duration_s": dur,                            # full file incl. any trimmed outro
         "analysis_window": {"start": round(win_start, 3), "end": round(win_end, 3)} if trimmed else None,
+        "outro": outro_info,                                 # auto-trim decision (None = fixed trim)
         "fps": fps,
         "n_words": len(words),
         "audio_events": events,
@@ -611,11 +672,13 @@ def _cli() -> int:
                     default=os.environ.get("CLIP_FORENSICS_NO_LLM") == "1",
                     help="skip the LLM style-profile synthesis (Phase 4b). On by "
                          "default but failure-soft — a down LM Studio just yields null.")
-    ap.add_argument("--trim-end", type=float,
-                    default=float(os.environ.get("CLIP_FORENSICS_TRIM_END", "0")),
+    ap.add_argument("--trim-end", type=str,
+                    default=os.environ.get("CLIP_FORENSICS_TRIM_END", "0"),
                     help="ignore the last N seconds — e.g. the ~3s TikTok DOWNLOAD "
-                         "OUTRO (logo + @handle) auto-appended to downloaded clips. "
-                         "Set once (or via CLIP_FORENSICS_TRIM_END) for a whole batch.")
+                         "OUTRO (logo + @handle) auto-appended to downloaded clips — "
+                         "or 'auto' to DETECT the outro per clip (trims exactly the "
+                         "clips that have one; unsure falls back to 4s). Set once "
+                         "(or via CLIP_FORENSICS_TRIM_END) for a whole batch.")
     ap.add_argument("--trim-start", type=float,
                     default=float(os.environ.get("CLIP_FORENSICS_TRIM_START", "0")),
                     help="ignore the first N seconds (intro card).")

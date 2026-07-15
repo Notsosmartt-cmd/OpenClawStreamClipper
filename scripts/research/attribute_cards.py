@@ -78,6 +78,65 @@ def _load_words(stem: str, cache_dir: Path = CACHE) -> list[dict]:
         return []
 
 
+# BUG 75 (2026-07-15): the old sfx count was len(ALL audio_events) — the vocal
+# "bruh" CLAP prompt matched ordinary SPEECH on every 0.5s window (73% of all
+# reference events), inflating reference SFX density to ~30/30s and making the
+# gap report demand "match ~30 beats per 30 seconds". Editor-SFX-like counting:
+# drop non-countable labels (config `sfx_countable: false` — vocal-meme +
+# content/bed signals), then merge same-label window-chains into ONE cue (a
+# sustained sound fires several overlapping hops; gaps <= _SFX_MERGE_GAP_S).
+_SFX_MERGE_GAP_S = 0.6
+_NON_COUNTABLE_FALLBACK = {"music", "suspense_music", "laughter", "cheering", "bruh"}
+
+
+def _sfx_countable_labels() -> set[str]:
+    """Labels excluded from the editor-SFX count, read from the audio-sense label
+    config (`sfx_countable: false`); falls back to the built-in set."""
+    try:
+        import audio_sense
+        defs = (audio_sense.load_labels() or {}).get("clap_labels") or []
+        out = {str(d.get("label")) for d in defs if d.get("sfx_countable") is False}
+        return out or set(_NON_COUNTABLE_FALLBACK)
+    except Exception:
+        return set(_NON_COUNTABLE_FALLBACK)
+
+
+def _sfx_like_cues(events: list[dict]) -> list[dict]:
+    """Editor-SFX-like cues: countable labels only, same-label chains merged."""
+    skip = _sfx_countable_labels()
+    ev = sorted((e for e in events if str(e.get("label")) not in skip),
+                key=lambda e: float(e.get("t", 0)))
+    cues: list[dict] = []
+    for e in ev:
+        t, end = float(e.get("t", 0)), float(e.get("end", e.get("t", 0)))
+        lab = str(e.get("label"))
+        if cues and cues[-1]["label"] == lab and t - cues[-1]["end"] <= _SFX_MERGE_GAP_S:
+            cues[-1]["end"] = max(cues[-1]["end"], end)
+            continue
+        cues.append({"label": lab, "t": t, "end": end})
+    return cues
+
+
+def _caption_wps_dedup(caps: dict | None, dur: float) -> float | None:
+    """True caption THROUGHPUT: count words when they FIRST appear on screen.
+    The raw captions.words_per_s summed every sampled frame's word count, so a
+    caption persisting across N samples was counted N times (reference clips
+    measured 17-27 'wps' — an artifact, not reading speed). Two-frame memory
+    absorbs OCR flicker. Needs sample text (older timelines lack it -> None)."""
+    samples = (caps or {}).get("samples") or []
+    if not dur or not samples or not any("text" in s for s in samples[:3]):
+        return None
+    import re
+    seen_prev: list[set] = [set(), set()]
+    new_words = 0
+    for s in sorted(samples, key=lambda x: float(x.get("t", 0))):
+        toks = re.findall(r"[a-z0-9']+", str(s.get("text", "")).lower())
+        recent = seen_prev[0] | seen_prev[1]
+        new_words += sum(1 for w in toks if w not in recent)
+        seen_prev = [seen_prev[1], set(toks)]
+    return round(new_words / dur, 2)
+
+
 def _facts(timeline: dict, words: list[dict]) -> dict:
     """Everything we can measure deterministically — the numbers the LLM must NOT
     re-estimate (it gets them as grounding and fills only editorial fields)."""
@@ -91,6 +150,8 @@ def _facts(timeline: dict, words: list[dict]) -> dict:
     n_words = int(timeline.get("n_words") or len(words) or 0)
     per30 = (lambda n: round(n / dur * 30.0, 2)) if dur else (lambda n: None)
     labels = Counter(str(e.get("label")) for e in events)
+    sfx_like = _sfx_like_cues(events)
+    cap_wps = _caption_wps_dedup(caps, dur)
     return {
         "duration_s": round(dur, 2),
         "n_cuts": len(cuts),
@@ -99,12 +160,18 @@ def _facts(timeline: dict, words: list[dict]) -> dict:
         "n_audio_events": len(events),
         "audio_events_per_30s": per30(len(events)),
         "audio_event_labels_top": labels.most_common(6),
+        # editor-SFX-like density — what sfx_grammar.count_per_30s carries (BUG 75)
+        "n_sfx_like": len(sfx_like),
+        "sfx_like_per_30s": per30(len(sfx_like)),
+        "sfx_like_labels_top": Counter(c["label"] for c in sfx_like).most_common(6),
         "n_motion_spikes": len(motion),
         "music_added_by_editor": any(m.get("added") for m in music),
         "n_censor": len(censor),
         "n_words": n_words,
         "speech_words_per_s": round(n_words / dur, 2) if dur else None,
-        "caption_words_per_s": (caps or {}).get("words_per_s"),
+        # deduped throughput when sample text exists; raw kept for provenance
+        "caption_words_per_s": cap_wps,
+        "caption_words_per_s_raw": (caps or {}).get("words_per_s"),
         "ocr_available": bool((caps or {}).get("available")),
     }
 
@@ -260,7 +327,9 @@ def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
     editorial["edit_grammar"]["cuts_per_30s"] = facts["cuts_per_30s"]
     editorial["edit_grammar"]["avg_shot_s"] = facts["avg_shot_s"]
     editorial.setdefault("sfx_grammar", {})
-    editorial["sfx_grammar"]["count_per_30s"] = facts["audio_events_per_30s"]
+    # BUG 75: editor-SFX-like density (countable labels, chains merged) — NOT the
+    # raw event count, which the vocal 'bruh' prompt inflated ~10x on speech.
+    editorial["sfx_grammar"]["count_per_30s"] = facts["sfx_like_per_30s"]
     editorial.setdefault("captions", {})
     editorial["captions"]["density_wps"] = facts["caption_words_per_s"] or facts["speech_words_per_s"]
     card = {
@@ -277,6 +346,41 @@ def build_card(clip: Path, *, n_frames: int = 8, model: str | None = None,
     _log(f"{stem}: card written (category={card.get('category')} "
          f"conf={card.get('confidence')} frames={len(frames)})")
     return card
+
+
+# ---------------------------------------------------------------------------
+# Facts refresh — patch existing cards' deterministic fields WITHOUT the VLM
+# ---------------------------------------------------------------------------
+def refresh_facts(cards_dir: Path) -> tuple[int, int]:
+    """Recompute the Python-authoritative numerics from each cached timeline and
+    patch them into the existing card, leaving every VLM editorial field (and
+    _ground_truth) untouched. This is how a counting-policy fix (BUG 75) reaches
+    the corpus without re-running 86 vision calls. Returns (patched, skipped)."""
+    patched = skipped = 0
+    for cf_ in sorted(Path(cards_dir).glob("*.card.json")):
+        stem = cf_.name[:-len(".card.json")]
+        timeline = _load_timeline(stem, Path(cards_dir))
+        if timeline is None:
+            skipped += 1
+            continue
+        try:
+            card = json.loads(cf_.read_text(encoding="utf-8"))
+        except Exception:
+            skipped += 1
+            continue
+        facts = _facts(timeline, _load_words(stem, Path(cards_dir)))
+        card.setdefault("edit_grammar", {})
+        card["edit_grammar"]["cuts_per_30s"] = facts["cuts_per_30s"]
+        card["edit_grammar"]["avg_shot_s"] = facts["avg_shot_s"]
+        card.setdefault("sfx_grammar", {})
+        card["sfx_grammar"]["count_per_30s"] = facts["sfx_like_per_30s"]
+        card.setdefault("captions", {})
+        card["captions"]["density_wps"] = facts["caption_words_per_s"] or facts["speech_words_per_s"]
+        card["_facts"] = facts
+        card["_facts_refreshed"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        cf_.write_text(json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8")
+        patched += 1
+    return patched, skipped
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +403,19 @@ def _cli() -> int:
     ap.add_argument("--frames", type=int, default=8)
     ap.add_argument("--model", default=None)
     ap.add_argument("--url", default=None)
+    ap.add_argument("--refresh-facts", action="store_true",
+                    help="recompute deterministic numerics from timelines and patch "
+                         "existing cards IN PLACE (no VLM call; editorial untouched)")
+    ap.add_argument("--cards-dir", default=None,
+                    help="with --refresh-facts: card/timeline dir (default = the "
+                         "reference cache; pass clips/.diagnostics/cards/<run> for ours)")
     args = ap.parse_args()
+
+    if args.refresh_facts:
+        d = Path(args.cards_dir) if args.cards_dir else CACHE
+        patched, skipped = refresh_facts(d)
+        _log(f"refresh-facts: {patched} card(s) patched, {skipped} skipped in {d}")
+        return 0
 
     if args.clip:
         clip = cf._resolve_clip(args.clip)

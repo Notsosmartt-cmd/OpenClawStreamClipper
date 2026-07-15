@@ -46,7 +46,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Analyze reference clips (decompose-if-needed + card)")
     ap.add_argument("--clips", default="", help="comma-separated names/stems to (re)analyze")
     ap.add_argument("--all-new", action="store_true", help="only clips without a card yet")
-    ap.add_argument("--trim-end", type=float, default=4.0)
+    ap.add_argument("--trim-end", type=str, default="auto",
+                    help="seconds, or 'auto' (default): per-clip TikTok-outro detection; "
+                         "unsure falls back to the 4s blanket")
     args = ap.parse_args()
 
     targets: list[Path] = []

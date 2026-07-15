@@ -113,6 +113,32 @@ to mean anything (0.88→5.36 works only because the metric is identical run to 
 the no-training doctrine the measurement vocabulary grows by curated reviewed commits, not
 by the model rewriting its own rubric.
 
+## Measurement policy (sfx v2 + caption dedup + outro auto — BUG 75, 2026-07-15)
+
+Three counting rules every report since 2026-07-15 uses (the md footer discloses them):
+
+- **Reference SFX = editor-SFX-like cues, not raw CLAP events.** Labels flagged
+  `sfx_countable: false` in `config/audio_sense_labels.json` (bruh, music, suspense_music,
+  laughter, cheering) never count, and same-label window-chains merge at ≤0.6 s gaps. v1
+  counted every CLAP window — the VOCAL `bruh` prompt matched ordinary speech on every hop
+  (73% of all events) and inflated reference density to ~30/30 s ([[concepts/bugs-and-fixes#BUG 75]]).
+  Post-fix: reference median **1.81/30 s** (floor — CLAP under-detects real booms under
+  speech), ours 3.26 from effects_log ground truth. **The owner's ear, not this metric,
+  arbitrates density pushes.**
+- **Reference caption wps = first-appearance dedup** (2-frame flicker memory) when OCR sample
+  text exists; otherwise falls back to speech rate like ours. v1 recounted persisting captions
+  every sampled frame (17–27 "wps"); post-fix reference 2.92 ≈ ours 2.8 — word-box captions
+  run at speech rate on both sides.
+- **TikTok outro**: `trim_end="auto"` (now the default in analyze/decompose batch paths)
+  detects the download outro per clip — last cut in the final ~6 s + speechless tail +
+  TikTok/@ OCR confirm; speech-to-the-end = certain no-outro (trim 0); unsure = the legacy
+  4 s blanket. The corpus is "most but not all downloads" (owner), so the blanket was cutting
+  4 real seconds from the non-outro clips. All 86 pre-existing timelines were verified
+  already-trimmed (the outro never polluted current metrics).
+
+To re-apply the numeric policy to cached cards after a counting change (no VLM re-run):
+`python scripts/research/attribute_cards.py --refresh-facts [--cards-dir <dir>]`.
+
 ## Verdicts, the queue, and the JUDGED report export
 
 Pressing **✓ Fix it / ✗ Not a problem** writes the verdict into
