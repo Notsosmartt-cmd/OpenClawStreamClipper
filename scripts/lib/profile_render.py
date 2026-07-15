@@ -324,22 +324,6 @@ def render(*,
         except Exception:
             _sfx_adapt_db = 0.0
 
-    # Per-clip effects manifest (owner request 2026-07-04) — logging only, never
-    # affects the render. Records WHAT/WHEN so placement can be reviewed.
-    try:
-        import effects_log as _efl
-        _efl.log_effect(
-            moment.get("title") or os.path.basename(out), "render_plan",
-            {"category": cat_canon, "preset": plan["caption_preset"],
-             "clip_start": clip_start, "clip_duration": clip_duration,
-             "sfx_cues": plan["sfx_cues"], "sfx_adapt_db": round(_sfx_adapt_db, 1),
-             "zoom_punches": plan["zoom_punches"],
-             "freeze_at": plan["freeze_at"], "slow_mo": plan["slow_mo"],
-             "meme_cutaway": plan["meme_cutaway"], "broll_inserts": plan["broll_inserts"]},
-            vod=os.path.basename(src))
-    except Exception:
-        pass
-
     # Build SFX layer ahead of time so we know how many extra inputs to add.
     # base inputs: 0=src VOD; we'll allocate sfx after that.
     sfx_layer = sx.build_sfx_layer(
@@ -369,6 +353,30 @@ def render(*,
                     music_path = str(cand)
         except Exception as e:
             _log(f"music_pick failed: {e}")
+
+    # Per-clip effects manifest (owner request 2026-07-04) — logging only, never
+    # affects the render. Records WHAT/WHEN so placement can be reviewed.
+    # Moved below the music decision (1e, 2026-07-15) so the log carries MUSIC
+    # GROUND TRUTH — the Lab's music-bed metric measured our clips' beds as
+    # stream-native and needed raw-VOD A/B to prove the pipeline added none;
+    # this field settles it per clip forever. subtype = the 1d label-only pass.
+    try:
+        import effects_log as _efl
+        _efl.log_effect(
+            moment.get("title") or os.path.basename(out), "render_plan",
+            {"category": cat_canon, "subtype": moment.get("subtype"),
+             "preset": plan["caption_preset"],
+             "clip_start": clip_start, "clip_duration": clip_duration,
+             "sfx_cues": plan["sfx_cues"], "sfx_adapt_db": round(_sfx_adapt_db, 1),
+             "zoom_punches": plan["zoom_punches"],
+             "freeze_at": plan["freeze_at"], "slow_mo": plan["slow_mo"],
+             "meme_cutaway": plan["meme_cutaway"], "broll_inserts": plan["broll_inserts"],
+             "music": {"added": bool(music_path),
+                       "track": (os.path.basename(music_path) if music_path else None),
+                       "category": (profile.get("music_category") if music_path else None)}},
+            vod=os.path.basename(src))
+    except Exception:
+        pass
 
     # ─── Build the FFmpeg invocation ───────────────────────────────────────
     inputs: list[str] = ["-ss", str(clip_start), "-t", str(clip_duration), "-i", src]

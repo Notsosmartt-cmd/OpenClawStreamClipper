@@ -57,29 +57,36 @@ passes through the owner handoff — including Track E shape guidance.
   re-documented as "visual cut rate the video CARRIES"; the cuts gap's honest lever =
   style-profile effect density, NOT clip_cuts/jump-cuts. Cuts verdicts unblocked for the
   Phase-2 sit-down.
-- [ ] **1c. SUBTYPE layer — Reference Lab side**: `subtype` field in the card prompt
-  (irl vocabulary: `banter_roast / prank_public / freakout_overreaction / performance_rap /
-  wholesome / other`; non-irl categories may fill it or 'none'); `category` stays the stable
-  join key. Re-card the reference corpus (~86 × ~40 s on the 35B) AND the current our-clips
-  card dirs (comparability). Aggregates + diff gain within-category subtype breakdowns
-  (shown only where n≥8).
-- [ ] **1d. SUBTYPE layer — main pipeline side**: Stage-4 Pass-B output schema gains an
-  optional `subtype` (SAME vocabulary as the Lab, so ours↔reference joins work); carried
-  through scored_moments → Stage 6 → effects_log → our cards. **Label-only at first — zero
-  scoring/behavior change** (default-neutral; per-subtype styling/config keys reserved but
-  empty). Any behavioral use of subtype arrives only via the owner handoff.
-- [ ] **1e. Music ground truth in effects_log (A3)** — render logs the music decision
-  (none/folder/track) so future compares separate added vs stream-native without raw-VOD
-  A/B. Piggybacks on the same plumbing commit as 1d.
+- [~] **1c. SUBTYPE layer — Reference Lab side (RUNNING)**: v3 card prompt with the
+  ANTI-LAZY design (owner 2026-07-15: keep a generic bucket but stop lazy dumping):
+  `banter_roast / prank_public / freakout_overreaction / performance_rap / wholesome /
+  irl_other`, where **irl_other is a LAST RESORT** requiring the model to reject each
+  specific subtype first, plus a mandatory `subtype_why` justification (makes lazy choices
+  visible). First cards verify the design: banter clip → banter_roast with real reasoning;
+  solo-monologue clips → irl_other WITH proper rejection text ("no banter, prank, or
+  performance; purely solo advice") — early signal a `solo_monologue` species may deserve
+  its own name (the 1f draft will count irl_other justifications to decide). Re-card of
+  all 101 running on the owner's 35B. OLD our-card dirs NOT re-carded (owner's compare
+  targets the NEW run; optional later for merged compares).
+- [x] **1d. SUBTYPE layer — pipeline side — DONE 2026-07-15**: Pass-B element schema emits
+  `subtype` (same vocabulary, 'other' as the generic; anti-lazy wording in-prompt),
+  validated against the fixed set (unknown → dropped, like patterns), carried
+  hype_moments → Stage 6 entry → Stage 7 → effects_log — the exact emit-or-lose pathway
+  BUG 66 documented. **Label-only: zero scoring/behavior change.**
+- [x] **1e. Music ground truth — DONE 2026-07-15**: render_plan log moved AFTER the music
+  decision and now records `music: {added, track, category}` + the moment's `subtype` —
+  future compares separate added vs stream-native music per clip without raw-VOD A/B.
 - [ ] **1f. Shape-guide DRAFT** — per-category (and per-subtype where n≥8) profiles from the
   re-decomposed, subtyped cards: arc mix, payoff placement, duration percentiles, hook
   mechanics, music-bed norms. Soft-prior phrasing only. Lands as a wiki page marked
   **DRAFT — not applied**; nothing touches the pipeline yet.
-- [ ] **1g. Review-bundle preparation** (so the owner's single sit-down covers everything):
-  jump-cuts sample (one VOD re-render with `CLIP_JUMP_CUTS=gaps` — cut_inference is
-  phase-pinned safe), news-compile sample (kokoro VO), and the **fresh-VOD speed benchmark**
-  (agent-verifiable, no eyes needed — turns the 31–40 min fresh-3h projection into a
-  measured number and exercises caption_judge_multi live).
+- [ ] **1g. Pipeline session + review-bundle prep (owner-sequenced 2026-07-15)**: after the
+  re-card completes → **full pipeline session** (`--all --force` over the 4 remaining VODs,
+  ~2 h cached — generates the NEW clip run WITH subtype labels + music GT + first live
+  caption_judge_multi) → then jump-cuts sample + news-compile sample for the sit-down.
+  **The owner then combines the new run + the new reference cards into a Compare
+  themselves** — that Compare IS the Phase-2 entry point. (Fresh-VOD benchmark deferred:
+  no un-transcribed VOD remains on disk; a --force run reuses transcript caches.)
 
 ## Phase 2 — THE owner review handoff (the only eyeball gate)
 
