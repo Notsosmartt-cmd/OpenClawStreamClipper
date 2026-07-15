@@ -1384,6 +1384,27 @@ Rewrite your JSON so every claim in title, hook, and description is directly sup
     except Exception as _pke:
         print(f"  T={T} post-kit skipped ({_pke})", file=sys.stderr)
 
+    # D6 (plan-speed-wave3): per-moment sidecar for the S6-parallel-S7 render
+    # overlap. Emitted at TRUE completion time (inside the worker, not the
+    # order-preserving map collect) so the stage-6 wrapper's consumer can start
+    # rendering this clip while later moments are still enriching. The display
+    # score is recomputed here with the SAME formula the end-of-stage pass uses
+    # (raw_score soft-squash) — it is per-entry, no cross-moment dependency.
+    # Atomic-ish: tmp write + os.replace so the watcher never reads a partial.
+    # Additive and flag-gated; scored_moments.json at end-of-stage is unchanged.
+    if os.environ.get("CLIP_S6_SIDECARS", "").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            _sc_entry = dict(entry)
+            _ds = float(os.environ.get("CLIP_DISPLAY_SCORE_SCALE", "1.6") or "1.6") or 1.6
+            _rs = float(_sc_entry.get("raw_score", _sc_entry.get("score", 0.0)) or 0.0)
+            _sc_entry["score"] = round(min(max(_rs, 0.0) / _ds, 1.0), 3)
+            _sc_tmp = f"{TEMP_DIR}/enriched_{T}.json.tmp"
+            with open(_sc_tmp, "w", encoding="utf-8") as _sf:
+                json.dump(_sc_entry, _sf)
+            os.replace(_sc_tmp, f"{TEMP_DIR}/enriched_{T}.json")
+        except Exception as _sce:  # noqa: BLE001 — sidecar failure must never cost the moment
+            print(f"  T={T} sidecar skipped ({_sce})", file=sys.stderr)
+
     return entry
 
 
