@@ -24,7 +24,17 @@ def api_models():
             "current": config.get(key, _state.DEFAULT_MODELS.get(key, "")),
             "default": _state.DEFAULT_MODELS.get(key, ""),
         }
+    # speed-wave3: the text-phase model's serving lane depends on the detected
+    # GPU profile — surface it so the Models panel can disclose the two-model
+    # architecture ("runs on the CUDA lane" vs "not needed on this hardware").
+    cuda_lane = None
+    try:
+        import hw_profile  # scripts/lib on sys.path (see _state)
+        cuda_lane = hw_profile.cuda_lane_status()
+    except Exception:
+        cuda_lane = None
     return jsonify({
+        "cuda_lane": cuda_lane,
         "config": config,
         "roles": roles,
         "suggested": _state.SUGGESTED_MODELS,

@@ -9,6 +9,7 @@ let availableLmStudio = [];
 let availableWhisper = [];
 let suggestedModels = {};
 let contextLengthGuide = [];
+let cudaLaneInfo = null;   // {active, reason, ...} from hw_profile via /api/models
 
 export async function fetchModels() {
     try {
@@ -25,6 +26,7 @@ export async function fetchModels() {
         availableWhisper = availData.whisper || [];
         suggestedModels = configData.suggested || {};
         contextLengthGuide = configData.context_length_guide || [];
+        cudaLaneInfo = configData.cuda_lane || null;
 
         renderModels(configData.roles || {});
     } catch (e) {
@@ -40,8 +42,8 @@ function renderModels(roles) {
     const roleOrder = ["text_model", "vision_model", "whisper_model"];
     const stageMap = {
         text_model: ["Stage 3 — Segments", "Stage 4 — Moments"],
-        vision_model: ["Stage 6 — Vision"],
-        whisper_model: ["Stage 2 — Transcription", "Stage 7 — Captions"],
+        vision_model: ["Stage 5.5 — Vision Judge", "Stage 6 — Titles/Hooks"],
+        whisper_model: ["Stage 2 — Transcription", "Captions (master-slice)"],
     };
     // Emoji icons removed — the Studio theme hides .model-card-icon (display:none)
     // and uses text labels only. Kept as a lookup so the render code is unchanged.
@@ -124,6 +126,15 @@ function renderModels(roles) {
             ? '<span class="badge badge-green" style="font-size: 0.65rem;">recommended</span>'
             : `<span class="badge badge-yellow" style="font-size: 0.65rem; cursor: pointer;" onclick="resetModel('${key}')" title="Click to switch to recommended model">custom</span>`;
 
+        // speed-wave3 disclosure: the text-phase model's serving lane depends
+        // on the detected GPU profile (Hardware panel owns the override).
+        let laneHtml = "";
+        if (key === "text_model" && cudaLaneInfo) {
+            laneHtml = cudaLaneInfo.active
+                ? `<div class="model-status model-status-tip">⚡ Runs on the <strong>NVIDIA CUDA lane</strong> — ${cudaLaneInfo.reason}. The vision phase keeps the pooled GPUs.</div>`
+                : `<div class="model-status">Serving lane: standard (${cudaLaneInfo.reason}). See the Hardware panel.</div>`;
+        }
+
         return `
             <div class="model-card" id="model-card-${key}">
                 <div class="model-card-header">
@@ -136,6 +147,7 @@ function renderModels(roles) {
                 <select class="model-select" id="sel-${key}" onchange="onModelChange('${key}', this.value)">
                     ${options}
                 </select>
+                ${laneHtml}
                 ${statusHtml}
             </div>
         `;

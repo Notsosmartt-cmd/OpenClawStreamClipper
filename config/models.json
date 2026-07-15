@@ -4,7 +4,7 @@
   "whisper_model": "large-v3-turbo",
   "llm_url": "http://host.docker.internal:1234",
   "context_length": 32768,
-  "text_model_passb": "qwen/qwen3.5-9b",
+  "text_model_passb": null,
   "text_model_passd": null,
   "vision_model_stage6": null,
   "_phase_4_b5_note": "text_model_passd (Phase 4 B5 decorrelation): the model the Stage 4 text RUBRIC uses. Set it to a DIFFERENT family than text_model (e.g. 'google/gemma-4-12b-qat' when Pass B runs qwen) so the rubric's errors decorrelate from Pass B's — an independent second opinion, not a correlated echo. null (default) => falls back to text_model_passb => text_model (no decorrelation, no behavior change). VRAM: LM Studio pools both GPUs (5060 Ti 16 GB + 6700 XT 12 GB ~= 28 GB Vulkan). gemma-4-12b (~7 GB) + qwen-35b (~22 GB) ~= 29 GB just exceeds the pool, so co-loading is marginal (LM Studio swaps/partially spills around the rubric call); pair gemma-4 with a SMALLER text_model_passb to fit both cleanly. The 16 GB figure is only the CUDA/Whisper ceiling (NVIDIA card alone), NOT the LM Studio budget.",

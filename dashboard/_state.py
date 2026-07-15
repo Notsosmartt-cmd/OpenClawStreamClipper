@@ -124,7 +124,7 @@ DEFAULT_ORIGINALITY = {
 
 DEFAULT_MODELS = {
     "text_model": "qwen/qwen3.5-9b",
-    "vision_model": "qwen/qwen3.5-9b",
+    "vision_model": "qwen/qwen3.6-35b-a3b",
     "whisper_model": "large-v3-turbo",
     "llm_url": "http://host.docker.internal:1234",
     "context_length": 8192,
@@ -134,20 +134,33 @@ DEFAULT_HARDWARE = {
     "whisper_device": "cuda",
 }
 
+# Two-phase model architecture (speed-wave3, 2026-07-15): the pipeline runs a
+# SMALL fast model for the text phase and a BIG quality model for the vision
+# phase, swapping at the stage boundary (~25 s). On dual-vendor GPU rigs the
+# text model additionally runs on the NVIDIA-only CUDA lane (see hw_profile /
+# the Hardware panel). One dropdown per PHASE: text_model governs Stages 3-4
+# (text_model_passb stays null and inherits it), vision_model governs 5.5-6.
 MODEL_ROLES = {
     "text_model": {
-        "label": "Text Model",
-        "description": "Segment classification (Stage 3) and moment detection (Stage 4). Needs strong reasoning and JSON output.",
+        "label": "Text-phase model (fast — Stages 3–4)",
+        "description": "The SMALL fast model: segment votes, chunk cards, moment detection, "
+                       "grounding judges. Speed matters most here (~100+ calls per VOD). "
+                       "On a dual-GPU rig it runs on the NVIDIA-only CUDA lane. Needs solid "
+                       "JSON output; a thinking-locked model is rejected at run start (BUG 67 guard).",
         "provider": "lmstudio",
     },
     "vision_model": {
-        "label": "Vision Model",
-        "description": "Frame analysis and clip title generation (Stage 6). Must support image input.",
+        "label": "Vision-phase model (quality — Stages 5.5–6)",
+        "description": "The BIG quality model: the Vision Judge ranking clips from frames, and "
+                       "enrichment writing titles/hooks/descriptions plus the caption gates. "
+                       "Parameter count earns its cost here. Runs on the pooled GPUs (dual-GPU "
+                       "Vulkan on this rig — the only way a 22 GB model fits). Must support image input.",
         "provider": "lmstudio",
     },
     "whisper_model": {
         "label": "Whisper Model",
-        "description": "Audio transcription (Stage 2) and clip captions (Stage 7). Runs via faster-whisper.",
+        "description": "Audio transcription (Stage 2, via WhisperX with alignment + speaker "
+                       "diarization) and the master caption timing. Runs on CUDA when available.",
         "provider": "whisper",
     },
 }
@@ -155,15 +168,19 @@ MODEL_ROLES = {
 SUGGESTED_MODELS = {
     "text_model": {
         "id": "qwen/qwen3.5-9b",
-        "reason": "Best reasoning + JSON output for moment detection. Also handles vision "
-                  "(Stage 6) — use the same model for both roles to avoid VRAM swap. ~11 GB VRAM.",
+        "reason": "The tested default for the fast text phase — measured 6.4× per Pass-B call "
+                  "vs the unified 35B (3.6× model size + 1.8× CUDA lane). Fits the 16 GB NVIDIA "
+                  "card with headroom. Swap for another SMALL model (e.g. a Gemma-4 e-class) if "
+                  "you want to compare finders — the run-start no-think probe rejects "
+                  "incompatible thinking models fast instead of wedging Stage 4.",
+        "alternatives": ["google/gemma-4-e4b", "qwen/qwen3-8b"],
     },
     "vision_model": {
-        "id": "qwen/qwen3.5-9b",
-        "reason": "qwen3.5-9b supports both text and vision — setting the same model for "
-                  "both roles skips the Stage 5 unload/reload and saves ~2 min per run. "
-                  "Use qwen/qwen3-vl-8b or qwen/qwen2.5-vl-7b if you prefer a dedicated vision model.",
-        "alternatives": ["qwen/qwen3-vl-8b", "qwen/qwen2.5-vl-7b"],
+        "id": "qwen/qwen3.6-35b-a3b",
+        "reason": "The unified multimodal 35B (MoE, ~3B active) — the quality ceiling for judge "
+                  "ranking and title/hook voice, pooled across both GPUs. Picking the SAME model "
+                  "as the text phase skips the phase swap but gives up the fast text lane.",
+        "alternatives": ["qwen/qwen3-vl-8b"],
     },
     "whisper_model": {
         "id": "large-v3-turbo",
