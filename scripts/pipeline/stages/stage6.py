@@ -128,6 +128,13 @@ def run(ctx) -> None:
     common.set_stage(log, "Stage 6/8 — Vision Enrichment")
     log.log("=== Stage 6/8 — Vision Enrichment ===")
 
+    # Mirror of the Stage-4 fix (owner-observed both times): grounding's judge
+    # tier falls back to CLIP_TEXT_MODEL — since B3 that's the 9B, so Stage 6's
+    # cascade_check judge calls JIT-summoned a CPU-placed 9B alongside the 35B
+    # (GPU offload 0 — no VRAM left). Pin every Stage-6 grounding judge to the
+    # phase-resident vision model, same as the caption judge already is.
+    env["CLIP_GROUNDING_JUDGE_MODEL"] = ctx.vision_model_stage6
+
     # D6 — render-as-enriched overlap (see module docstring).
     _overlap = os.environ.get("CLIP_S6_S7_OVERLAP", "1").strip().lower() in (
         "1", "true", "yes", "on")
