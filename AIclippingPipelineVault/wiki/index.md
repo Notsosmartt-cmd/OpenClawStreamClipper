@@ -80,6 +80,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/plan-jump-cuts-v2-2026-07]] — Beat-aware jump cuts: unify cut timing w/ the SFX beat machinery (beat_map), payoff halo, text-anchored micro-call, seam styling, per-category posture (**shipped 2026-07-13 — J0–J6; default-off pending owner gaps run**)
 - [[entities/beat-map]] — shared tuned timing primitives (refined payoff, laughter, transients, breaths) used by BOTH the SFX placer and the jump-cut compressor
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
+- [[concepts/quality-leverage-ranking-2026-07]] — Which stage affects clip QUALITY most (S4 > S2 > S7 > S6 > S5.5 …) + complaint→stage routing map for owner reviews
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
 - [[concepts/plan-clip-forensics]] — Plan + research handoff: semantic audio/visual sensing (CLAP/PANNs…) + decompose curated reference clips → style profiles (**shipped 2026-06-21**: Phase 1-3 + 4b LLM essence + watchdog; only Phase 4a exact-SFX deferred)
