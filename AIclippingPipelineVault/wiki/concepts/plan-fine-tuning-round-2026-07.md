@@ -72,6 +72,29 @@ The corrected report (`corpus_diff_20260715`, sfx-policy v2 + music column) hold
   turns the fresh-3h ≈ 31–40 min projection into a measured number and gives
   caption_judge_multi its first live exercise. Best after C1.
 
+## Track E — Shape-guide distillation (PROPOSED 2026-07-15, owner evaluation requested it; awaits owner go)
+
+Owner question: can the cards' per-category SHAPES (arc, payoff placement, duration, hook
+mechanics) improve pipeline detection/inference guides "without implementing a
+non-deterministic smaller model that can lead to bias or over-fitting"?
+
+**Yes — via deterministic, reviewable artifacts only** (the no-training doctrine's designed
+path). Current corpus already profiles cleanly: irl = instant arcs, payoff ~79% in, ~25s;
+story = story-arcs, payoff at the END, ~64s; news = list-shape 5/5; gaming refs run 46s vs
+our 34s median. Steps when promoted:
+1. Aggregate per-category profiles from the (re-decomposed) cards → a `reference-shape-guide`
+   wiki page — **owner reviews/approves per line** (same flow as gap items).
+2. Approved lines land as: Pass-B per-category prompt guidance blocks (S4), Pass-D rubric
+   wording, per-category duration constants, Stage-6 hook guidance. All git-diffable text.
+3. Later: R5 retrieval few-shot (frozen embedder, gated) replaces static exemplars.
+
+**Safeguards (the owner's overfitting concern is valid — for prompts too, not just models):**
+sample-size floor (distill only n≥8 categories — controversy n=2 / street_interview n=1 are
+noise); SOFT priors only ("typically…"), never candidate-rejection rules (protects recall);
+owner gate per line; Lab re-measure after apply; grow corpus diversity before trusting niche
+categories. Known gap: reference side has NO diarization → conversational turn-taking shape
+is unmeasured (addable: the pipeline's diarizer works on 30s clips).
+
 ## Track D — Parked / deferred (no action this round unless promoted)
 
 R5 retrieval few-shot (`CLIP_REF_FEWSHOT`, gated); disbelief/fail beat wiring — pure
