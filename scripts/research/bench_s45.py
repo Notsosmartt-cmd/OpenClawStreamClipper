@@ -44,20 +44,11 @@ sys.path.insert(0, str(REPO / "scripts" / "lib"))  # evidence_packets etc.
 DIAG = REPO / "clips" / ".diagnostics"
 
 
-class _BenchLog:
-    """Minimal ctx.log lookalike (log/warn/err/line) that prints + records."""
-    def __init__(self):
-        self.lines: list[str] = []
-
-    def _p(self, prefix, msg):
-        s = f"{prefix}{msg}"
-        print(s, flush=True)
-        self.lines.append(s)
-
-    def log(self, msg):  self._p("", msg)
-    def warn(self, msg): self._p("WARN: ", msg)
-    def err(self, msg):  self._p("ERR: ", msg)
-    def line(self, msg): self._p("", msg)
+# The bench uses the PRODUCTION common.Logger (stage code calls log.write()
+# etc. — a partial shim broke on run_module; second bench-run lesson). The
+# ephemeral pipeline log is shared with the dashboard SSE (harmless — the
+# bench refuses to run beside a live pipeline anyway); the persistent copy
+# gets a bench-prefixed name so run logs stay distinguishable.
 
 
 def main() -> int:
@@ -88,14 +79,14 @@ def main() -> int:
     from pipeline import common
     from pipeline.stages import stage1, stage2, stage3, stage4, stage5
 
-    log = _BenchLog()
-    log.line(f"=== bench_s45 [{stamp}] vod={args.vod} sections={sections} "
-             f"recall={args.recall} ===")
-
     ctx = run_pipeline.Ctx(argparse.Namespace(
         style="auto", vod=args.vod, type="", list=False, force=True, all=False))
-    ctx.log = log
     p = ctx.paths
+    persistent = REPO / "clips" / ".pipeline_logs" / f"bench_s45_{stamp}.log"
+    log = common.Logger(p.pipeline_log, persistent)
+    ctx.log = log
+    log.line(f"=== bench_s45 [{stamp}] vod={args.vod} sections={sections} "
+             f"recall={args.recall} ===")
 
     timing: dict[str, float] = {}
     report: dict = {"stamp": stamp, "vod": args.vod, "sections": sections,
