@@ -100,7 +100,17 @@ passes through the owner handoff — including Track E shape guidance.
   → **READY: the owner combines run `20260715_145230` + the v3 reference cards into a
   Compare — the Phase-2 entry point.**
 
-## Phase 2 — THE owner review handoff (the only eyeball gate)
+> [!warning] PHASE 2 DROPPED BY THE OWNER (2026-07-16): "drop the phase 2 sit down."
+> The one eyeball gate is removed. Replacement rule for the learn boundary: the agent
+> applies shape findings with MECHANICAL gates instead of owner markup — **n≥8 sample
+> floor = the approval gate; soft priors only (guidance/hints, never hard filters or
+> candidate rejection); sub-floor lines auto-skip**. The owner reviews OUTPUT CLIPS
+> whenever they choose (non-gating). Gap-item verdicts that are pure owner PREFERENCE
+> (chat overlay, story music bed, caption casing timing) stay unverdicted until the owner
+> volunteers them — they don't block anything. Phase-3 work below is re-scoped
+> accordingly.
+
+## Phase 2 — ~~THE owner review handoff~~ (DROPPED — kept for the record)
 
 One sit-down, one bundle, owner returns "my modifications":
 1. **Clip review**: the 15-clip set + the jump-cuts variants + the news sample — complaints
