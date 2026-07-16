@@ -116,6 +116,13 @@ never a blocker.
 
 ## Phase 3 — Agent apply + re-measure (no owner eyes)
 
+> [!note] Phase-3 flagship candidate (filed 2026-07-15):
+> [[concepts/plan-s45-text-judge-2026-07]] — split S4 extraction (9B, high-recall) from
+> judgment (35B batched evidence-packet judge riding the EXISTING phase-boundary swap);
+> ≈ wall-clock-neutral, decorrelates the rubric, culls before frames. Build after the
+> sit-down: the review tells us whether S4's failure mode is judgment (build this) or
+> recall (tune the proposer instead).
+
 - [ ] Apply the owner-marked shape-guide lines + approved gap levers to Stage-4 guidance,
   rubric wording, duration constants, Stage-6 hook guidance, and any per-subtype config the
   owner approved.
