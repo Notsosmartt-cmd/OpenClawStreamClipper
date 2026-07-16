@@ -83,6 +83,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/quality-leverage-ranking-2026-07]] — Which stage affects clip QUALITY most (S4 > S2 > S7 > S6 > S5.5 …) + complaint→stage routing map for owner reviews
 - [[concepts/plan-fine-tuning-round-2026-07]] — Post-Wave-3 agenda v2: agent-build → ONE owner handoff → apply+re-measure; subtype in Lab+pipeline; learn boundary owner-mediated (**in-progress**)
 - [[concepts/reference-shape-guide-2026-07]] — DRAFT per-category/subtype shape profiles + candidate guidance lines for the Phase-2 markup (payoff placement, durations, hooks, solo_monologue promotion)
+- [[concepts/plan-s45-text-judge-2026-07]] — S4 extraction/judgment split: 35B evidence-packet judge at the existing phase boundary; ~speed-neutral (**planned**)
 - [[concepts/multimodal-fusion-2026-07]] — Evaluation: where audio/vision converge today + 5 fusion options expanded w/ the dual-GPU (28GB pool vs 16GB CUDA) serving distinction
 - [[concepts/reference-humor-2026-07]] — Evaluation: clipping jokes whose context lives outside the VOD (George Bush meme) — proxy lane, chat mining, recognition probe, format library
 - [[concepts/plan-clip-forensics]] — Plan + research handoff: semantic audio/visual sensing (CLAP/PANNs…) + decompose curated reference clips → style profiles (**shipped 2026-06-21**: Phase 1-3 + 4b LLM essence + watchdog; only Phase 4a exact-SFX deferred)
