@@ -117,8 +117,19 @@ costing frames + tournament slots.
   clips. Per-section timing report (`bench_s45_<stamp>.json`); saves a pre-judge moments
   snapshot so later benches run **judge-only with ZERO VOD processing** (transcript+events
   materialized from the per-VOD caches). The stage helper itself now logs+persists a
-  packets-vs-judge timing split (the new section-metric device). First run (Raud,
-  detect+judge, recall on) IN FLIGHT; S4-recall-off baseline = today's session log.
+  packets-vs-judge timing split (the new section-metric device).
+  **First sectional run DONE (2026-07-16, Runiktvlive 5.31 h fresh)**:
+  s1 7.9 s · **s2 fresh 395 s = 1.24 min/VOD-h** (≈half the Wave-0 fresh rate — batched
+  CLAP + GPU compounding) · s3 128 s · **s4 recall-on 3,703 s = 11.6 min/VOD-h** ·
+  **judge 102.7 s total** (swap ~68 s + judge 34.3 s for 16 candidates in 2 groups;
+  packets 0.0 s). Verdicts: 12 kept (median 8.0), **4 culled with crisp rationales**
+  ("premature cut — hype setup lacks payoff", "pure filler; mundane tech
+  troubleshooting", …) — exactly the mis-score class the judge was built to kill; cull
+  25% ≪ the 50% floor. Recall mode did NOT inflate the final candidate count (16 on
+  5.31 h ≈ Raud's per-hour rate). **Open question: s4 11.6 vs the 3.9 min/VOD-h Raud
+  baseline is NOT attributable yet** (different VOD, different content density, and the
+  bench skips run_pipeline's run-start LM probe) — same-VOD recall-OFF baseline bench
+  IN FLIGHT to isolate the recall cost respectively.
 - [ ] **J7. Shape-prior injection** (after the owner approves Track E guide lines): packet
   header gains the subtype's approved norms. Blocked on Phase-2 markup.
 
