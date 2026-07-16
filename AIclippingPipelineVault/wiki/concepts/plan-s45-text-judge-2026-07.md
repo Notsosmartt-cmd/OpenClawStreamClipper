@@ -197,10 +197,16 @@ different-family finder sees. It also empirically confirms the recall lesson: ex
 candidates must come from a DIFFERENT lens (new lanes / other families), not from lowering
 the incumbent's threshold (which yielded nothing at 4× cost).
 
-> [!todo] Candidate follow-up (owner's call, filed — NOT built): **dual-finder union mode**
-> — run both finders, union the candidate sets (~26/VOD), let the judge arbitrate all of
-> it. Cost ≈ +20 min/5 h VOD (gemma S4) for ~+7 judged-keepable moments incl. 7-8-scored
-> ones. Natural as an opt-in "deep scan" flag, not a default.
+> [!warning] Dual-finder union mode — PROPOSED, then REJECTED by the owner (2026-07-16,
+> "no due to speed constraints"). The proposal, kept for the record: run BOTH finders
+> sequentially on the lane (one ~25 s swap between them), union the candidate sets
+> (near-duplicates within ~90 s merged; measured union ≈ 26/VOD vs 16), judge arbitrates
+> everything → ~18 kept vs 11 (+60% judge-worthy clips). Full honest cost ≈ **+30 min per
+> 5 h VOD** (+20 min gemma S4 + ~8 min extra enrichment/renders for the added keepers) —
+> the speed price the owner declined. The underlying FINDING stands regardless: finder
+> false negatives are real and measurable (≥7 judge-approvable misses/5 h VOD), and any
+> future recall work should be lens-diversity shaped. Revisit only if the owner's speed
+> constraints change.
 
 ## Related
 - [[concepts/plan-fine-tuning-round-2026-07]] — parent plan (Phase 3)
