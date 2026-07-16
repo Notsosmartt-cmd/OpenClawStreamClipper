@@ -2159,22 +2159,16 @@ while chunk_start < max_time:
     # interaction shapes) instead of the legacy 6-rule keyword-style prompt.
     # When the catalog is unavailable (config missing) the legacy prompt is
     # preserved as a fallback below.
-    # J2 (plan-s45-text-judge): HIGH-RECALL posture — EXPLICIT knob only.
-    # VERDICT 2026-07-16 (same-VOD sectional A/B, Runiktvlive 5.31 h): with
-    # judge-implies-recall, S4 cost 3,703 s vs 930 s recall-off (4×) and
-    # produced the SAME 16 candidates — every borderline emission paid
-    # generation + grounding and then died in selection. The judge now ships
-    # WITHOUT recall; CLIP_PASSB_RECALL=high remains for experiments.
-    _recall_on = os.environ.get("CLIP_PASSB_RECALL", "").strip().lower() == "high"
-    recall_nudge = (
-        "- RECALL MODE: also emit BORDERLINE moments (score 4-6) — a stronger judge "
-        "reviews every candidate afterward; prefer emitting over skipping (up to 5 "
-        "moments in this mode). Borderline still requires a real pattern signature.\n"
-        if _recall_on else "")
-
+    # RECALL POSTURE REMOVED (owner 2026-07-16). It was built for the S4.5
+    # judge, then killed by its own same-VOD sectional A/B: 4× Stage-4 cost
+    # (3,703 s vs 930 s on a 5.31 h VOD) for the SAME 16 candidates — S4 is
+    # output-token-bound, so "0-5 + borderline" was a pure output+grounding
+    # tax whose extra emissions died in selection anyway. If recall ever
+    # returns, it must attack the PROPOSER'S BLIND SPOTS (new lanes), not the
+    # emission threshold. Evidence: wiki plan-s45-text-judge-2026-07 §J2.
     if PATTERN_CATALOG_PROMPT:
         prompt = f"""/no_think
-You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-{"5" if _recall_on else "3"} clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
+You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-3 clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
 
 {seg_instructions}
 
@@ -2187,7 +2181,7 @@ How to use the catalog:
 - For each candidate moment, identify which pattern's signature is satisfied. Set "primary_pattern" to that pattern's id.
 - If a second pattern also fits, list it under "secondary_patterns".
 - If NO pattern's signature is satisfied, do not emit the moment. Don't invent patterns.
-{recall_nudge}- Use the conversation_shape signals above as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
+- Use the conversation_shape signals above as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
 - "why" must name the pattern signature being satisfied AND cite specific transcript+shape evidence. Example: "Pattern setup_external_contradiction: streamer claims X at 14:02, off-screen voice contradicts at 14:28, streamer concedes at 14:33."
 
 Skip these:

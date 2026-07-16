@@ -12,19 +12,18 @@ clips written. Two modes:
   DETECT+JUDGE (first run for a VOD):
     python scripts/research/bench_s45.py --vod 20260712_Raud_2818672353.mp4
     → stages 1-4 (transcript comes from the cache; S4 is the real 9B pass,
-      recall posture ON) then the S4.5 judge. Saves a pre-judge moments
+      then the S4.5 judge. Saves a pre-judge moments
       snapshot so later benches can skip detection entirely.
 
   JUDGE-ONLY (re-uses a snapshot — ZERO VOD processing):
     python scripts/research/bench_s45.py --vod <name> --moments clips/.diagnostics/bench_s45_moments_<stem>.json
     → packets + judge sections only (~minutes).
 
-Flags: --recall on|off (default on — the judge implies it), --no-judge
-(measure the recall-mode S4 alone), --sections detect|judge|both.
+Flags: --no-judge (measure S4 alone), --sections detect|judge|both.
 
 Output: clips/.diagnostics/bench_s45_<stamp>.json — per-section seconds +
 candidate/kept/killed counts + the judge's per-kill rationales (via the
-stage's own s45_judge_* report). Compare a recall-on vs recall-off S4 or a
+stage's own s45_judge_* report). Compare judge configurations or a
 judge pass against the production baseline WITHOUT any full run.
 """
 from __future__ import annotations
@@ -57,10 +56,10 @@ def main() -> int:
     ap.add_argument("--moments", default="", help="pre-judge moments snapshot → judge-only mode")
     ap.add_argument("--sections", default="", choices=("", "detect", "judge", "both"),
                     help="default: both (or judge when --moments given)")
-    ap.add_argument("--recall", default="on", choices=("on", "off"),
-                    help="Pass-B recall posture for the detect section")
     ap.add_argument("--no-judge", action="store_true", help="alias for --sections detect")
     args = ap.parse_args()
+    # (--recall removed 2026-07-16 with the recall feature itself — the same-VOD
+    # A/B this bench ran killed it: 4x S4 cost, zero candidate yield.)
 
     sections = args.sections or ("judge" if args.moments else "both")
     if args.no_judge:
@@ -70,10 +69,9 @@ def main() -> int:
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     os.environ.setdefault("CLIP_RUN_STAMP", f"bench45_{stamp}")
-    # The judge flag drives BOTH the recall posture and the Pass-D skip in the
-    # production code paths — set it exactly as a real judged run would.
+    # The judge flag drives the Pass-D skip in the production code paths —
+    # set it exactly as a real judged run would.
     os.environ["CLIP_S45_JUDGE"] = "1" if want_judge else "0"
-    os.environ["CLIP_PASSB_RECALL"] = "high" if args.recall == "on" else ""
 
     import run_pipeline
     from pipeline import common
@@ -85,12 +83,11 @@ def main() -> int:
     persistent = REPO / "clips" / ".pipeline_logs" / f"bench_s45_{stamp}.log"
     log = common.Logger(p.pipeline_log, persistent)
     ctx.log = log
-    log.line(f"=== bench_s45 [{stamp}] vod={args.vod} sections={sections} "
-             f"recall={args.recall} ===")
+    log.line(f"=== bench_s45 [{stamp}] vod={args.vod} sections={sections} ===")
 
     timing: dict[str, float] = {}
     report: dict = {"stamp": stamp, "vod": args.vod, "sections": sections,
-                    "recall": args.recall, "timing_s": timing}
+                    "timing_s": timing}
 
     def _section(name, fn):
         t0 = time.time()
@@ -105,10 +102,9 @@ def main() -> int:
             _section("s3_segments", lambda: stage3.run(ctx))
             _section("s4_detect", lambda: stage4.run(ctx))
             moments = json.loads(p.hype_moments.read_text(encoding="utf-8"))
-            # recall mode + stamp in the name — two benches on one VOD must
-            # never overwrite each other's snapshots (2026-07-16 lesson)
-            snap = DIAG / (f"bench_s45_moments_{Path(args.vod).stem}"
-                           f"_recall-{args.recall}_{stamp}.json")
+            # stamp in the name — two benches on one VOD must never
+            # overwrite each other's snapshots (2026-07-16 lesson)
+            snap = DIAG / f"bench_s45_moments_{Path(args.vod).stem}_{stamp}.json"
             DIAG.mkdir(parents=True, exist_ok=True)
             snap.write_text(json.dumps(moments, indent=2), encoding="utf-8")
             report["moments_snapshot"] = str(snap)

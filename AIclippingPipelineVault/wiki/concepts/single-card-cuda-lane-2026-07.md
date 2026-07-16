@@ -149,6 +149,35 @@ measurements (Raud 3.47 h + FirstFullAudio 1.19 h, [[concepts/pipeline-speed-fin
   runtime selection restored in a `finally` on every path; hardware profiles keep the lane
   auto-inert off dual-vendor rigs ([[concepts/plan-speed-wave3-2026-07]] §2b).
 
+## §7 Speculative decoding on the lane — the revisit condition is MET (2026-07-16)
+
+The owner's earlier spec-decode test was a **measured 8× regression** — but that was the
+DUAL-GPU VULKAN split: every draft-verify round paid the cross-vendor coordination tax
+(decode 50→6 tok/s), and the standing verdict was "only revisit on a single card."
+**The text phase now IS a single card** (this lane), which changes the calculus for
+S3/S4 only:
+
+- **Mechanism**: a small draft model proposes k tokens; the target verifies all k in ONE
+  forward pass and accepts the longest agreeing prefix (rejection-sampling keeps the
+  output distribution EXACTLY the target's — no quality change). Speedup ≈ tokens
+  accepted per verify, biggest on PREDICTABLE output — and S4 emits structured JSON +
+  verbatim transcript quotes, the ideal acceptance profile, on a stage that is
+  output-token-bound.
+- **Ingredients already staged**: draft `qwen3.5-2b` on disk (same family/tokenizer,
+  vocab 248320 verified in the earlier attempt); VRAM fits (9B ~6 GB + 2B ~2 GB + KV on
+  the 16 GB card).
+- **Plausible gain**: 1.3–2× on S4's decode share → S4 ~930 s → ~550–750 s/5.31 h VOD.
+- **Still NO for the vision phase**: the 35B stays on the dual-GPU pool (the regression
+  conditions persist) AND it's MoE-3B-active — already decodes at small-model cost, so
+  drafting has little to win there. S4.5/S5.5/S6 keep spec-decode OFF permanently.
+- **Known blockers from the last attempt**: draft config was GUI-only (CLI flag rejected
+  on Vulkan; API `draft_model` → 400). Recipe: owner sets the draft ONCE in the LM Studio
+  GUI on qwen3.5-9b's per-model settings (with the CUDA runtime selected) → saved
+  defaults should apply to the lane's `lms load`. Then measure SECTIONALLY:
+  `bench_s45.py --vod <vod> --sections detect` with/without — no full runs. Unknowns to
+  the bench: LM Studio's CUDA spec-decode quality, interplay with the 2 concurrent
+  Pass-B workers, real acceptance rate on slangy content.
+
 ## Related
 
 [[concepts/plan-serving-stack-2026-07]] §11 (runtime-switch mechanics + PoC detail) ·
