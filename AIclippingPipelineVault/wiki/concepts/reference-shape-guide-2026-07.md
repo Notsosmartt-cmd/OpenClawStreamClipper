@@ -29,7 +29,7 @@ Distillation floor: **n≥8** — groups below it are listed as *insufficient sa
 |---|---|---|---|---|---|---|---|
 | irl_moment (all) | 86 | instant 36 / setup_payoff 19 / escalation 15 | ~79% | 30s | 57% | 1.2 | 90% |
 | **irl/banter_roast** | 45 | instant 20 / setup_payoff 16 | **~84%** | 30s | 68% | 1.3 | 93% |
-| **irl/irl_other** (≈solo monologue/story) | 16 | **story 8** / instant 7 | — | **54s** | **28%** | 1.9 | 100% |
+| **irl/solo_monologue** (promoted from irl_other 2026-07-16; post-re-card n=17, irl_other emptied to 0) | 17 | **story 8** / instant 7 | — | **54s** | **28%** | 1.9 | 100% |
 | **irl/freakout_overreaction** | 10 | **escalation 6** / instant 3 | **~34% (front-loaded)** | 31s | 52% | 0.9 | 80% |
 | gaming | 8 | instant 3 / story 2 / list 2 | ~77% | **56s** | **85%** (game audio) | 0.6 | 100% |
 | news_compilation | 5 *(< floor)* | list 5/5 | — | 61s | 0% | 0 | 100% |
