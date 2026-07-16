@@ -81,7 +81,9 @@ def run(ctx) -> None:
     # judge when it's enabled (plan-s45-text-judge): the 35B packet judge is
     # the decorrelated second opinion Pass D's config note always wanted, so
     # running the 9B rubric too would just re-add the correlated echo + time.
-    if os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1":
+    # DEFAULT ON since 2026-07-16 (owner flip) — parse MUST match stage5's.
+    if (os.environ.get("CLIP_S45_JUDGE", "1").strip().lower()
+            not in ("0", "false", "no", "off")):
         log.log("Pass D rubric SKIPPED — S4.5 text judge absorbs the second-opinion role")
     else:
         log.log("Applying Tier-4 Pass D rubric judge...")
