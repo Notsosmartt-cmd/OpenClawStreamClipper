@@ -2159,9 +2159,21 @@ while chunk_start < max_time:
     # interaction shapes) instead of the legacy 6-rule keyword-style prompt.
     # When the catalog is unavailable (config missing) the legacy prompt is
     # preserved as a fallback below.
+    # J2 (plan-s45-text-judge): HIGH-RECALL posture — active when the S4.5 text
+    # judge is on (it reviews every candidate afterward) or forced via
+    # CLIP_PASSB_RECALL=high. Evidence requirements stay intact: borderline
+    # still needs a real beat; this only stops the proposer from self-censoring.
+    _recall_on = (os.environ.get("CLIP_PASSB_RECALL", "").strip().lower() == "high"
+                  or os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1")
+    recall_nudge = (
+        "- RECALL MODE: also emit BORDERLINE moments (score 4-6) — a stronger judge "
+        "reviews every candidate afterward; prefer emitting over skipping (up to 5 "
+        "moments in this mode). Borderline still requires a real pattern signature.\n"
+        if _recall_on else "")
+
     if PATTERN_CATALOG_PROMPT:
         prompt = f"""/no_think
-You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-3 clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
+You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-{"5" if _recall_on else "3"} clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
 
 {seg_instructions}
 
@@ -2174,7 +2186,7 @@ How to use the catalog:
 - For each candidate moment, identify which pattern's signature is satisfied. Set "primary_pattern" to that pattern's id.
 - If a second pattern also fits, list it under "secondary_patterns".
 - If NO pattern's signature is satisfied, do not emit the moment. Don't invent patterns.
-- Use the conversation_shape signals above as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
+{recall_nudge}- Use the conversation_shape signals above as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
 - "why" must name the pattern signature being satisfied AND cite specific transcript+shape evidence. Example: "Pattern setup_external_contradiction: streamer claims X at 14:02, off-screen voice contradicts at 14:28, streamer concedes at 14:33."
 
 Skip these:

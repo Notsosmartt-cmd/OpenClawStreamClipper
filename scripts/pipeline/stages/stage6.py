@@ -110,7 +110,11 @@ def run(ctx) -> None:
     common.set_stage(log, "Stage 6/8 — Vision Enrichment (loading model)")
 
     # Phase 5.1: swap Pass-B text model -> Stage-6 vision model only if different.
-    if ctx.text_model_passb != ctx.vision_model_stage6:
+    # S4.5 (plan-s45-text-judge): when the text judge ran in stage 5 it already
+    # performed this exact swap — don't unload/reload the 22 GB model again.
+    if getattr(ctx, "s45_swapped", False):
+        log.log("S4.5 text judge already swapped to the vision model — skipping VRAM swap")
+    elif ctx.text_model_passb != ctx.vision_model_stage6:
         common.unload_model(log, ctx.llm_url, ctx.text_model_passb)
         common.load_model(log, ctx.llm_url, ctx.vision_model_stage6, ctx.context_length)
     else:

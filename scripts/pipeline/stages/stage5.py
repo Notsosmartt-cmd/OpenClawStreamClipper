@@ -125,13 +125,98 @@ def _dispatch(ctx, tasks: List[Tuple[int, int, str]], n_workers: int, kind: str)
     return len({t for t, _, _ in tasks})
 
 
+def _s45_text_judge(ctx, log, moments):
+    """S4.5 batched text judge (plan-s45-text-judge-2026-07, CLIP_S45_JUDGE=1).
+
+    Runs at the START of the vision phase: does the 9B→35B swap that stage 6
+    would do anyway (the boundary already exists — judgment rides it free),
+    judges every Pass-B candidate comparatively from evidence packets, and
+    culls BEFORE frame extraction so S5/S5.5 only pay for survivors.
+    Failure-soft: any error returns the input moments unchanged.
+    BUG-74 law: the judge model is passed EXPLICITLY (ctx.vision_model_stage6),
+    never resolved from env fallbacks."""
+    import sys
+    import time
+    from pathlib import Path
+    lib = Path(__file__).resolve().parents[2] / "lib"
+    if str(lib) not in sys.path:
+        sys.path.insert(0, str(lib))
+    try:
+        import evidence_packets
+        import s45_text_judge
+    except Exception as e:  # noqa: BLE001
+        log.warn(f"[s45] modules unavailable ({type(e).__name__}: {e}) — judge skipped")
+        return moments
+
+    common.set_stage(log, "Stage 4.5/8 — Text Judge (loading vision model)")
+    log.log(f"=== Stage 4.5/8 — Text Judge ({len(moments)} candidates) ===")
+    try:
+        if ctx.text_model_passb != ctx.vision_model_stage6:
+            common.unload_model(log, ctx.llm_url, ctx.text_model_passb)
+            common.load_model(log, ctx.llm_url, ctx.vision_model_stage6, ctx.context_length)
+        ctx.s45_swapped = True  # stage 6 skips its own swap
+
+        t0 = time.time()
+        events_path = ctx.paths.work("audio_events.json")
+        packets = evidence_packets.build_packets(
+            moments, ctx.paths.transcript_json,
+            audio_events_path=events_path if events_path.exists() else None)
+        t_packets = time.time() - t0
+        result = s45_text_judge.judge_moments(
+            moments, packets, model=ctx.vision_model_stage6, url=ctx.llm_url,
+            log=lambda m: log.log(str(m)))
+        survivors = result["survivors"]
+        t_judge = time.time() - t0 - t_packets
+        elapsed = time.time() - t0
+        # Section-timing metric (owner 2026-07-15: measure sections, never
+        # full runs) — packets vs judge split, also persisted in the report.
+        log.log(f"[s45] judged {len(moments)} candidates in {elapsed:.0f}s "
+                f"(packets {t_packets:.1f}s, judge {t_judge:.0f}s): "
+                f"{len(survivors)} kept, {len(result['killed'])} culled, "
+                f"{result['groups_failed']} group(s) unjudged")
+        result["timing"] = {"packets_s": round(t_packets, 1),
+                            "judge_s": round(t_judge, 1),
+                            "total_s": round(elapsed, 1)}
+
+        # Persist the decision report (survives temp cleanup — J6's diff input).
+        try:
+            diag = Path(__file__).resolve().parents[3] / "clips" / ".diagnostics"
+            diag.mkdir(parents=True, exist_ok=True)
+            stamp = os.environ.get("CLIP_RUN_STAMP", time.strftime("%Y%m%d_%H%M%S"))
+            rpt = diag / f"s45_judge_{stamp}_{ctx.vod_basename}.json"
+            rpt.write_text(json.dumps({
+                "vod": ctx.vod_basename, "model": ctx.vision_model_stage6,
+                "candidates": len(moments), "kept": len(survivors),
+                "timing": result.get("timing"),
+                "killed": result["killed"], "decisions": result["decisions"],
+            }, indent=2), encoding="utf-8")
+            log.log(f"[s45] report: {rpt.name}")
+        except Exception as e:  # noqa: BLE001
+            log.warn(f"[s45] report write failed ({type(e).__name__}) — continuing")
+
+        ctx.paths.hype_moments.write_text(json.dumps(survivors, indent=2),
+                                          encoding="utf-8")
+        return survivors
+    except Exception as e:  # noqa: BLE001
+        log.warn(f"[s45] judge pass failed ({type(e).__name__}: {e}) — "
+                 f"continuing with all {len(moments)} candidates")
+        return moments
+
+
 def run(ctx) -> None:
     log = ctx.log
     p = ctx.paths
+
+    moments = json.loads(p.hype_moments.read_text(encoding="utf-8"))
+
+    # S4.5 batched text judge (default OFF; CLIP_S45_JUDGE=1 enables) — must
+    # run BEFORE frame extraction so frames are only paid for survivors.
+    if os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1" and moments:
+        moments = _s45_text_judge(ctx, log, moments)
+
     common.set_stage(log, "Stage 5/8 — Frame Extraction")
     log.log("=== Stage 5/8 — Frame Extraction ===")
 
-    moments = json.loads(p.hype_moments.read_text(encoding="utf-8"))
     n_workers = _resolve_workers()
 
     # Payoff window: T-2 .. T+5 frames for every moment.

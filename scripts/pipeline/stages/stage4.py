@@ -77,9 +77,15 @@ def run(ctx) -> None:
         common.append_processed(p.processed_log, ctx.vod_basename, "no_moments", ctx.style)
         raise common.PipelineExit(0, json.dumps({"status": "no_moments", "clips": 0, "style": ctx.style}))
 
-    # Pass D rubric judge (Tier-4) — failure-soft.
-    log.log("Applying Tier-4 Pass D rubric judge...")
-    common.run_module(log, "stages/stage4_rubric.py", [str(p.hype_moments)], env=env, check=False)
+    # Pass D rubric judge (Tier-4) — failure-soft. ABSORBED by the S4.5 text
+    # judge when it's enabled (plan-s45-text-judge): the 35B packet judge is
+    # the decorrelated second opinion Pass D's config note always wanted, so
+    # running the 9B rubric too would just re-add the correlated echo + time.
+    if os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1":
+        log.log("Pass D rubric SKIPPED — S4.5 text judge absorbs the second-opinion role")
+    else:
+        log.log("Applying Tier-4 Pass D rubric judge...")
+        common.run_module(log, "stages/stage4_rubric.py", [str(p.hype_moments)], env=env, check=False)
 
     # Tier-4 Phase 4.6 MMR diversity rank — failure-soft.
     log.log("Applying Tier-4 Phase 4.6 MMR diversity rank...")
