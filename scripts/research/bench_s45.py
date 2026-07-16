@@ -105,7 +105,10 @@ def main() -> int:
             _section("s3_segments", lambda: stage3.run(ctx))
             _section("s4_detect", lambda: stage4.run(ctx))
             moments = json.loads(p.hype_moments.read_text(encoding="utf-8"))
-            snap = DIAG / f"bench_s45_moments_{Path(args.vod).stem}.json"
+            # recall mode + stamp in the name — two benches on one VOD must
+            # never overwrite each other's snapshots (2026-07-16 lesson)
+            snap = DIAG / (f"bench_s45_moments_{Path(args.vod).stem}"
+                           f"_recall-{args.recall}_{stamp}.json")
             DIAG.mkdir(parents=True, exist_ok=True)
             snap.write_text(json.dumps(moments, indent=2), encoding="utf-8")
             report["moments_snapshot"] = str(snap)

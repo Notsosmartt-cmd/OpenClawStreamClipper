@@ -2159,12 +2159,13 @@ while chunk_start < max_time:
     # interaction shapes) instead of the legacy 6-rule keyword-style prompt.
     # When the catalog is unavailable (config missing) the legacy prompt is
     # preserved as a fallback below.
-    # J2 (plan-s45-text-judge): HIGH-RECALL posture — active when the S4.5 text
-    # judge is on (it reviews every candidate afterward) or forced via
-    # CLIP_PASSB_RECALL=high. Evidence requirements stay intact: borderline
-    # still needs a real beat; this only stops the proposer from self-censoring.
-    _recall_on = (os.environ.get("CLIP_PASSB_RECALL", "").strip().lower() == "high"
-                  or os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1")
+    # J2 (plan-s45-text-judge): HIGH-RECALL posture — EXPLICIT knob only.
+    # VERDICT 2026-07-16 (same-VOD sectional A/B, Runiktvlive 5.31 h): with
+    # judge-implies-recall, S4 cost 3,703 s vs 930 s recall-off (4×) and
+    # produced the SAME 16 candidates — every borderline emission paid
+    # generation + grounding and then died in selection. The judge now ships
+    # WITHOUT recall; CLIP_PASSB_RECALL=high remains for experiments.
+    _recall_on = os.environ.get("CLIP_PASSB_RECALL", "").strip().lower() == "high"
     recall_nudge = (
         "- RECALL MODE: also emit BORDERLINE moments (score 4-6) — a stronger judge "
         "reviews every candidate afterward; prefer emitting over skipping (up to 5 "
