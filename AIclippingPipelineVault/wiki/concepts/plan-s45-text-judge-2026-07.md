@@ -173,6 +173,35 @@ lines feed J7). Default-off + A/B first; the flip to default is an owner call on
 numbers + their clip impressions. Per the learn boundary, the judge's prompt criteria are
 static reviewed text — the Lab never edits them autonomously.
 
+## Finder A/B via judge arbitration (2026-07-16, owner query: gemma-4-12b vs qwen3.5-9b)
+
+Method (all sectional, zero full runs): detect-section bench per finder on the same VOD,
+then BOTH candidate snapshots through the same 35B judge in judge-only mode (~3 min each).
+
+| | qwen3.5-9b | gemma-4-12b-qat |
+|---|---|---|
+| S3 / S4 sections | 128 s / **930 s** | 154 s (+20%) / **1,215 s (+31%)** |
+| Candidates → judge-kept | 16 → 11 | 16 → 13 |
+| Judge scores (med / mean) | **7.0** / 5.9 | 6.5 / 5.8 |
+| Exclusive picks' judge scores | **mean 6.2 — headliners 9, 9, 8, 8** | mean 5.1 — best 8 |
+
+**Verdict: qwen keeps the finder seat** — Gemma is ~30% slower and its unique finds are
+weaker (qwen's exclusives carry the headliners). Prompt-fit + measured JSON discipline stay
+with the incumbent.
+
+**The bigger discovery: the two finders only overlapped on 6/16 moments (±90 s).** Each
+surfaced 10 exclusives on the same 5.31 h VOD — and **7 of Gemma's 10 exclusives survived
+the judge** (scores up to 8). That is the first MEASURED bound on the finder's
+false-negative class: qwen's finder misses ≥7 judge-approvable moments per ~5 h VOD that a
+different-family finder sees. It also empirically confirms the recall lesson: extra
+candidates must come from a DIFFERENT lens (new lanes / other families), not from lowering
+the incumbent's threshold (which yielded nothing at 4× cost).
+
+> [!todo] Candidate follow-up (owner's call, filed — NOT built): **dual-finder union mode**
+> — run both finders, union the candidate sets (~26/VOD), let the judge arbitrate all of
+> it. Cost ≈ +20 min/5 h VOD (gemma S4) for ~+7 judged-keepable moments incl. 7-8-scored
+> ones. Natural as an opt-in "deep scan" flag, not a default.
+
 ## Related
 - [[concepts/plan-fine-tuning-round-2026-07]] — parent plan (Phase 3)
 - [[concepts/single-card-cuda-lane-2026-07]] — the no-co-residence / swap laws
