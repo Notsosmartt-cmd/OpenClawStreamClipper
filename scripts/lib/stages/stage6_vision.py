@@ -509,6 +509,22 @@ def _generate_variant_b(entry, local_transcript, hard_events):
         n = 2
     if n < 2:
         return None
+    # Judge-gated variants (2026-07-16, default ON): variant B only for clips
+    # the S4.5 text judge scored >= CLIP_AB_MIN_JUDGE_SCORE (default 8) — the
+    # A/B budget concentrates on the clips worth posting twice. FAIL-OPEN:
+    # unjudged moments (judge off / failed group / legacy) keep their variant.
+    # CLIP_AB_MIN_JUDGE_SCORE=0 restores variants-for-all.
+    try:
+        _thr = float(os.environ.get("CLIP_AB_MIN_JUDGE_SCORE", "8") or 8)
+    except ValueError:
+        _thr = 8.0
+    _j = entry.get("s45_judge") or {}
+    if _thr > 0 and isinstance(_j, dict) and _j.get("score") is not None:
+        try:
+            if float(_j["score"]) < _thr:
+                return None
+        except (TypeError, ValueError):
+            pass
     title_a = (entry.get("title") or "").strip()
     hook_a = (entry.get("hook") or "").strip()
     if not (title_a or hook_a) or not (local_transcript or "").strip():
@@ -566,7 +582,7 @@ Respond with ONLY JSON:
 {{"tiktok": "one short caption, no hashtags",
   "instagram": "a hook line then one context sentence, no hashtags",
   "youtube_title": "<= 90 chars, no hashtags",
-  "youtube_description": "1-2 sentences, no hashtags"}}"""
+  "youtube_description": "1-2 sentences, <= 35 words total, no hashtags"}}"""
 
 
 def _strip_hashtags(s: str) -> str:
@@ -705,6 +721,9 @@ def _process_moment(moment):
         "primary_pattern": moment.get("primary_pattern"),
         # 1d (2026-07-15): content-species subtype — label-only carry (4→6→7→log).
         "subtype": moment.get("subtype"),
+        # 2026-07-16: S4.5 verdict rides along — gates variant-B generation here
+        # and informs the S5.5 pair prompts (text→vision handoff).
+        "s45_judge": moment.get("s45_judge"),
     }
 
     # Check stage timeout before attempting vision (OR with the outage flag

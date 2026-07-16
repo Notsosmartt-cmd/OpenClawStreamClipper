@@ -12,8 +12,18 @@ updated: 2026-07-16
 > Net economics: ~34 s of 35B judging per VOD; the swap is recovered from stage 6; each
 > culled junk candidate saves ~60-70 s of enrichment+render — a culling run is net FASTER.
 > Owner ritual: skim the per-run kill list in `clips/.diagnostics/s45_judge_*` (timestamps
-> + rationales — kills are auditable, unlike S4 misses). Recall was removed; J7
-> (shape-prior packets) remains blocked on the Phase-2 markup.
+> + rationales — kills are auditable, unlike S4 misses). Recall was removed; J7 shipped.
+> **Judge-synergy trio (2026-07-16, all default ON, owner-ordered):**
+> (1) **judge-gated A/B variants** — variant B only for `s45_judge.score >=
+> CLIP_AB_MIN_JUDGE_SCORE` (default 8; 0 restores all; fail-open when unjudged) + the S6
+> description capped at 35 words; (2) **judge-seeded S5.5** — Swiss order seeded by text
+> scores at >=50% coverage, pair budget 20→12 (`CLIP_S55_SEEDED=0` reverts;
+> `CLIP_S55_SEEDED_PAIRS` tunes) — rank-churn now MEASURES vision-vs-text disagreement
+> (zero churn across runs = anchoring alarm); (3) **text→vision handoff** — every pair
+> prompt carries each side's text verdict as context-not-command, and `games_log` marks
+> `vision_override` when vision beats a clearly better text score (zero overrides ever =
+> anchoring). Expected: −4 to −9 min/VOD combined; watch the first judged runs' override
+> rate + churn.
 
 # Plan: S4.5 Batched Text Judge
 

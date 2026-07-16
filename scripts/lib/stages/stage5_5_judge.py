@@ -222,24 +222,59 @@ def run_judge(
             rationales[id(a)] = res["reason"]
         elif w == "B" and res.get("reason"):
             rationales[id(b)] = res["reason"]
+        # Handoff cross-check (2026-07-16): a vision win over a clearly
+        # better-text-scored opponent = a real override (the signal the
+        # anchoring risk is watched by — zero overrides ever = anchoring).
+        ja = (a.get("s45_judge") or {}).get("score")
+        jb = (b.get("s45_judge") or {}).get("score")
+        override = None
+        if isinstance(ja, (int, float)) and isinstance(jb, (int, float)) and w in ("A", "B"):
+            win_s, lose_s = (ja, jb) if w == "A" else (jb, ja)
+            override = bool(win_s + 1.5 <= lose_s)
         games_log.append({
             "a": a.get("timestamp"), "b": b.get("timestamp"),
             "winner": (a.get("timestamp") if w == "A" else b.get("timestamp") if w == "B" else None),
             "confidence": res.get("confidence"),
             "reason": (res.get("reason") or "")[:160],
+            "vision_override": override,
         })
+
+    # Judge-seeded tournament (2026-07-16, default ON; CLIP_S55_SEEDED=0 reverts):
+    # when the S4.5 text judge scored >=50% of the field, seed the Swiss initial
+    # order by those scores and shrink the pair budget (CLIP_S55_SEEDED_PAIRS,
+    # default 12) — vision spends its comparisons on near-ties and boundaries
+    # instead of re-deriving an order text evidence already settled. Every clip
+    # still plays (Swiss round 1 covers the field). NOTE: rank-churn below then
+    # measures movement vs the TEXT order — i.e., it becomes the
+    # vision-disagrees-with-text metric (zero churn across runs = anchoring).
+    _max_cmp = int(cfg.get("max_comparisons", 30))
+    _s45_scores = [(m.get("s45_judge") or {}).get("score") for m in shortlist]
+    _cov = (sum(1 for s in _s45_scores if isinstance(s, (int, float)))
+            / max(1, len(shortlist)))
+    _seeded = (os.environ.get("CLIP_S55_SEEDED", "1").strip().lower()
+               not in ("0", "false", "no", "off")) and _cov >= 0.5
+    if _seeded:
+        shortlist.sort(key=lambda m: (
+            float((m.get("s45_judge") or {}).get("score") or 0.0), _raw_of(m)),
+            reverse=True)
+        try:
+            _max_cmp = min(_max_cmp, int(os.environ.get("CLIP_S55_SEEDED_PAIRS", "12") or 12))
+        except ValueError:
+            _max_cmp = min(_max_cmp, 12)
+        print(f"[JUDGE] seeded by S4.5 text scores (coverage {_cov:.0%}) — "
+              f"pair budget {_max_cmp}", file=sys.stderr)
 
     _judge_workers = _resolve_judge_workers(cfg)
     print(
         f"[JUDGE] Swiss tournament: {len(shortlist)} clips, "
-        f"<= {int(cfg.get('max_comparisons', 30))} comparisons, "
+        f"<= {_max_cmp} comparisons, "
         f"{_judge_workers} worker(s) (JUDGE_WORKERS to change)",
         file=sys.stderr,
     )
     ranked = vlm_judge.swiss_tournament(
         shortlist, compare,
         rounds=_rounds_for(len(shortlist), cfg),
-        max_comparisons=int(cfg.get("max_comparisons", 30)),
+        max_comparisons=_max_cmp,
         on_compare=_on, should_stop=_should_stop,
         workers=_judge_workers,
     )
