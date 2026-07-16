@@ -209,9 +209,13 @@ def run(ctx) -> None:
 
     moments = json.loads(p.hype_moments.read_text(encoding="utf-8"))
 
-    # S4.5 batched text judge (default OFF; CLIP_S45_JUDGE=1 enables) — must
-    # run BEFORE frame extraction so frames are only paid for survivors.
-    if os.environ.get("CLIP_S45_JUDGE", "0").strip() == "1" and moments:
+    # S4.5 batched text judge — DEFAULT ON since 2026-07-16 (owner flip on the
+    # bench evidence: ~34s of 35B judging, swap recovered from stage 6, culled
+    # junk saves ~60-70s/clip of render; kills logged w/ rationales in
+    # clips/.diagnostics/s45_judge_*). CLIP_S45_JUDGE=0 is the kill switch.
+    # Must run BEFORE frame extraction so frames are only paid for survivors.
+    if (os.environ.get("CLIP_S45_JUDGE", "1").strip().lower()
+            not in ("0", "false", "no", "off") and moments):
         moments = _s45_text_judge(ctx, log, moments)
 
     common.set_stage(log, "Stage 5/8 — Frame Extraction")

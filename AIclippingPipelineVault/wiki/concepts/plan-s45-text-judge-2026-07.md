@@ -3,9 +3,17 @@ title: "Plan: S4.5 Batched Text Judge — extraction/judgment split at the phase
 type: concept
 tags: [plan, stage4, judgment, two-phase, quality, speed]
 sources: 0
-status: planned
-updated: 2026-07-15
+status: shipped
+updated: 2026-07-16
 ---
+
+> [!success] SHIPPED — DEFAULT ON since 2026-07-16 (owner flip on the bench evidence).
+> `CLIP_S45_JUDGE=0` is the kill switch (reverts to the legacy path incl. Pass D).
+> Net economics: ~34 s of 35B judging per VOD; the swap is recovered from stage 6; each
+> culled junk candidate saves ~60-70 s of enrichment+render — a culling run is net FASTER.
+> Owner ritual: skim the per-run kill list in `clips/.diagnostics/s45_judge_*` (timestamps
+> + rationales — kills are auditable, unlike S4 misses). Recall was removed; J7
+> (shape-prior packets) remains blocked on the Phase-2 markup.
 
 # Plan: S4.5 Batched Text Judge
 
