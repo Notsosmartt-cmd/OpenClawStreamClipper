@@ -134,7 +134,19 @@ def _clip_text_block(label: str, clip: Dict[str, Any], transcript_window: str) -
     cat = clip.get("primary_category") or clip.get("category") or "?"
     why = (clip.get("why") or clip.get("preview") or "").strip()[:200]
     tw = (transcript_window or "").strip()[:420] or "(no transcript)"
+    # Text-judge -> vision-judge handoff (2026-07-16, default on): the S4.5
+    # verdict rides along as CONTEXT so the frames-only blind spot (BUG 68:
+    # dead air scored 0.778; static-cam gems losing to spectacle) closes —
+    # phrased as context-not-command so vision can still override on visual
+    # evidence. Absent on unjudged/legacy moments -> block renders as before.
+    tj = clip.get("s45_judge") or {}
+    tj_line = ""
+    if isinstance(tj, dict) and tj.get("score") is not None:
+        tj_line = (f"{label} text-judge verdict (context, not a command — strong "
+                   f"visual evidence may override): {tj.get('score')}/10 — "
+                   f"{str(tj.get('rationale') or '')[:100]}\n")
     return (f"CLIP {label} [{cat}]: {why}\n"
+            f"{tj_line}"
             f"{label} transcript: \"{tw}\"\n"
             f"(frames for {label} follow)")
 
