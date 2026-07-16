@@ -24,6 +24,38 @@ _WINDOW_PAD_S = 5.0              # context beyond the claimed clip bounds
 _DEFAULT_HALF_WINDOW_S = 30.0    # when the moment has no clip bounds
 _MAX_AUDIO_MARKS = 8
 
+_PRIORS_CACHE: dict | None = None
+
+
+def _shape_priors() -> dict:
+    """J7 (2026-07-16): per-species SHAPE PRIORS from config/shape_priors.json
+    (shared source with the Pass-B prompt block). Failure-soft -> {}."""
+    global _PRIORS_CACHE
+    if _PRIORS_CACHE is None:
+        try:
+            cfg = json.loads((Path(__file__).resolve().parents[2] / "config" /
+                              "shape_priors.json").read_text(encoding="utf-8"))
+            _PRIORS_CACHE = cfg.get("subtypes") or {}
+        except Exception:
+            _PRIORS_CACHE = {}
+    return _PRIORS_CACHE
+
+
+def _norms_line(subtype: str) -> str:
+    p = _shape_priors().get(str(subtype or "").strip().lower())
+    if not p:
+        return ""
+    bits = []
+    if p.get("payoff_pct_typical") is not None:
+        bits.append(f"payoff ~{p['payoff_pct_typical']}% into the clip")
+    if p.get("duration_s_typical"):
+        bits.append(f"~{p['duration_s_typical']}s typical")
+    if p.get("arc_typical"):
+        bits.append(f"arc: {p['arc_typical']}")
+    if p.get("note"):
+        bits.append(str(p["note"]))
+    return "SPECIES NORMS (typical, not required): " + "; ".join(bits)
+
 
 def load_words(transcript_json_path) -> list[dict]:
     """Tolerant word loader: accepts the stage-2 transcript JSON as either
@@ -124,10 +156,12 @@ def build_packet(idx: int, moment: dict, words: list[dict],
     )
     marks = _audio_marks(audio_events, lo, hi, ts)
     marks_block = f"\nAUDIO MARKS:\n{marks}" if marks else ""
+    norms = _norms_line(moment.get("subtype"))
+    norms_block = f"\n{norms}" if norms else ""
     transcript = _speaker_turns(words, lo, hi) or "(no transcript in window)"
-    fixed = len(claim) + len(marks_block) + len("\nTRANSCRIPT (verbatim):\n")
+    fixed = len(claim) + len(marks_block) + len(norms_block) + len("\nTRANSCRIPT (verbatim):\n")
     transcript = _truncate_middle(transcript, max(400, max_chars - fixed))
-    return f"{claim}{marks_block}\nTRANSCRIPT (verbatim):\n{transcript}"
+    return f"{claim}{norms_block}{marks_block}\nTRANSCRIPT (verbatim):\n{transcript}"
 
 
 def build_packets(moments: list[dict], transcript_json_path,

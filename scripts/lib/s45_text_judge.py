@@ -27,12 +27,12 @@ CULL_MIN_SURVIVORS = 8
 _PROMPT = """/no_think
 You are the senior clip judge for a short-form (TikTok/Shorts) stream-clipping pipeline. Below are {n} candidate moments from ONE stream VOD, each as an evidence packet: the proposer's claim plus the VERBATIM transcript window (with speaker turns) and audio marks.
 
-Judge each candidate ONLY from its transcript evidence — never trust the proposer's summary. Judge COMPARATIVELY within this group: reserve 8-10 for moments that would stop a scroll, and kill only candidates that are clearly not clip-worthy (no beat, no payoff, pure filler). Borderline-but-plausible stays alive with a middling score.
+Judge each candidate ONLY from its transcript evidence — never trust the proposer's summary. Judge COMPARATIVELY within this group: reserve 8-10 for moments that would stop a scroll, and kill only candidates that are clearly not clip-worthy (no beat, no payoff, pure filler). Borderline-but-plausible stays alive with a middling score. Some packets carry SPECIES NORMS — treat them as typical shape expectations for that kind of moment, never as requirements: strong evidence beats the norm, but a claim that badly mismatches its species' shape deserves scrutiny.
 
 {packets}
 
 Respond with ONLY a JSON object (no prose, no fences):
-{{"verdicts": [{{"idx": <candidate number>, "keep": true|false, "score": <0-10>, "subtype": "banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|other|unchanged", "rationale": "<= 15 words, cite the evidence"}}, ...]}}
+{{"verdicts": [{{"idx": <candidate number>, "keep": true|false, "score": <0-10>, "subtype": "banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|solo_monologue|other|unchanged", "rationale": "<= 15 words, cite the evidence"}}, ...]}}
 Every candidate number 1..{n} must appear exactly once."""
 
 

@@ -8,11 +8,16 @@ updated: 2026-07-15
 
 # Reference Shape Guide — DRAFT
 
-> [!warning] DRAFT — awaiting the owner's Phase-2 markup. NOT applied to the pipeline.
-> Every guidance line below is a **soft prior** ("typically…") derived from the subtyped v3
-> reference cards. Per the learn boundary in [[concepts/plan-fine-tuning-round-2026-07]],
-> nothing here reaches Stage-4 prompts, rubric wording, or duration constants until the
-> owner approves/edits/strikes lines and hands the marked set to an agent.
+> [!success] APPLIED 2026-07-16 under the mechanical gates (owner dropped the sit-down:
+> n≥8 floor = the approval gate, soft priors only, sub-floor auto-skip). Line fates:
+> **1, 2, 4 applied** (species window-placement guidance → Pass-B prompt via
+> `config/shape_priors.json` + `_species_priors_block`); **5 applied as HINTS only**
+> (typical-length lines in the prompt; the 90/150 s hard caps untouched — hard caps from
+> n=8-16 would risk recall); **6 = already satisfied** (hooks are mandatory by pipeline
+> design; the wholesome exception auto-skipped at n=5); **3 auto-skipped** (n=4);
+> **7 applied** — `solo_monologue` promoted into the card prompt, Pass-B vocabulary, and
+> the judge's verdict enum, with a selective re-card of the irl_other clips. The same
+> config feeds the S4.5 judge's packet norms (J7).
 
 Data basis: 100 v3 cards (owner's 35B, anti-lazy subtype prompt), decomposed with the
 BUG-75-clean counting, per-clip outro trims, and the gap-tonality music-bed scan.

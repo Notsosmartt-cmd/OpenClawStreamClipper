@@ -124,7 +124,15 @@ One sit-down, one bundle, owner returns "my modifications":
 No other gate requires owner eyes. Curation (voice bank, labels) stays an optional trickle,
 never a blocker.
 
-## Phase 3 — Agent apply + re-measure (no owner eyes)
+## Phase 3 — Agent apply + re-measure — APPLIED 2026-07-16 (Track E + J7 done)
+
+Applied under the mechanical gates (see the Phase-2 drop note): shape-guide lines 1/2/4
+(species window placement) + 5-as-hints + 7 (`solo_monologue` promoted; selective re-card)
+→ `config/shape_priors.json` + Pass-B `_species_priors_block` + J7 packet norms; lines 3
+and the wholesome-hook exception auto-skipped (sub-floor); line 6 already satisfied by
+design. Re-measure = the next natural pipeline runs' Lab comparisons + judge reports.
+Remaining owner-optional items: clip review whenever, preference gap-verdicts (chat
+overlay / story music / casing), jump-cuts sample + news ear-check on demand.
 
 > [!note] Phase-3 flagship candidate (filed 2026-07-15):
 > [[concepts/plan-s45-text-judge-2026-07]] — split S4 extraction (9B, high-recall) from
