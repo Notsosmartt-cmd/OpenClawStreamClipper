@@ -93,10 +93,12 @@ costing frames + tournament slots.
   speaker-turn window + audio marks + claim), tolerant transcript loader (segments or flat
   words), hard cap 3,600 chars w/ middle-truncation. Selftest PASS (turns, cap, both
   loader shapes). v1 omits chunk-card open-loops (deferred — needs a card artifact path).
-- [x] **J2. Recall posture — DONE**: `CLIP_PASSB_RECALL=high` OR the judge flag itself
-  activates it (judge implies recall). Prompt: 0-3 → 0-5 moments + "emit borderline
-  (score 4-6), a stronger judge reviews; borderline still needs a real pattern signature".
-  No numeric floor existed to lower (emission is prompt-selectivity).
+- [x] **J2. Recall posture — BUILT, then REJECTED as a default (2026-07-16 same-VOD A/B)**:
+  judge-implied recall cost **4× on S4** (3,703 s vs 930 s, Runiktvlive 5.31 h) and
+  produced the **SAME 16 candidates** (boundaries jittered by seconds) — borderline
+  emissions all paid generation + grounding, then died in selection. Decoupled: the judge
+  flag no longer implies recall; `CLIP_PASSB_RECALL=high` stays as an explicit experiment
+  knob only. (S4 is output-token-bound — "0-5 + borderline" was a pure output tax.)
 - [x] **J3. `s45_text_judge.py` — DONE**: groups of 8 batch-in-prompt, verdicts
   {keep, score 0-10, subtype-confirm, rationale}; model = explicit ARG (BUG-74);
   failure-soft groups; cull floor (≤50%, ≥min(8,n), floor-rescues marked). Selftest PASS
@@ -126,10 +128,14 @@ costing frames + tournament slots.
   ("premature cut — hype setup lacks payoff", "pure filler; mundane tech
   troubleshooting", …) — exactly the mis-score class the judge was built to kill; cull
   25% ≪ the 50% floor. Recall mode did NOT inflate the final candidate count (16 on
-  5.31 h ≈ Raud's per-hour rate). **Open question: s4 11.6 vs the 3.9 min/VOD-h Raud
-  baseline is NOT attributable yet** (different VOD, different content density, and the
-  bench skips run_pipeline's run-start LM probe) — same-VOD recall-OFF baseline bench
-  IN FLIGHT to isolate the recall cost respectively.
+  5.31 h ≈ Raud's per-hour rate).
+  **RESOLVED by the same-VOD recall-OFF baseline: s4 = 930 s = 2.9 min/VOD-h** (healthy —
+  the new VOD isn't slow; the 11.6 was ENTIRELY the recall posture → J2 rejected).
+  **J6 ACCEPTANCE: PASSED for the judge** — wall-clock +~100 s/VOD gross (swap ~68 s is
+  largely recovered by stage 6 skipping its duplicate swap + 4 culled candidates' frames
+  saved → net ≈ +35 s), zero crashes, every kill carries an evidence-citing rationale.
+  **Ship posture: `CLIP_S45_JUDGE=1` = judge WITHOUT recall.** Owner flip pending
+  (their call, with these numbers + the Phase-2 clip impressions).
 - [ ] **J7. Shape-prior injection** (after the owner approves Track E guide lines): packet
   header gains the subtype's approved norms. Blocked on Phase-2 markup.
 
