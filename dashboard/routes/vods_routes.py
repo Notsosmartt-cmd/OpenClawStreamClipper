@@ -15,8 +15,17 @@ from .. import _state
 bp = Blueprint("vods_routes", __name__)
 
 
+_DURATION_CACHE: dict = {}  # (name, size_bytes) -> minutes; ffprobe once per file identity
+
+
 def _get_vod_duration(filepath) -> int:
-    """Get video duration in minutes via ffprobe."""
+    """Get video duration in minutes via ffprobe (cached per (name, size))."""
+    try:
+        key = (filepath.name, filepath.stat().st_size)
+    except OSError:
+        key = None
+    if key in _DURATION_CACHE:
+        return _DURATION_CACHE[key]
     try:
         result = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
@@ -25,9 +34,28 @@ def _get_vod_duration(filepath) -> int:
         )
         data = json.loads(result.stdout)
         seconds = float(data.get("format", {}).get("duration", 0))
-        return round(seconds / 60)
+        minutes = round(seconds / 60)
     except Exception:
+        minutes = 0
+    if key is not None and minutes:
+        _DURATION_CACHE[key] = minutes
+    return minutes
+
+
+def _estimate_processing_minutes(duration_min: int, transcription_cached: bool) -> int:
+    """Estimated end-to-end pipeline time for one VOD, from the 2026-07-16
+    measured rates (wiki: plan-s45-text-judge / speed findings):
+      per VOD-hour: S2 fresh 1.24 min (0 when the transcript is cached)
+                    + S3 0.40 + S4 2.9  -> 4.54 fresh / 3.30 cached
+      flats:        ~5.5 min (S1 + S4.5 judge + frames + seeded S5.5 tournament)
+      S6+renders:   ~1.15 min per shipped clip x ~3.2 clips/VOD-hour
+    Estimates, not promises — clip density is the biggest real-world swing.
+    """
+    if not duration_min:
         return 0
+    h = duration_min / 60.0
+    per_hour = 3.30 + (0.0 if transcription_cached else 1.24)
+    return round(h * per_hour + 5.5 + h * 3.2 * 1.15)
 
 
 def _get_processed_entries() -> dict:
@@ -77,6 +105,9 @@ def api_vods():
             "processed": proc_info is not None,
             "processed_info": proc_info,
             "transcription_cached": has_cache,
+            # estimated end-to-end pipeline minutes (owner req 2026-07-16);
+            # the panel sums these for the library total
+            "est_minutes": _estimate_processing_minutes(duration_min, has_cache),
         })
     return jsonify(vods)
 

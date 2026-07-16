@@ -13,10 +13,17 @@ export async function fetchVods() {
     }
 }
 
+// Estimated pipeline minutes -> "≈ 47 min" / "≈ 1h 23m" (0/undefined -> em-dash)
+function fmtEst(min) {
+    if (!min) return "—";
+    if (min < 60) return `≈ ${min} min`;
+    return `≈ ${Math.floor(min / 60)}h ${min % 60}m`;
+}
+
 function renderVods(vods) {
     const tbody = document.getElementById("vod-tbody");
     if (!vods.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No VODs found — drop .mp4 files into the vods/ folder</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No VODs found — drop .mp4 files into the vods/ folder</td></tr>';
         state.selectedVods = [];
         syncVodChecks();
         updateControls();
@@ -37,6 +44,7 @@ function renderVods(vods) {
             <td>${v.stem}</td>
             <td>${v.size_mb.toLocaleString()} MB</td>
             <td>${v.duration_min} min</td>
+            <td title="estimated end-to-end pipeline time at the measured per-stage rates${v.transcription_cached ? ' (transcript cached)' : ' (fresh transcription included)'}">${fmtEst(v.est_minutes)}</td>
             <td>${v.processed
                 ? '<span class="badge badge-green">Processed</span>'
                 : '<span class="badge badge-gray">Pending</span>'}
@@ -47,6 +55,18 @@ function renderVods(vods) {
             </td>
         </tr>`;
     }).join("");
+    // Library-total row (owner req 2026-07-16): sum of the per-VOD estimates.
+    const totalMin = vods.reduce((s, v) => s + (v.est_minutes || 0), 0);
+    const totalDur = vods.reduce((s, v) => s + (v.duration_min || 0), 0);
+    tbody.innerHTML += `
+        <tr class="vod-total-row" style="font-weight:600; opacity:.85;">
+            <td></td>
+            <td>Library total (${vods.length} VOD${vods.length > 1 ? 's' : ''})</td>
+            <td></td>
+            <td>${totalDur} min</td>
+            <td title="sum of per-VOD estimates">${fmtEst(totalMin)}</td>
+            <td colspan="2"></td>
+        </tr>`;
     syncVodChecks();
     updateControls();
 }
