@@ -149,7 +149,20 @@ measurements (Raud 3.47 h + FirstFullAudio 1.19 h, [[concepts/pipeline-speed-fin
   runtime selection restored in a `finally` on every path; hardware profiles keep the lane
   auto-inert off dual-vendor rigs ([[concepts/plan-speed-wave3-2026-07]] §2b).
 
-## §7 Speculative decoding on the lane — the revisit condition is MET (2026-07-16)
+> [!warning] §7 VERDICT (2026-07-16, sectional A/B): REJECTED on the lane too — S4
+> **1,245 s WITH speculation vs 930 s without (+34%)**, same 16 candidates, same VOD,
+> qwen3.5-2b draft (fresh download), GUI per-model config verified applied (PARALLEL 4
+> visible in `lms ps`; drafts don't show as ps rows). Spec-decode is now measured-rejected
+> on BOTH serving configs: dual-GPU Vulkan (8×) and single-card CUDA w/ 2-worker batching
+> (1.34×). Likely mechanism: speculation × continuous batching across slots (verify passes
+> break cross-slot batching), plus a fast per-token target (CUDA 9B) shrinking the win per
+> accepted token. The one unprobed corner: workers=1 + speculation (15-min bench if ever
+> curious; expectation negative — losing 2-worker concurrency costs more than speculation
+> plausibly returns). **Owner must REMOVE the draft from the 9B's GUI config** — saved
+> per-model settings apply to every pipeline load, so leaving it costs +34% on every
+> future S4. The analysis below is kept for the record of WHY it was worth re-testing.
+
+## §7 Speculative decoding on the lane — the revisit condition was MET (2026-07-16)
 
 The owner's earlier spec-decode test was a **measured 8× regression** — but that was the
 DUAL-GPU VULKAN split: every draft-verify round paid the cross-vendor coordination tax
