@@ -146,8 +146,14 @@ costing frames + tournament slots.
   saved → net ≈ +35 s), zero crashes, every kill carries an evidence-citing rationale.
   **Ship posture: `CLIP_S45_JUDGE=1` = judge WITHOUT recall.** Owner flip pending
   (their call, with these numbers + the Phase-2 clip impressions).
-- [ ] **J7. Shape-prior injection** (after the owner approves Track E guide lines): packet
-  header gains the subtype's approved norms. Blocked on Phase-2 markup.
+- [x] **J7. Shape-prior injection — DONE 2026-07-16** (unblocked by the owner dropping the
+  sit-down; mechanical n≥8 gate replaced markup): NEW `config/shape_priors.json` (single
+  source of truth — banter_roast n=45 / freakout n=10 / solo_monologue n=16; sub-floor
+  species auto-skipped) → `evidence_packets` injects a "SPECIES NORMS (typical, not
+  required)" line when the candidate's subtype has priors → judge prompt instructs
+  "evidence beats the norm, but a badly mismatched shape deserves scrutiny". Selftests +
+  injection smoke PASS; judge-only bench validation on the stored snapshot ran with priors
+  active. The SAME config feeds the Pass-B species-priors block (Track E).
 
 ## Risks & mitigations
 

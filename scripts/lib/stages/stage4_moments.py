@@ -1239,7 +1239,7 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
         # (zero scoring/behavior effect; flows 4→6→7→effects_log so Lab compares
         # can join ours↔reference by subtype). Same vocabulary as the Lab cards.
         _SUBTYPE_IDS = {"banter_roast", "prank_public", "freakout_overreaction",
-                        "performance_rap", "wholesome", "other"}
+                        "performance_rap", "wholesome", "solo_monologue", "other"}
         subtype = str(m.get("subtype") or "").strip().lower()
         if subtype not in _SUBTYPE_IDS:
             subtype = ""
@@ -1934,6 +1934,44 @@ if _moment_workers >= 2:
     )
 
 
+_SPECIES_PRIORS_CACHE: str | None = None
+
+
+def _species_priors_block() -> str:
+    """Track E (2026-07-16): per-species SHAPE PRIORS from config/shape_priors.json
+    (single source of truth shared with the S4.5 judge's evidence packets) —
+    SOFT guidance distilled from the measured reference corpus, n>=8 species
+    only. Failure-soft: any problem -> empty string (prompt unchanged)."""
+    global _SPECIES_PRIORS_CACHE
+    if _SPECIES_PRIORS_CACHE is not None:
+        return _SPECIES_PRIORS_CACHE
+    try:
+        from pathlib import Path as _P
+        cfg = json.loads((_P(__file__).resolve().parents[3] / "config" /
+                          "shape_priors.json").read_text(encoding="utf-8"))
+        subs = cfg.get("subtypes") or {}
+        if not subs:
+            raise ValueError("no subtypes")
+        lines = ["SPECIES SHAPE PRIORS (typical, not required — transcript evidence beats priors):"]
+        for name, p in subs.items():
+            bits = []
+            if p.get("payoff_pct_typical") is not None:
+                bits.append(f"payoff ~{p['payoff_pct_typical']}% into the clip")
+            if p.get("duration_s_typical"):
+                bits.append(f"~{p['duration_s_typical']}s")
+            if p.get("note"):
+                bits.append(str(p["note"]))
+            lines.append(f"- {name}: " + "; ".join(bits))
+        ch = cfg.get("category_hints") or {}
+        if ch:
+            lines.append("Typical strong lengths (hints, not caps): "
+                         + ", ".join(f"{k} ~{v}s" for k, v in ch.items()))
+        _SPECIES_PRIORS_CACHE = "\n".join(lines) + "\n"
+    except Exception:
+        _SPECIES_PRIORS_CACHE = ""
+    return _SPECIES_PRIORS_CACHE
+
+
 def _drain_one_moment():
     """Wait on the OLDEST in-flight moment call and run its (main-thread) post-processing —
     grounding cascade, speaker annotation, failure queue. Bounded per-future wait."""
@@ -2166,6 +2204,8 @@ while chunk_start < max_time:
     # tax whose extra emissions died in selection anyway. If recall ever
     # returns, it must attack the PROPOSER'S BLIND SPOTS (new lanes), not the
     # emission threshold. Evidence: wiki plan-s45-text-judge-2026-07 §J2.
+    species_block = _species_priors_block()
+
     if PATTERN_CATALOG_PROMPT:
         prompt = f"""/no_think
 You are a stream clip scout. This is a {seg_type.upper()} segment. Find 0-3 clip-worthy moments by matching against the PATTERN CATALOG below — do NOT score on keywords alone.
@@ -2182,6 +2222,7 @@ How to use the catalog:
 - If a second pattern also fits, list it under "secondary_patterns".
 - If NO pattern's signature is satisfied, do not emit the moment. Don't invent patterns.
 - Use the conversation_shape signals above as evidence: off_screen_intrusions support setup_external_contradiction; pushback markers support challenge_and_fold and hot_take_pushback; long monologue_runs support storytelling_arc and informational_ramble.
+{species_block}
 - "why" must name the pattern signature being satisfied AND cite specific transcript+shape evidence. Example: "Pattern setup_external_contradiction: streamer claims X at 14:02, off-screen voice contradicts at 14:28, streamer concedes at 14:33."
 
 Skip these:
@@ -2193,7 +2234,7 @@ When in doubt, lean toward INCLUDING with a lower score (3-5) over skipping — 
 Transcript (timestamps MM:SS from stream start):
 {chunk_text}
 
-Respond with ONLY a single JSON object: {{"moments": [ ... ]}}. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "subtype": "banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|other — the closest CONTENT species regardless of category; 'other' ONLY if none fits (most clips fit one)", "primary_pattern": "<pattern_id>", "secondary_patterns": ["<pattern_id>", ...], "why": "one sentence naming WHICH pattern signature is satisfied and HOW the transcript+shape evidence it"}}
+Respond with ONLY a single JSON object: {{"moments": [ ... ]}}. Each element: {{"time": "MM:SS", "start_time": "MM:SS", "end_time": "MM:SS", "score": 1-10, "category": "hype|funny|emotional|hot_take|storytime|reactive|dancing|controversial", "subtype": "banter_roast|prank_public|freakout_overreaction|performance_rap|wholesome|solo_monologue|other — the closest CONTENT species regardless of category; 'other' ONLY if none fits (most clips fit one)", "primary_pattern": "<pattern_id>", "secondary_patterns": ["<pattern_id>", ...], "why": "one sentence naming WHICH pattern signature is satisfied and HOW the transcript+shape evidence it"}}
 
 IMPORTANT — start_time and end_time define the CLIP BOUNDARIES:
 - start_time: where the moment BEGINS (include setup/context). For storytimes, this is where the story starts.

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "_note": "Track E / J7 (2026-07-16): per-species SHAPE PRIORS distilled from the subtyped reference corpus (wiki: reference-shape-guide-2026-07). SOFT priors only - injected as 'typical, not required' guidance into the Pass-B prompt (stage4_moments) and the S4.5 judge's evidence packets (evidence_packets). NEVER used as hard filters or rejection rules. Mechanical approval gate per the owner's dropped-sit-down rule: only species with n>=8 reference samples appear here (performance_rap n=4 and the wholesome hook exception n=5 were auto-skipped). solo_monologue = the promoted species (was irl_other; 12-13/16 justifications described it). Regenerate/extend by editing this file - both consumers read it at runtime, failure-soft.",
+  "subtypes": {
+    "banter_roast": {
+      "n": 45,
+      "payoff_pct_typical": 84,
+      "duration_s_typical": 30,
+      "arc_typical": "instant or setup_payoff",
+      "music_bed_pct_typical": 68,
+      "note": "payoff lands LATE (final fifth) - keep the build before the beat"
+    },
+    "freakout_overreaction": {
+      "n": 10,
+      "payoff_pct_typical": 34,
+      "duration_s_typical": 31,
+      "arc_typical": "escalation",
+      "music_bed_pct_typical": 52,
+      "note": "FRONT-loaded - the eruption comes early; the value is the sustained reaction after it"
+    },
+    "solo_monologue": {
+      "n": 16,
+      "duration_s_typical": 54,
+      "arc_typical": "story",
+      "music_bed_pct_typical": 28,
+      "note": "long-form story spine (~45-60s) - needs its full arc, do not tighten to banter length"
+    }
+  },
+  "category_hints": {
+    "gaming": 55
+  }
+}
