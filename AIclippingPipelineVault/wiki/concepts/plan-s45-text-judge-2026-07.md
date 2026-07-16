@@ -89,29 +89,36 @@ costing frames + tournament slots.
 
 ## Work items
 
-- [ ] **J1. `evidence_packets.py`** (new lib module): deterministic packet builder from
-  existing artifacts (words/master transcript slice, audio events, cards, moment entry).
-  Hard token cap; self-test with synthetic moments.
-- [ ] **J2. Pass-B recall posture**: `CLIP_PASSB_RECALL=high` — emission threshold lowered
-  + prompt nudge ("emit borderline moments; a judge reviews them"), config-gated, default
-  unchanged until flip.
-- [ ] **J3. `s45_text_judge.py`**: batched comparative judgment — groups of ~8 packets,
-  verdict JSON {keep|kill, score_0_10, rationale, subtype_confirm}; model id **phase-pinned
-  to `vision_model_stage6`** (BUG-74 law — never an env fallback); retries per group;
-  failure-soft: any group failure = keep that group unjudged (never lose candidates to an
-  outage).
-- [ ] **J4. Funnel rewiring** (`stage5.py`/`stage6.py` orchestration): run S4.5 as the FIRST
-  vision-phase step; S5 extracts frames for survivors only; scored_moments updated with
-  judge scores (blend rule: judge score replaces Pass-D slot in the existing scoring
-  formula); Pass D + tier-2 grounding call sites short-circuited when the judge ran.
-  **Cull floor**: the judge may kill at most ~50% of candidates and never below
-  min(8, n) survivors — a bad judge day cannot empty a VOD.
-- [ ] **J5. Flags**: `CLIP_S45_JUDGE=1|0` (single kill switch reverts the WHOLE feature —
-  recall posture included); default **OFF** until J6 passes + owner flips.
-- [ ] **J6. A/B validation** (agent-side, no owner eyes): same VOD, judge on vs off —
-  diff selected clip sets, score distributions, stage timings (passb_equiv-style report
-  into `.diagnostics`). Acceptance: wall-clock within +5 min; no crash; cull decisions
-  carry rationales.
+- [x] **J1. `evidence_packets.py` — DONE 2026-07-15**: deterministic packets (verbatim
+  speaker-turn window + audio marks + claim), tolerant transcript loader (segments or flat
+  words), hard cap 3,600 chars w/ middle-truncation. Selftest PASS (turns, cap, both
+  loader shapes). v1 omits chunk-card open-loops (deferred — needs a card artifact path).
+- [x] **J2. Recall posture — DONE**: `CLIP_PASSB_RECALL=high` OR the judge flag itself
+  activates it (judge implies recall). Prompt: 0-3 → 0-5 moments + "emit borderline
+  (score 4-6), a stronger judge reviews; borderline still needs a real pattern signature".
+  No numeric floor existed to lower (emission is prompt-selectivity).
+- [x] **J3. `s45_text_judge.py` — DONE**: groups of 8 batch-in-prompt, verdicts
+  {keep, score 0-10, subtype-confirm, rationale}; model = explicit ARG (BUG-74);
+  failure-soft groups; cull floor (≤50%, ≥min(8,n), floor-rescues marked). Selftest PASS
+  (annotation, subtype override, kill-all→floor, outage→all survive, garbage→unjudged).
+- [x] **J4. Funnel rewiring — DONE**: `stage5._s45_text_judge` runs BEFORE frame
+  extraction (does the 9B→35B swap itself; `ctx.s45_swapped` makes stage 6 skip its
+  duplicate swap); survivors → hype_moments; kept moments carry score_passb + judge score
+  (score = judge/10) + s45_judge block; decision report → `clips/.diagnostics/s45_judge_*`.
+  **Pass D absorbed** (skipped in stage4 when the flag is on). *v1 scope note: tier-2
+  grounding still runs in S4 (absorb deferred to v1.1 — smaller saving, larger blast
+  radius).*
+- [x] **J5. Flag — DONE**: `CLIP_S45_JUDGE=1` enables judge + recall + Pass-D skip;
+  `=0`/unset = byte-identical legacy path. Default **OFF**.
+- [~] **J6. Validation — REDESIGNED per owner directive (2026-07-15: "do not process any
+  full VODs for testing — test up to the sections needed, measure timing respectively")**:
+  NEW `scripts/research/bench_s45.py` drives the PRODUCTION stage code sectionally —
+  stages 1-4 (+judge) then STOPS: no frames, no S5.5, no renders, no processed.log, no
+  clips. Per-section timing report (`bench_s45_<stamp>.json`); saves a pre-judge moments
+  snapshot so later benches run **judge-only with ZERO VOD processing** (transcript+events
+  materialized from the per-VOD caches). The stage helper itself now logs+persists a
+  packets-vs-judge timing split (the new section-metric device). First run (Raud,
+  detect+judge, recall on) IN FLIGHT; S4-recall-off baseline = today's session log.
 - [ ] **J7. Shape-prior injection** (after the owner approves Track E guide lines): packet
   header gains the subtype's approved norms. Blocked on Phase-2 markup.
 
