@@ -93,12 +93,14 @@ costing frames + tournament slots.
   speaker-turn window + audio marks + claim), tolerant transcript loader (segments or flat
   words), hard cap 3,600 chars w/ middle-truncation. Selftest PASS (turns, cap, both
   loader shapes). v1 omits chunk-card open-loops (deferred — needs a card artifact path).
-- [x] **J2. Recall posture — BUILT, then REJECTED as a default (2026-07-16 same-VOD A/B)**:
-  judge-implied recall cost **4× on S4** (3,703 s vs 930 s, Runiktvlive 5.31 h) and
-  produced the **SAME 16 candidates** (boundaries jittered by seconds) — borderline
-  emissions all paid generation + grounding, then died in selection. Decoupled: the judge
-  flag no longer implies recall; `CLIP_PASSB_RECALL=high` stays as an explicit experiment
-  knob only. (S4 is output-token-bound — "0-5 + borderline" was a pure output tax.)
+- [x] **J2. Recall posture — BUILT, REJECTED by its own A/B, then REMOVED (owner
+  2026-07-16)**: judge-implied recall cost **4× on S4** (3,703 s vs 930 s, Runiktvlive
+  5.31 h) and produced the **SAME 16 candidates** (boundaries jittered by seconds) —
+  borderline emissions all paid generation + grounding, then died in selection (S4 is
+  output-token-bound; "0-5 + borderline" was a pure output tax). Owner ordered full
+  removal: `CLIP_PASSB_RECALL` knob deleted, prompt restored to 0-3, bench `--recall`
+  flag dropped. **Lesson kept in-code**: if recall ever returns it must attack the
+  proposer's BLIND SPOTS (new detection lanes), not the emission threshold.
 - [x] **J3. `s45_text_judge.py` — DONE**: groups of 8 batch-in-prompt, verdicts
   {keep, score 0-10, subtype-confirm, rationale}; model = explicit ARG (BUG-74);
   failure-soft groups; cull floor (≤50%, ≥min(8,n), floor-rescues marked). Selftest PASS
