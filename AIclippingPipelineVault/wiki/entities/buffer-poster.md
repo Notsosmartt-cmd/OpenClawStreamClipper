@@ -71,6 +71,21 @@ network's record.
   (both unpaused; channel list cached 5 min, `?refresh=1` forces).
 - **Rate limits (free plan)**: 100 req/15 min, **250 req/24 h**, 3 000/30 d —
   each clip costs ~2 requests, so ~100 clips/day is the practical ceiling.
+- **Per-channel DAILY posting caps** (query: `dailyPostingLimits(input:
+  {channelIds})` → `{sent, scheduled, limit, isAtLimit}`): **TikTok 25/day,
+  Instagram 50/day** on this account.
+
+> [!warning] TikTok bulk-posting lockout (learned 2026-07-16, the 112-clip batch)
+> TikTok's OWN anti-spam trips **far below** Buffer's 25/day cap when posts land
+> in rapid succession: a `shareNow` batch firing ~25 s apart got **6 posts
+> through, then 100 straight failures** with *"TikTok has detected a large
+> number of posts published through the API for this channel. Wait 24 hours
+> before trying to post again."* The lockout is ~24 h and channel-wide.
+> Practical law: **never `shareNow` more than a handful to TikTok** — use
+> `addToQueue` against a Buffer posting schedule (a few slots/day) and keep
+> TikTok volume ≈ 10-15/day spaced out. Instagram tolerated the same pattern
+> fine (50/day cap). After a lockout, DON'T mash Retry failed — it re-fires
+> everything immediately and re-trips the detector.
 
 ## Media hosting (the one non-obvious constraint)
 

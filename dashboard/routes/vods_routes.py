@@ -47,7 +47,12 @@ def _estimate_processing_minutes(duration_min: int, transcription_cached: bool) 
     measured rates (wiki: plan-s45-text-judge / speed findings):
       per VOD-hour: S2 fresh 1.24 min (0 when the transcript is cached)
                     + S3 0.40 + S4 2.9  -> 4.54 fresh / 3.30 cached
-      flats:        ~5.5 min (S1 + S4.5 judge + frames + seeded S5.5 tournament)
+      flats:        ~12 min (S1 + model swaps + S4.5 judge + frames + seeded
+                    S5.5 + fixed S7 overhead). Was 5.5 — the 07-16 full-library
+                    day (8 completions) showed shorts (<2.5 h) running 40-60%
+                    over estimate; flat=12 puts the 16.7 h giant within 2 min
+                    of actual and the shorts within ~15%, at the cost of a
+                    ~10-20% OVERestimate on mid-size cached VODs (safer side).
       S6+renders:   ~1.15 min per shipped clip x ~3.2 clips/VOD-hour
     Estimates, not promises — clip density is the biggest real-world swing.
     """
@@ -55,7 +60,7 @@ def _estimate_processing_minutes(duration_min: int, transcription_cached: bool) 
         return 0
     h = duration_min / 60.0
     per_hour = 3.30 + (0.0 if transcription_cached else 1.24)
-    return round(h * per_hour + 5.5 + h * 3.2 * 1.15)
+    return round(h * per_hour + 12.0 + h * 3.2 * 1.15)
 
 
 def _get_processed_entries() -> dict:
