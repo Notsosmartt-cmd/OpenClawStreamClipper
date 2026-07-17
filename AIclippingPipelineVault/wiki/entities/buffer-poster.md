@@ -103,9 +103,15 @@ per-channel, per-batch):
   `customScheduled` posts spaced 90 min — Buffer publishes them on time, no
   local pacing thread. Overrides: `config/buffer_poster.json` →
   `rate_guard: {tiktok_burst, default_burst, auto_spacing_min}`.
-- **Drip mode** (new UI default): every post scheduled at a chosen spacing
-  (30 m–3 h; 90 min preselected = 16/day, under TikTok's 25 cap). Safe way to
-  push 100+ clips in one click — they publish over days.
+- **Drip mode**: every post scheduled at a chosen spacing (30 m–3 h; 90 min
+  preselected = 16/day, under TikTok's 25 cap). Safe way to push 100+ clips
+  in one click — they publish over days. **Post now is the UI default**
+  (owner pref 2026-07-17) — safe because the burst guard below still converts
+  everything past the small burst into spaced scheduled posts.
+- **Queue clearing** (2026-07-17): scheduled posts the poster created can be
+  bulk-deleted via `deletePost` keyed on ledger post_ids (never touches
+  manual Buffer-UI posts or sent posts); cleared entries flip to retryable
+  `error` rows in the ledger.
 - **Creation throttle** stretches to 12 s/post on >80-post batches so post
   *creation* stays under Buffer's 100-req/15-min window.
 - **Refresh statuses** button (`/api/verify-ledger`): one-pass re-check of all
