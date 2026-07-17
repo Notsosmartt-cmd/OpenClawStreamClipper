@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_from_directory
 
-from . import _state, media_host, worker
+from . import _state, media_host, scores, worker
 from .buffer_client import SHARE_MODES, BufferAPIError, BufferClient
 
 bp = Blueprint("poster_api", __name__)
@@ -97,26 +97,41 @@ def api_status():
 def api_clips():
     clips = []
     posted = _state.load_posted()
-    if _state.CLIPS_DIR.exists():
-        for f in sorted(_state.CLIPS_DIR.iterdir(),
-                        key=lambda x: x.stat().st_mtime, reverse=True):
+    score_index = scores.get_index(_state.CLIPS_DIR / ".diagnostics")
+    for folder, d in (("", _state.CLIPS_DIR),
+                      (_state.POSTED_SUBDIR, _state.posted_clips_dir())):
+        if not d.exists():
+            continue
+        for f in d.iterdir():
             if not f.is_file() or f.suffix.lower() not in _state.VIDEO_EXTS:
                 continue
             st = f.stat()
+            sc = scores.lookup(score_index, f.stem) or {}
             clips.append({
                 "name": f.name,
+                "folder": folder,
                 "size_mb": round(st.st_size / (1024 * 1024), 1),
+                "mtime": st.st_mtime,
                 "modified": time.strftime("%Y-%m-%d %H:%M",
                                           time.localtime(st.st_mtime)),
                 "caption": derive_caption(f.name),
                 "posted": posted.get(f.name),
+                "score": sc.get("score"),
+                "judge": sc.get("judge"),
+                "category": sc.get("category"),
             })
+    clips.sort(key=lambda c: c["mtime"], reverse=True)
+    for c in clips:
+        c.pop("mtime", None)
     return jsonify(clips)
 
 
 @bp.route("/api/clips/<path:filename>")
 def serve_clip(filename):
-    return send_from_directory(str(_state.CLIPS_DIR), filename)
+    p = _state.resolve_clip_path(filename)
+    if p is None:
+        return jsonify({"error": "Not found"}), 404
+    return send_from_directory(str(p.parent), p.name)
 
 
 @bp.route("/api/channels")
@@ -213,12 +228,13 @@ def api_post():
     clips = []
     for c in clips_in:
         name = (c.get("name") or "").strip()
-        if not name or not (_state.CLIPS_DIR / name).is_file():
+        path = _state.resolve_clip_path(name) if name else None
+        if path is None:
             return jsonify({"error": f"clip not found: {name or '(empty)'}"}), 400
         caption = (c.get("caption") or "").strip() or derive_caption(name)
         if hashtags:
             caption = f"{caption}\n\n{hashtags}"
-        clips.append({"name": name, "caption": caption})
+        clips.append({"name": name, "caption": caption, "path": str(path)})
     if not clips:
         return jsonify({"error": "no clips selected"}), 400
 
@@ -316,7 +332,9 @@ def api_verify_ledger():
                    if p.get("post_id")
                    and p.get("status") not in ("sent", "error", "skipped_cap")]
     if not pending_ids:
-        return jsonify({"checked": 0, "updated": 0})
+        # nothing to re-check, but fully-sent clips may still need archiving
+        return jsonify({"checked": 0, "updated": 0,
+                        "moved": _state.sweep_posted_clips()})
     try:
         statuses = _client().posts_status(org_id, pending_ids)
     except BufferAPIError as e:
@@ -336,7 +354,10 @@ def api_verify_ledger():
                 updated += 1
         if changed:
             _state.update_posted_posts(name, posts)
-    return jsonify({"checked": len(pending_ids), "updated": updated})
+    # newly-confirmed clips graduate to posted_clips/
+    moved = _state.sweep_posted_clips()
+    return jsonify({"checked": len(pending_ids), "updated": updated,
+                    "moved": moved})
 
 
 @bp.route("/api/job")

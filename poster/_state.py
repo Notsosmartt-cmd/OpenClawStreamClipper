@@ -41,11 +41,59 @@ _reload_paths()
 
 VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".mov")
 
+POSTED_SUBDIR = "posted_clips"
+
 
 def posted_log_path() -> Path:
     """Ledger of clips already published through this app (lives beside the
     clips so it travels with the folder; clips/* is gitignored)."""
     return CLIPS_DIR / ".posted.buffer.json"
+
+
+def posted_clips_dir() -> Path:
+    """Fully-posted clips are moved here (owner req 2026-07-16): a clip whose
+    every post verified 'sent' leaves the working folder so what remains in
+    clips/ is the unposted backlog. The poster still lists/serves both."""
+    return CLIPS_DIR / POSTED_SUBDIR
+
+
+def resolve_clip_path(name: str) -> Path | None:
+    """Find a clip by bare filename in the working folder, then posted_clips."""
+    for d in (CLIPS_DIR, posted_clips_dir()):
+        p = d / name
+        if p.is_file():
+            return p
+    return None
+
+
+def sweep_posted_clips() -> list[str]:
+    """Move every ledger clip whose posts ALL verified 'sent' (and at least
+    one exists) from clips/ into posted_clips/. Strict by design: any error,
+    cap-skip, scheduled or still-publishing post keeps the file in place.
+    Returns the names moved."""
+    moved: list[str] = []
+    try:
+        posted = load_posted()
+    except Exception:
+        return moved
+    dest_dir = posted_clips_dir()
+    for name, entry in posted.items():
+        posts = entry.get("posts") or []
+        if not posts or any(p.get("status") != "sent" for p in posts):
+            continue
+        src = CLIPS_DIR / name
+        if not src.is_file():
+            continue  # already moved, renamed, or deleted
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / name
+            if dest.exists():
+                continue  # same name already archived — leave both untouched
+            src.rename(dest)
+            moved.append(name)
+        except OSError:
+            continue  # locked/in-use etc. — try again on the next sweep
+    return moved
 
 
 def load_api_key() -> str | None:

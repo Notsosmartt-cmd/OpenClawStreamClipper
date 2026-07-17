@@ -139,8 +139,42 @@ saved via `/api/hosting`, and the production upload path verified end-to-end
 | `poster/buffer_client.py` | GraphQL client: channels, `create_video_post` |
 | `poster/media_host.py` | Cloudinary signed upload + credential verify |
 | `poster/worker.py` | bounded batch thread + async-publish verification |
-| `poster/routes.py` | `/api/{status,clips,channels,hosting,post,retry,job}` |
+| `poster/scores.py` | clip score index (clip_scores.jsonl + trace joins) |
+| `poster/routes.py` | `/api/{status,clips,channels,limits,hosting,post,retry,job,verify-ledger}` |
 | `poster/templates` + `static/` | UI (dashboard theme copied; `poster.css/js`) |
+
+## Top-rated filter + posted_clips auto-move (v1.3, 2026-07-16)
+
+**★ Top rated** (clips toolbar): keeps the best 20/33/50% of SCORED clips by
+the pipeline's composite score (~0.3–2.0), sorted best-first; unscored clips
+hide with an explicit count, never silently. Score chip on each card:
+`★ 1.62 · ⚖ 8` (composite · S4.5 judge when known). Scores come from
+`poster/scores.py`, which joins (newest-first): a durable
+`clips/.diagnostics/clip_scores.jsonl` (reader shipped first — the pipeline
+writer is a queued follow-up) → `last_run_*` traces via `clips_made` rows
+(`<stem incl variant>|score|category|…`, a direct filename join) → the
+`enriched_<t>`/`moment_<t>` sidecars + `hype_moments.data` via the stage7
+title sanitize.
+
+> [!warning] Coverage gap on 2026-07-16: traces are per-INVOCATION snapshots
+> written at batch end — a batch STOPPED mid-queue writes none (batch A), and
+> a running batch writes its trace only when it finishes (batch B). Hence
+> 2/134 scored on ship day; batch B's trace covers its ~70 clips when it
+> completes, and the `clip_scores.jsonl` stage-7 writer (follow-up task —
+> pipeline code is frozen while a batch runs) makes every FUTURE clip scored
+> at render time. Related discovery: the whole run-end reporting block
+> (run_metrics + last_run) stopped firing on 07-16's daytime runs — separate
+> bug, queued.
+
+**posted_clips auto-move** (owner req): after verification, any clip whose
+posts ALL read `sent` (strict — one error/skip/scheduled keeps it in place)
+moves `clips/` → `clips/posted_clips/`, so the working folder is the unposted
+backlog. Sweep runs at batch-verify end and on every Refresh-statuses click
+(a drip clip moves once its last scheduled post publishes). The poster lists
+and serves BOTH folders (cards show `📁 posted`); retries of moved clips
+reuse the hosted Cloudinary URL. First live sweep moved 8/8 correct clips
+(the 2×2 first batch — incl. the healed retry — plus the 6 pre-lockout
+TikTok sends); the 106 lockout failures correctly stayed.
 
 ## Posted ledger
 

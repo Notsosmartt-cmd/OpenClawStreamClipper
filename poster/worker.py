@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 from . import _state, media_host
 from .buffer_client import BufferAPIError, BufferClient
@@ -64,6 +65,7 @@ def start_batch(clips: list[dict], channels: list[dict], mode: str,
     items = [
         {
             "name": c["name"],
+            "path": c.get("path"),   # resolved by routes (clips/ or posted_clips/)
             "caption": c["caption"],
             "mode": mode,
             "channels": channels,
@@ -191,8 +193,9 @@ def _run(job: dict, api_key: str, organization_id: str | None,
             continue
         try:
             if not item["media_url"]:
-                path = _state.CLIPS_DIR / item["name"]
-                if not path.exists():
+                path = (Path(item["path"]) if item.get("path")
+                        else _state.resolve_clip_path(item["name"]))
+                if path is None or not path.exists():
                     raise RuntimeError("file not found in clips folder")
                 if not _stable(path):
                     raise RuntimeError(
@@ -315,6 +318,8 @@ def _verify(job: dict, client: BufferClient,
             _state.merge_posted_posts(item["name"], item["posts"])
         else:
             _state.update_posted_posts(item["name"], item["posts"])
+    # fully-sent clips graduate to posted_clips/ (strict: every post 'sent')
+    job["moved"] = _state.sweep_posted_clips()
 
 
 def _stable(path) -> bool:
