@@ -217,6 +217,17 @@ The tested hardware is an RTX 5060 Ti (16GB). An RTX 3090 (24GB) or RTX 4090 wou
 
 ---
 
+## Host RAM cost of the resident 35B (measured 2026-07-17)
+
+> [!warning] `llama-server` holds **~32 GB of SYSTEM RAM** while the 35B is
+> loaded (Vulkan host staging of the 22 GB weights + the 32768-ctx ×
+> PARALLEL=4 KV pool from the BUG-73 fix). On the 64 GB rig that's fine
+> alone, but 35B-resident + a heavy browser session + a Lab CLAP job pushed
+> commit charge to ~86 GB → paging → whole-PC sluggishness (owner-reported
+> during a card analyze; the job itself was healthy). Rules of thumb: eject
+> the model (or let the 1 h TTL lapse) when not actively clipping/analyzing;
+> a multitask-friendly Lab analyze can use the per-job 9B model dropdown.
+
 ## Whisper vs LM Studio memory separation
 
 [[entities/faster-whisper]] runs via Python directly inside the Docker container (not through LM Studio). Its VRAM is allocated by NVIDIA Container Toolkit independently of LM Studio's model pool. The pipeline calls LM Studio's unload API before loading Whisper — otherwise both could be in VRAM simultaneously and OOM.
