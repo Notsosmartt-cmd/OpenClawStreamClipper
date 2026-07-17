@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw — Clip Poster</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
-    <link rel="stylesheet" href="/static/poster.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
+    <link rel="stylesheet" href="/static/poster.css?v=4">
 </head>
 <body>
 
@@ -85,13 +85,25 @@
         </div>
         <div class="panel-body">
             <div id="channels-row" class="chan-row"><span class="hint">Loading channels…</span></div>
+            <div id="quota-row" class="hint" style="margin-top:8px;"></div>
             <div class="controls" style="margin-top:14px;">
                 <div class="control-group">
                     <label class="field-label">When</label>
                     <select id="sel-mode">
-                        <option value="addToQueue" selected>Add to queue — paced by your Buffer schedule</option>
-                        <option value="shareNow">Post now — publish immediately</option>
+                        <option value="drip" selected>Drip — auto-schedule spaced (safe for bulk)</option>
+                        <option value="addToQueue">Add to queue — paced by your Buffer schedule</option>
+                        <option value="shareNow">Post now — publish immediately (small batches!)</option>
                         <option value="shareNext">Share next — top of the queue</option>
+                    </select>
+                </div>
+                <div class="control-group" id="grp-spacing">
+                    <label class="field-label">Drip spacing</label>
+                    <select id="sel-spacing">
+                        <option value="30">every 30 min (48/day — over TikTok cap)</option>
+                        <option value="60">every hour (24/day)</option>
+                        <option value="90" selected>every 90 min (16/day — safe)</option>
+                        <option value="120">every 2 hours (12/day)</option>
+                        <option value="180">every 3 hours (8/day)</option>
                     </select>
                 </div>
                 <div class="control-group" style="flex:1; min-width:260px;">
@@ -106,6 +118,10 @@
                 Instagram videos publish as <b>Reels</b>. Caption defaults to the clip
                 title (the “(B)” / “(Short)” marker is stripped) — edit it on the card;
                 hashtags above are appended to every caption at post time.
+                <b>Rate guard:</b> daily caps are checked live (TikTok 25/day, IG 50/day —
+                network caps, same on every Buffer plan); “Post now” allows a small burst
+                per channel and auto-schedules the rest, because TikTok locks the channel
+                for ~24 h if many posts land in rapid succession.
             </p>
             <div class="btn-row">
                 <button id="btn-post" class="btn-primary" disabled>Post Selected (0)</button>
@@ -121,6 +137,8 @@
         <div class="panel-header">
             <span class="panel-title">Clips <span id="sel-count" class="hint"></span></span>
             <div class="toolbar">
+                <button id="btn-verify-ledger" class="btn-ghost btn-sm"
+                        title="Re-check scheduled/accepted posts against Buffer (updates badges)">Refresh statuses</button>
                 <button id="btn-sel-unposted" class="btn-ghost btn-sm">Select unposted</button>
                 <button id="btn-sel-all" class="btn-ghost btn-sm">Select all</button>
                 <button id="btn-sel-none" class="btn-ghost btn-sm">Clear</button>
@@ -136,6 +154,6 @@
 
 </div>
 
-<script type="module" src="/static/poster.js?v=3"></script>
+<script type="module" src="/static/poster.js?v=4"></script>
 </body>
 </html>

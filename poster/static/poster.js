@@ -36,7 +36,7 @@ async function init() {
     wireButtons();
     await fetchStatus();
     fetchClips();
-    fetchChannels(false);
+    fetchChannels(false).then(fetchLimits);
 }
 
 function wireButtons() {
@@ -49,10 +49,57 @@ function wireButtons() {
     $("btn-retry").onclick = startRetry;
     $("btn-cancel").onclick = cancelJob;
     $("btn-save-hosting").onclick = saveHosting;
+    $("btn-verify-ledger").onclick = verifyLedger;
+    // spacing selector only matters in drip mode
+    const mode = $("sel-mode");
+    const syncSpacing = () => {
+        $("grp-spacing").style.display = mode.value === "drip" ? "" : "none";
+    };
+    mode.onchange = syncSpacing;
+    syncSpacing();
     // hashtags survive reloads — they rarely change between batches
     const ht = $("inp-hashtags");
     ht.value = localStorage.getItem("poster_hashtags") || "";
     ht.oninput = () => localStorage.setItem("poster_hashtags", ht.value);
+}
+
+// ---------- daily quota strip ----------
+
+async function fetchLimits() {
+    const row = $("quota-row");
+    try {
+        const res = await fetch("/api/limits");
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || res.status);
+        const parts = Object.values(d).map((l) => {
+            const left = l.remaining ?? "?";
+            const tone = left === 0 ? "var(--danger)"
+                : left !== "?" && left <= 5 ? "var(--warn)" : "var(--success)";
+            return `<b style="color:${tone}">${(l.service || "?").toUpperCase()}
+                ${left}</b>/${l.limit ?? "?"} left today`;
+        });
+        row.innerHTML = "Posting room (rolling 24 h, network caps): " +
+            parts.join(" · ");
+    } catch (e) {
+        row.textContent = "Posting room: unavailable (" + e.message + ")";
+    }
+}
+
+async function verifyLedger() {
+    const btn = $("btn-verify-ledger");
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    try {
+        const res = await fetch("/api/verify-ledger", { method: "POST" });
+        const d = await res.json();
+        btn.textContent = d.error ? "Refresh statuses"
+            : `Refresh statuses (${d.updated ?? 0} updated)`;
+        await fetchClips();
+        fetchLimits();
+    } catch (e) {
+        btn.textContent = "Refresh statuses";
+    }
+    btn.disabled = false;
 }
 
 // ---------- status / setup ----------
@@ -218,14 +265,20 @@ function renderClips() {
         const badges = document.createElement("div");
         badges.className = "pick-badges";
         if (c.posted) {
-            const failed = (c.posted.posts || []).filter((p) => p.status === "error");
+            const posts = c.posted.posts || [];
+            const bad = posts.filter((p) => p.status === "error" || p.status === "skipped_cap");
+            const sched = posts.filter((p) => p.status === "scheduled");
             const chip = document.createElement("span");
-            chip.className = "chip " + (failed.length ? "chip-err" : "chip-posted");
-            chip.textContent = (failed.length ? "posted ⚠" : "posted") +
+            chip.className = "chip " + (bad.length ? "chip-err"
+                : sched.length ? "chip-run" : "chip-posted");
+            chip.textContent = (bad.length ? "posted ⚠"
+                : sched.length ? "scheduled ⏱" : "posted") +
                 (c.posted.times > 1 ? " ×" + c.posted.times : "");
             chip.title = "Posted " + (c.posted.posted_at || "") + "\n" +
-                (c.posted.posts || []).map((p) =>
-                    `${p.service}: ${p.status || "accepted"}${p.error ? " — " + p.error : ""}`
+                posts.map((p) =>
+                    `${p.service}: ${p.status || "accepted"}` +
+                    (p.status === "scheduled" && p.due_at ? ` for ${p.due_at}` : "") +
+                    (p.error ? " — " + p.error : "")
                 ).join("\n");
             badges.appendChild(chip);
         }
@@ -291,9 +344,10 @@ function updateControls() {
     } else {
         btn.title = n ? `${n} clip(s) → ${chans} channel(s) = ${n * chans} posts` : "Select clips below";
     }
-    // Retry failed (N): ledger posts whose verified status is error
+    // Retry failed (N): ledger posts that errored OR were cap-skipped
     const failed = state.clips.reduce((s, c) =>
-        s + ((c.posted && c.posted.posts) || []).filter((p) => p.status === "error").length, 0);
+        s + ((c.posted && c.posted.posts) || []).filter(
+            (p) => p.status === "error" || p.status === "skipped_cap").length, 0);
     const rbtn = $("btn-retry");
     rbtn.style.display = failed && !jobRunning() ? "" : "none";
     rbtn.textContent = `Retry failed (${failed})`;
@@ -319,6 +373,7 @@ async function startPost() {
         clips,
         channel_ids: checkedChannelIds(),
         mode: $("sel-mode").value,
+        spacing_min: parseInt($("sel-spacing").value, 10),
         hashtags: $("inp-hashtags").value,
     };
     $("btn-post").disabled = true;
@@ -370,12 +425,13 @@ function startPolling() {
     updateControls();
 }
 
-// "tt✓ ig…" style per-network readout for one item's posts
+// "tt✓ ig⏱" style per-network readout for one item's posts
 function netSummary(posts) {
     return posts.map((p) => {
         const svc = p.service === "tiktok" ? "tt"
             : p.service === "instagram" ? "ig" : (p.service || "?").slice(0, 2);
-        const mark = p.status === "sent" ? "✓" : p.status === "error" ? "✗" : "…";
+        const mark = p.status === "sent" ? "✓" : p.status === "error" ? "✗"
+            : p.status === "scheduled" ? "⏱" : p.status === "skipped_cap" ? "⏸" : "…";
         return svc + mark;
     }).join(" ");
 }
@@ -388,12 +444,14 @@ async function pollJob() {
     }
     const job = state.job;
     if (!job || !job.items) return;
-    let sentP = 0, errP = 0, totP = 0, errItems = 0;
+    let sentP = 0, errP = 0, schedP = 0, skipP = 0, totP = 0, errItems = 0;
     job.items.forEach((it) => {
         (it.posts || []).forEach((p) => {
             totP++;
             if (p.status === "sent") sentP++;
             else if (p.status === "error") errP++;
+            else if (p.status === "scheduled") schedP++;
+            else if (p.status === "skipped_cap") skipP++;
         });
         if (it.status === "error") errItems++;
         const entry = state.cards.get(it.name);
@@ -404,13 +462,14 @@ async function pollJob() {
             chip.className = "chip chip-run"; chip.textContent = "queued";
         } else if (it.status === "uploading") {
             chip.className = "chip chip-run"; chip.textContent = "uploading…";
-        } else if (it.status.startsWith("posting")) {
+        } else if (it.status.startsWith("posting") || it.status.startsWith("scheduling")) {
             chip.className = "chip chip-run"; chip.textContent = it.status + "…";
         } else if (it.status === "done") {
             // accepted by Buffer — the per-network marks refine as we verify
             const posts = it.posts || [];
-            const anyErr = posts.some((p) => p.status === "error");
-            const anyPending = posts.some((p) => !["sent", "error"].includes(p.status));
+            const anyErr = posts.some((p) => p.status === "error" || p.status === "skipped_cap");
+            const anyPending = posts.some(
+                (p) => !["sent", "error", "scheduled", "skipped_cap"].includes(p.status));
             chip.className = "chip " + (anyErr ? "chip-err" : anyPending ? "chip-run" : "chip-done");
             chip.textContent = netSummary(posts) || "✓ accepted";
             const failedPost = posts.find((p) => p.error);
@@ -424,19 +483,25 @@ async function pollJob() {
             chip.className = "chip chip-err"; chip.textContent = "cancelled";
         }
     });
-    const pend = totP - sentP - errP;
+    const pend = totP - sentP - errP - schedP - skipP;
+    const bits = [];
+    if (sentP) bits.push(`${sentP} live`);
+    if (schedP) bits.push(`${schedP} scheduled`);
+    if (skipP) bits.push(`${skipP} skipped (daily cap)`);
+    if (errP) bits.push(`${errP} failed — use Retry failed`);
+    if (errItems) bits.push(`${errItems} clip(s) errored before posting`);
     $("job-summary").textContent =
         job.state === "running"
             ? `${totP} post(s) created…` + (errItems ? ` · ${errItems} clip(s) failed` : "")
             : job.state === "verifying"
-                ? `verifying — ${sentP}/${totP} live` + (pend ? ` · ${pend} publishing…` : "") + (errP ? ` · ${errP} failed` : "")
-                : `${sentP}/${totP} posts live` + (errP ? ` · ${errP} failed — use Retry failed` : "") +
-                  (errItems ? ` · ${errItems} clip(s) errored before posting` : "") +
+                ? `verifying — ${bits.join(" · ")}` + (pend ? ` · ${pend} publishing…` : "")
+                : `${totP} posts: ` + (bits.join(" · ") || "none") +
                   (job.state === "cancelled" ? " · stopped" : "");
     if (!["running", "verifying"].includes(job.state)) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
         fetchClips();               // refresh posted badges from the ledger
+        fetchLimits();              // quota strip just changed
         updateControls();
     }
 }

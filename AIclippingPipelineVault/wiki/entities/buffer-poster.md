@@ -87,6 +87,33 @@ network's record.
 > fine (50/day cap). After a lockout, DON'T mash Retry failed — it re-fires
 > everything immediately and re-trips the detector.
 
+## Rate guard (shipped 2026-07-16, same night)
+
+The worker now enforces all of the above mechanically (`worker._ChannelGate`;
+per-channel, per-batch):
+
+- **Live quota strip** in the UI + `/api/limits` (60 s cache): rolling-24h
+  room per channel from `dailyPostingLimits`.
+- **Pre-flight cap gate**: immediate-mode posts beyond a channel's remaining
+  quota become `skipped_cap` records (no API call, red ⏸, picked up by Retry
+  failed later); if EVERY channel is at cap the batch is refused up front
+  with the numbers.
+- **TikTok burst guard**: immediate modes allow 3 rapid posts per channel per
+  batch (10 for other networks); overflow is auto-converted to
+  `customScheduled` posts spaced 90 min — Buffer publishes them on time, no
+  local pacing thread. Overrides: `config/buffer_poster.json` →
+  `rate_guard: {tiktok_burst, default_burst, auto_spacing_min}`.
+- **Drip mode** (new UI default): every post scheduled at a chosen spacing
+  (30 m–3 h; 90 min preselected = 16/day, under TikTok's 25 cap). Safe way to
+  push 100+ clips in one click — they publish over days.
+- **Creation throttle** stretches to 12 s/post on >80-post batches so post
+  *creation* stays under Buffer's 100-req/15-min window.
+- **Refresh statuses** button (`/api/verify-ledger`): one-pass re-check of all
+  non-terminal ledger posts (scheduled ones aren't polled by the batch
+  verifier). Retry failed now covers `error` + `skipped_cap`.
+
+Chip legend: `tt✓` sent · `tt✗` failed · `tt⏱` scheduled · `tt⏸` cap-skipped.
+
 ## Media hosting (the one non-obvious constraint)
 
 > [!warning] Buffer has **no upload endpoint** — media must sit at a public,

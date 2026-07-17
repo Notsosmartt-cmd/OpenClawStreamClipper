@@ -14,6 +14,8 @@ import requests
 
 API_URL = "https://api.buffer.com"
 
+# Immediate modes create posts that publish now/next/at the next queue slot.
+# "customScheduled" (used by drip + the burst guard) needs a dueAt.
 SHARE_MODES = ("addToQueue", "shareNow", "shareNext")
 
 _CREATE_POST = """
@@ -97,6 +99,35 @@ class BufferClient:
         )
         return d["channels"]
 
+    def daily_posting_limits(self, channel_ids: list[str]) -> dict[str, dict]:
+        """Per-channel rolling-24h posting quota, live from Buffer.
+        {channel_id: {sent, scheduled, limit, is_at_limit, remaining}}.
+        These caps are NETWORK-imposed (TikTok 25, Instagram 50) — identical
+        on every Buffer plan (support.buffer.com/article/646)."""
+        ids = ", ".join(f'"{c}"' for c in channel_ids)
+        d = self.gql(
+            """
+            query PosterLimits {
+              dailyPostingLimits(input: { channelIds: [%s] }) {
+                channelId sent scheduled limit isAtLimit
+              }
+            }
+            """ % ids
+        )
+        out: dict[str, dict] = {}
+        for row in d.get("dailyPostingLimits") or []:
+            sent = int(row.get("sent") or 0)
+            sched = int(row.get("scheduled") or 0)
+            limit = int(row.get("limit") or 0)
+            out[row["channelId"]] = {
+                "sent": sent,
+                "scheduled": sched,
+                "limit": limit,
+                "is_at_limit": bool(row.get("isAtLimit")),
+                "remaining": max(0, limit - sent - sched),
+            }
+        return out
+
     def posts_status(self, organization_id: str,
                      post_ids: list[str]) -> dict[str, dict]:
         """Fetch live status for the given post ids in as few calls as
@@ -148,6 +179,7 @@ class BufferClient:
         text: str,
         video_url: str,
         mode: str = "addToQueue",
+        due_at: str | None = None,
         thumbnail_offset_ms: int = 1000,
     ) -> dict:
         """Create ONE post (one clip on one channel). Returns {id, dueAt}.
@@ -155,8 +187,13 @@ class BufferClient:
         service drives the per-network metadata: Instagram video posts are
         published as REELS (owner requirement); TikTok video posts need no
         metadata block (the caption rides in `text`).
+        mode "customScheduled" requires due_at (ISO 8601 UTC) — used by drip
+        scheduling and the TikTok burst guard.
         """
-        if mode not in SHARE_MODES:
+        if mode == "customScheduled":
+            if not due_at:
+                raise BufferAPIError("customScheduled needs due_at")
+        elif mode not in SHARE_MODES:
             raise BufferAPIError(f"unsupported share mode: {mode}")
         inp: dict = {
             "channelId": channel_id,
@@ -172,6 +209,8 @@ class BufferClient:
                 }
             ],
         }
+        if due_at:
+            inp["dueAt"] = due_at
         if service == "instagram":
             inp["metadata"] = {
                 "instagram": {"type": "reel", "shouldShareToFeed": True}
