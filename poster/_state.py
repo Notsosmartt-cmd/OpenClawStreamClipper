@@ -87,6 +87,30 @@ def record_posted(name: str, entry: dict) -> None:
     posted_log_path().write_text(json.dumps(posted, indent=2), encoding="utf-8")
 
 
+def update_posted_posts(name: str, posts: list) -> None:
+    """Refresh an entry's posts array in place (verification results) —
+    no times bump, nothing else touched."""
+    posted = load_posted()
+    if name in posted:
+        posted[name]["posts"] = posts
+        posted_log_path().write_text(json.dumps(posted, indent=2),
+                                     encoding="utf-8")
+
+
+def merge_posted_posts(name: str, new_posts: list) -> None:
+    """Replace an entry's per-service posts with retried ones (a retry of
+    the failed TikTok post must not clobber the Instagram record)."""
+    posted = load_posted()
+    entry = posted.get(name)
+    if not entry:
+        return
+    replaced = {p.get("service") for p in new_posts}
+    entry["posts"] = [p for p in entry.get("posts", [])
+                      if p.get("service") not in replaced] + new_posts
+    posted_log_path().write_text(json.dumps(posted, indent=2),
+                                 encoding="utf-8")
+
+
 # --- Batch job state (one at a time) ---
 job_lock = threading.Lock()
 current_job: dict | None = None
