@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw — Clip Poster</title>
+    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/poster.css?v=2">
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <div class="logo-mark logo-mark-poster">
+            <svg viewBox="0 0 15 15" fill="none">
+                <path d="M2.5 7.5L12.5 2.5L10 12.5L7 9L2.5 7.5Z" stroke="white" stroke-width="1.3" stroke-linejoin="round"/>
+                <path d="M7 9L12.5 2.5" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <div class="logo-text">
+            <span class="logo-name">OpenClaw</span>
+            <span class="logo-sub">Clip Poster · Buffer</span>
+        </div>
+    </div>
+    <div class="header-right">
+        <span id="account-badge" class="badge badge-gray" style="display:none;"></span>
+        <div id="status-badge" class="status-badge">
+            <div class="status-dot"></div>
+            <span id="status-label">Idle</span>
+        </div>
+    </div>
+</header>
+
+<div class="poster-wrap">
+
+    <!-- Setup (shown only while something is missing) -->
+    <div class="panel" id="setup-panel" style="display:none;">
+        <div class="panel-header"><span class="panel-title">Setup</span></div>
+        <div class="panel-body">
+            <div id="key-note" class="setup-note" style="display:none;">
+                Buffer API key not found — put it (one line) in
+                <code>BufferIOapiKey.txt</code> in the project root, then reload.
+            </div>
+            <div id="hosting-setup" style="display:none;">
+                <div class="setup-note">
+                    <b>One-time media hosting setup.</b> Buffer's API can't accept file
+                    uploads — each clip must sit at a public HTTPS URL when it's posted.
+                    Buffer's docs recommend Cloudinary (free tier, plenty for short clips):
+                    <ol class="hint">
+                        <li>Create a free account at <b>cloudinary.com</b></li>
+                        <li>On the console home (Dashboard → "Go to API Keys"), copy
+                            <b>Cloud name</b>, <b>API Key</b>, and <b>API Secret</b></li>
+                        <li>Paste them here and Save — they're stored locally in
+                            <code>config/buffer_poster.json</code> (gitignored)</li>
+                    </ol>
+                </div>
+                <div class="controls" style="margin-top:12px;">
+                    <div class="control-group">
+                        <label class="field-label">Cloud name</label>
+                        <input type="text" id="inp-cloud" placeholder="dxxxxxxxx">
+                    </div>
+                    <div class="control-group">
+                        <label class="field-label">API key</label>
+                        <input type="text" id="inp-ckey" placeholder="123456789…">
+                    </div>
+                    <div class="control-group">
+                        <label class="field-label">API secret</label>
+                        <input type="password" id="inp-csecret" placeholder="••••••••">
+                    </div>
+                    <div class="control-group">
+                        <label class="field-label">&nbsp;</label>
+                        <button id="btn-save-hosting" class="btn-primary">Save &amp; Test</button>
+                    </div>
+                </div>
+                <div id="hosting-msg" class="hint" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Posting controls -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Posting</span>
+            <button id="btn-refresh-channels" class="btn-ghost btn-sm">Refresh channels</button>
+        </div>
+        <div class="panel-body">
+            <div id="channels-row" class="chan-row"><span class="hint">Loading channels…</span></div>
+            <div class="controls" style="margin-top:14px;">
+                <div class="control-group">
+                    <label class="field-label">When</label>
+                    <select id="sel-mode">
+                        <option value="addToQueue" selected>Add to queue — paced by your Buffer schedule</option>
+                        <option value="shareNow">Post now — publish immediately</option>
+                        <option value="shareNext">Share next — top of the queue</option>
+                    </select>
+                </div>
+            </div>
+            <p class="hint" style="margin-top:10px;">
+                Each selected clip becomes its own post on every checked channel.
+                Instagram videos publish as <b>Reels</b>. Caption defaults to the clip
+                title (the “(B)” / “(Short)” marker is stripped) — edit it on the card.
+            </p>
+            <div class="btn-row">
+                <button id="btn-post" class="btn-primary" disabled>Post Selected (0)</button>
+                <button id="btn-cancel" class="btn-danger" style="display:none;">Stop after current clip</button>
+                <span id="job-summary" class="hint" style="align-self:center;"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clip picker -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Clips <span id="sel-count" class="hint"></span></span>
+            <div class="toolbar">
+                <button id="btn-sel-unposted" class="btn-ghost btn-sm">Select unposted</button>
+                <button id="btn-sel-all" class="btn-ghost btn-sm">Select all</button>
+                <button id="btn-sel-none" class="btn-ghost btn-sm">Clear</button>
+                <button id="btn-refresh-clips" class="btn-ghost btn-sm">Refresh</button>
+            </div>
+        </div>
+        <div class="panel-body" style="padding:0;">
+            <div id="clips-grid" class="pick-grid">
+                <div class="empty-state">Loading…</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script type="module" src="/static/poster.js?v=2"></script>
+</body>
+</html>

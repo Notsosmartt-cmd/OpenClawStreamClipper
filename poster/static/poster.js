@@ -1,0 +1,381 @@
+// Buffer Clip Poster — single-page UI.
+// Cards are built via createElement/textContent (clip titles are arbitrary
+// LLM output — never trust them inside innerHTML).
+
+const state = {
+    clips: [],
+    channels: [],
+    selected: new Set(),
+    captions: new Map(),   // name -> edited caption (uneditied = derived)
+    cards: new Map(),      // name -> {card, chip, err}
+    job: null,
+    ready: false,          // key + hosting both present
+    pollTimer: null,
+};
+
+// Lazy preview loading: with 80+ clips, eagerly fetching metadata for every
+// <video> stalls the tab for ~30s+. Only fetch when a card scrolls into view.
+const previewObserver = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        const vid = e.target;
+        if (vid.dataset.src) {
+            vid.src = vid.dataset.src;
+            vid.preload = "metadata";
+            delete vid.dataset.src;
+        }
+        previewObserver.unobserve(vid);
+    });
+}, { rootMargin: "300px" });
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- boot ----------
+
+async function init() {
+    wireButtons();
+    await fetchStatus();
+    fetchClips();
+    fetchChannels(false);
+}
+
+function wireButtons() {
+    $("btn-refresh-clips").onclick = fetchClips;
+    $("btn-refresh-channels").onclick = () => fetchChannels(true);
+    $("btn-sel-all").onclick = () => selectWhere(() => true);
+    $("btn-sel-none").onclick = () => selectWhere(() => false);
+    $("btn-sel-unposted").onclick = () => selectWhere((c) => !c.posted);
+    $("btn-post").onclick = startPost;
+    $("btn-cancel").onclick = cancelJob;
+    $("btn-save-hosting").onclick = saveHosting;
+}
+
+// ---------- status / setup ----------
+
+async function fetchStatus() {
+    try {
+        const s = await (await fetch("/api/status")).json();
+        state.ready = s.key_present && s.hosting_configured;
+        $("setup-panel").style.display = state.ready ? "none" : "";
+        $("key-note").style.display = s.key_present ? "none" : "";
+        $("hosting-setup").style.display = s.hosting_configured ? "none" : "";
+        if (s.job && s.job.state === "running") {
+            state.job = s.job;
+            startPolling();          // adopt a batch already in flight (reload)
+        }
+    } catch (e) {
+        console.error("status failed:", e);
+    }
+    updateControls();
+}
+
+async function saveHosting() {
+    const btn = $("btn-save-hosting");
+    btn.disabled = true;
+    $("hosting-msg").textContent = "Testing credentials…";
+    try {
+        const res = await fetch("/api/hosting", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                cloud_name: $("inp-cloud").value,
+                api_key: $("inp-ckey").value,
+                api_secret: $("inp-csecret").value,
+            }),
+        });
+        const d = await res.json();
+        $("hosting-msg").textContent = d.message || (d.ok ? "Saved." : "Failed.");
+        if (d.ok) await fetchStatus();
+    } catch (e) {
+        $("hosting-msg").textContent = "Request failed: " + e;
+    }
+    btn.disabled = false;
+}
+
+// ---------- channels ----------
+
+async function fetchChannels(refresh) {
+    const row = $("channels-row");
+    try {
+        const res = await fetch("/api/channels" + (refresh ? "?refresh=1" : ""));
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || res.status);
+        state.channels = d.channels || [];
+        if (d.account) {
+            const b = $("account-badge");
+            b.style.display = "";
+            b.textContent = "Buffer · " + (d.account.email || d.account.organization || "connected");
+        }
+        row.textContent = "";
+        state.channels.forEach((ch) => {
+            const chip = document.createElement("label");
+            chip.className = "chan-chip on";           // default: all checked
+            chip.dataset.id = ch.id;
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.checked = true;
+            box.onchange = () => {
+                chip.classList.toggle("on", box.checked);
+                updateControls();
+            };
+            chip.appendChild(box);
+            if (ch.avatar) {
+                const img = document.createElement("img");
+                img.src = ch.avatar;
+                img.onerror = () => img.remove();
+                chip.appendChild(img);
+            }
+            const svc = document.createElement("span");
+            svc.className = "svc";
+            svc.textContent = ch.service || "?";
+            chip.appendChild(svc);
+            const name = document.createElement("span");
+            name.textContent = ch.displayName || ch.name || ch.id;
+            chip.appendChild(name);
+            if (ch.isQueuePaused) {
+                const p = document.createElement("span");
+                p.className = "svc";
+                p.textContent = "· queue paused";
+                chip.appendChild(p);
+            }
+            row.appendChild(chip);
+        });
+        if (!state.channels.length) {
+            row.innerHTML = '<span class="hint">No channels connected to this Buffer account.</span>';
+        }
+    } catch (e) {
+        row.textContent = "";
+        const err = document.createElement("span");
+        err.className = "hint";
+        err.style.color = "var(--danger)";
+        err.textContent = "Couldn't load channels: " + e.message;
+        row.appendChild(err);
+    }
+    updateControls();
+}
+
+function checkedChannelIds() {
+    return [...document.querySelectorAll(".chan-chip input:checked")]
+        .map((b) => b.closest(".chan-chip").dataset.id);
+}
+
+// ---------- clips ----------
+
+async function fetchClips() {
+    try {
+        state.clips = await (await fetch("/api/clips")).json();
+    } catch (e) {
+        console.error("clips failed:", e);
+        return;
+    }
+    const present = new Set(state.clips.map((c) => c.name));
+    [...state.selected].forEach((n) => { if (!present.has(n)) state.selected.delete(n); });
+    renderClips();
+}
+
+function renderClips() {
+    const grid = $("clips-grid");
+    grid.textContent = "";
+    state.cards.clear();
+    if (!state.clips.length) {
+        const d = document.createElement("div");
+        d.className = "empty-state";
+        d.textContent = "No clips found in the clips folder yet.";
+        grid.appendChild(d);
+        updateControls();
+        return;
+    }
+    state.clips.forEach((c) => {
+        const card = document.createElement("div");
+        card.className = "pick-card" + (state.selected.has(c.name) ? " sel" : "");
+
+        const media = document.createElement("div");
+        media.style.position = "relative";
+        const vid = document.createElement("video");
+        vid.preload = "none";
+        vid.dataset.src = "/api/clips/" + encodeURIComponent(c.name) + "#t=0.5";
+        vid.onclick = () => (vid.paused ? vid.play() : vid.pause());
+        previewObserver.observe(vid);
+        media.appendChild(vid);
+
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.className = "pick-check";
+        check.checked = state.selected.has(c.name);
+        check.onchange = () => {
+            if (check.checked) state.selected.add(c.name);
+            else state.selected.delete(c.name);
+            card.classList.toggle("sel", check.checked);
+            updateControls();
+        };
+        media.appendChild(check);
+
+        const badges = document.createElement("div");
+        badges.className = "pick-badges";
+        if (c.posted) {
+            const chip = document.createElement("span");
+            chip.className = "chip chip-posted";
+            chip.textContent = "posted" + (c.posted.times > 1 ? " ×" + c.posted.times : "");
+            chip.title = "Posted " + (c.posted.posted_at || "") + " → " +
+                (c.posted.posts || []).map((p) => p.service).join(" + ") +
+                (c.posted.partial ? " (partial!)" : "");
+            badges.appendChild(chip);
+        }
+        const status = document.createElement("span");
+        status.className = "chip";
+        status.style.display = "none";
+        badges.appendChild(status);
+        media.appendChild(badges);
+        card.appendChild(media);
+
+        const cap = document.createElement("textarea");
+        cap.className = "cap-input";
+        cap.rows = 2;
+        cap.value = state.captions.get(c.name) ?? c.caption;
+        cap.title = "Caption for both networks (defaults to the clip title)";
+        cap.oninput = () => state.captions.set(c.name, cap.value);
+        card.appendChild(cap);
+
+        const meta = document.createElement("div");
+        meta.className = "pick-meta";
+        const left = document.createElement("span");
+        left.textContent = c.size_mb + " MB · " + c.modified;
+        const err = document.createElement("span");
+        err.className = "err";
+        meta.appendChild(left);
+        meta.appendChild(err);
+        card.appendChild(meta);
+
+        state.cards.set(c.name, { card, chip: status, err });
+        grid.appendChild(card);
+    });
+    updateControls();
+}
+
+function selectWhere(pred) {
+    state.selected = new Set(state.clips.filter(pred).map((c) => c.name));
+    state.clips.forEach((c) => {
+        const entry = state.cards.get(c.name);
+        if (!entry) return;
+        const on = state.selected.has(c.name);
+        entry.card.classList.toggle("sel", on);
+        entry.card.querySelector(".pick-check").checked = on;
+    });
+    updateControls();
+}
+
+// ---------- posting ----------
+
+function jobRunning() {
+    return state.job && state.job.state === "running";
+}
+
+function updateControls() {
+    const n = state.selected.size;
+    const chans = checkedChannelIds().length;
+    const btn = $("btn-post");
+    btn.textContent = `Post Selected (${n})`;
+    btn.disabled = !state.ready || jobRunning() || n === 0 || chans === 0;
+    if (!state.ready) {
+        btn.title = "Finish Setup first (key + media hosting)";
+    } else if (chans === 0) {
+        btn.title = "Check at least one channel";
+    } else {
+        btn.title = n ? `${n} clip(s) → ${chans} channel(s) = ${n * chans} posts` : "Select clips below";
+    }
+    $("btn-cancel").style.display = jobRunning() ? "" : "none";
+    $("sel-count").textContent = state.clips.length
+        ? `· ${n}/${state.clips.length} selected` : "";
+    const badge = $("status-badge");
+    badge.classList.toggle("running", jobRunning());
+    $("status-label").textContent = jobRunning() ? "Posting…" : "Idle";
+}
+
+async function startPost() {
+    if (jobRunning()) return;
+    const clips = state.clips
+        .filter((c) => state.selected.has(c.name))
+        .map((c) => ({
+            name: c.name,
+            caption: (state.captions.get(c.name) ?? c.caption).trim(),
+        }));
+    const payload = {
+        clips,
+        channel_ids: checkedChannelIds(),
+        mode: $("sel-mode").value,
+    };
+    $("btn-post").disabled = true;
+    $("job-summary").textContent = "Starting…";
+    try {
+        const res = await fetch("/api/post", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || res.status);
+        state.job = d;
+        startPolling();
+    } catch (e) {
+        $("job-summary").textContent = "Couldn't start: " + e.message;
+    }
+    updateControls();
+}
+
+async function cancelJob() {
+    $("btn-cancel").disabled = true;
+    try { await fetch("/api/job/cancel", { method: "POST" }); } catch (e) { /* noop */ }
+    $("btn-cancel").disabled = false;
+}
+
+function startPolling() {
+    if (state.pollTimer) return;
+    state.pollTimer = setInterval(pollJob, 1500);
+    pollJob();
+    updateControls();
+}
+
+async function pollJob() {
+    try {
+        state.job = await (await fetch("/api/job")).json();
+    } catch (e) {
+        return; // transient — keep polling
+    }
+    const job = state.job;
+    if (!job || !job.items) return;
+    let done = 0, errs = 0;
+    job.items.forEach((it) => {
+        if (it.status === "done") done++;
+        if (it.status === "error") errs++;
+        const entry = state.cards.get(it.name);
+        if (!entry) return;
+        const { chip, err } = entry;
+        chip.style.display = "";
+        if (it.status === "pending") {
+            chip.className = "chip chip-run"; chip.textContent = "queued";
+        } else if (it.status === "uploading") {
+            chip.className = "chip chip-run"; chip.textContent = "uploading…";
+        } else if (it.status.startsWith("posting")) {
+            chip.className = "chip chip-run"; chip.textContent = it.status + "…";
+        } else if (it.status === "done") {
+            chip.className = "chip chip-done"; chip.textContent = "✓ posted";
+        } else if (it.status === "error") {
+            chip.className = "chip chip-err"; chip.textContent = "✗ failed";
+            err.textContent = it.detail || "error";
+            err.title = it.detail || "";
+        } else if (it.status === "cancelled") {
+            chip.className = "chip chip-err"; chip.textContent = "cancelled";
+        }
+    });
+    $("job-summary").textContent =
+        `${done}/${job.items.length} posted` + (errs ? ` · ${errs} failed` : "") +
+        (job.state === "cancelled" ? " · stopped" : "");
+    if (job.state !== "running") {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+        fetchClips();               // refresh posted badges from the ledger
+        updateControls();
+    }
+}
+
+init();
