@@ -2,6 +2,9 @@
 # Secrets & credentials
 # ============================================================
 .env
+# Buffer.io API key (poster app reads it at startup) + media-host credentials
+BufferIOapiKey.txt
+config/buffer_poster.json
 config/openclaw.json
 config/openclaw.json.bak*
 config/exec-approvals.json
