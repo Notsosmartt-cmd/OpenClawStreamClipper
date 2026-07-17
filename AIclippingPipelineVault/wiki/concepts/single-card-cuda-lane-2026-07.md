@@ -4,7 +4,7 @@ type: concept
 tags: [performance, speed, cuda, vulkan, lm-studio, runtime, stage-3, stage-4, pass-b, serving, gpu, reference]
 sources: 0
 status: shipped
-updated: 2026-07-15
+updated: 2026-07-16
 ---
 
 # Single-card CUDA lane — where qwen3.5-9b-class models fit for speed
@@ -190,6 +190,48 @@ S3/S4 only:
   `bench_s45.py --vod <vod> --sections detect` with/without — no full runs. Unknowns to
   the bench: LM Studio's CUDA spec-decode quality, interplay with the 2 concurrent
   Pass-B workers, real acceptance rate on slangy content.
+
+## §8 vLLM (+ fast-quant kernels) on the lane — evaluated, REJECTED (2026-07-16)
+
+Owner asked: is vLLM + "turbo quant" (read: its fast-quant paths — AWQ/GPTQ-Marlin
+W4A16, FP8; same verdict if LMDeploy/TurboMind was meant) worth it for the
+single-NVIDIA stages, possibly running gemma-4-26b? **No — four independent walls,
+each sufficient on this rig:**
+
+1. **The 26B doesn't fit the card — arithmetic, not opinion.** Live scan: the QAT
+   file is **15.63 GB**; the 5060 Ti is 16,311 MiB. Weights alone ≥ the card minus
+   CUDA/WDDM overhead → zero room for ANY context, let alone the 32k shared pool the
+   lane requires (BUG 73; 16k pool already failed with concurrency). A ~3-bit
+   re-quant (~11-12 GB) would "fit" at 16k/1-worker — a quality tax on a family
+   already measured WEAKER at the finder task one tier down (§ finder A/B: gemma-12b
+   +31% slower, exclusives 5.1 vs qwen's 6.2). The 26B-A4B runs fine today via the
+   dual-GPU Vulkan pool — that seat belongs to the 35B, which outclasses it.
+2. **Single-stream bandwidth math kills the "turbo" part.** Decode on the lane is
+   memory-bound (448 GB/s): qwen3.5-9b Q4 GGUF (6.55 GB) measures 50 tok/s. vLLM
+   W4A16 = same ~6 GB reads → parity (±10-15%). vLLM **FP8 = ~9 GB reads → ~35-40
+   tok/s, SLOWER than today.** vLLM's real wins live at high concurrency; the lane
+   runs 2 workers by design (ctx-pool rule + the temp-0 non-reproducibility
+   landmine) and S4 is output-token-bound — engine prefill wins don't move it.
+3. **Windows + Blackwell + driver freeze.** vLLM has no native Windows support →
+   WSL2 or community forks; sm_120 consumer Blackwell + quant kernels want fresh
+   CUDA/PyTorch/driver stacks. Owner directive: NO driver updates (595.71 pinned,
+   already the crash suspect). That intersection is exactly the yak-shave the
+   directive forbids.
+4. **Two serving stacks forever.** vLLM cannot serve the vision phase (no Vulkan,
+   no Windows ROCm → the RX 6700 XT is invisible to it), so LM Studio stays
+   regardless. The NVIDIA card is SHARED across phases (the 35B pool holds ~14 GB
+   of it right now); vLLM doesn't idle-release VRAM, so every phase boundary means
+   engine kill/restart (~30-60 s each way) — eating the theoretical win and doubling
+   the BUG-67/73/74-class landmine surface.
+
+**Quality**: quant-for-quant, vLLM formats ≈ GGUF — the engine buys no quality;
+quality would need the bigger model, which is wall #1. **Verdict: rejected without
+a bench** — every term is already measured (bandwidth, worker cap, fit) or
+directive-bound (drivers). Revisit only if the pipeline moves to a Linux/high-VRAM
+single-vendor box or the concurrency stance changes by an order of magnitude.
+**The cheap experiment if the lane needs more speed**: workers 2→3 inside the pool
+rule (pool 49152, needs ~+1.5 GB KV — fits when the 35B is unloaded), one sectional
+`bench_s45.py` A/B, zero new stack.
 
 ## Related
 
