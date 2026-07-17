@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw — Clip Poster</title>
-    <link rel="stylesheet" href="/static/style.css?v=2">
-    <link rel="stylesheet" href="/static/poster.css?v=2">
+    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/poster.css?v=3">
 </head>
 <body>
 
@@ -94,14 +94,22 @@
                         <option value="shareNext">Share next — top of the queue</option>
                     </select>
                 </div>
+                <div class="control-group" style="flex:1; min-width:260px;">
+                    <label class="field-label">Hashtags — added to every post</label>
+                    <input type="text" id="inp-hashtags" style="width:100%;"
+                           placeholder="#fyp #streamer #funny"
+                           title="Appended to the end of each clip's caption (on its own line). '#' is added for you if missing.">
+                </div>
             </div>
             <p class="hint" style="margin-top:10px;">
                 Each selected clip becomes its own post on every checked channel.
                 Instagram videos publish as <b>Reels</b>. Caption defaults to the clip
-                title (the “(B)” / “(Short)” marker is stripped) — edit it on the card.
+                title (the “(B)” / “(Short)” marker is stripped) — edit it on the card;
+                hashtags above are appended to every caption at post time.
             </p>
             <div class="btn-row">
                 <button id="btn-post" class="btn-primary" disabled>Post Selected (0)</button>
+                <button id="btn-retry" class="btn-secondary" style="display:none;">Retry failed</button>
                 <button id="btn-cancel" class="btn-danger" style="display:none;">Stop after current clip</button>
                 <span id="job-summary" class="hint" style="align-self:center;"></span>
             </div>
@@ -128,6 +136,6 @@
 
 </div>
 
-<script type="module" src="/static/poster.js?v=2"></script>
+<script type="module" src="/static/poster.js?v=3"></script>
 </body>
 </html>

@@ -23,6 +23,32 @@ def derive_caption(filename: str) -> str:
     return _VARIANT_RE.sub("", Path(filename).stem).strip()
 
 
+def normalize_hashtags(raw: str) -> str:
+    """'fyp, streamer #funny' -> '#fyp #streamer #funny' (deduped, ordered)."""
+    tags: list[str] = []
+    for tok in re.split(r"[\s,]+", raw or ""):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if not tok.startswith("#"):
+            tok = "#" + tok
+        if len(tok) > 1 and tok not in tags:
+            tags.append(tok)
+    return " ".join(tags)
+
+
+def _cloudinary_url_for(entry: dict) -> str | None:
+    """Media URL for a ledger entry — stored on new entries; derived from the
+    public_id for entries recorded before media_url existed."""
+    if entry.get("media_url"):
+        return entry["media_url"]
+    pid = entry.get("cloudinary_public_id")
+    cloud = media_host.cloudinary_cfg().get("cloud_name")
+    if pid and cloud:
+        return f"https://res.cloudinary.com/{cloud}/video/upload/{pid}.mp4"
+    return None
+
+
 def _client() -> BufferClient:
     key = _state.load_api_key()
     if not key:
@@ -146,6 +172,7 @@ def api_post():
     if not channels:
         return jsonify({"error": "no valid channels selected"}), 400
 
+    hashtags = normalize_hashtags(body.get("hashtags") or "")
     clips_in = body.get("clips") or []
     clips = []
     for c in clips_in:
@@ -153,12 +180,57 @@ def api_post():
         if not name or not (_state.CLIPS_DIR / name).is_file():
             return jsonify({"error": f"clip not found: {name or '(empty)'}"}), 400
         caption = (c.get("caption") or "").strip() or derive_caption(name)
+        if hashtags:
+            caption = f"{caption}\n\n{hashtags}"
         clips.append({"name": name, "caption": caption})
     if not clips:
         return jsonify({"error": "no clips selected"}), 400
 
+    org_id = (_state.account_cache or {}).get("organization_id")
     try:
-        job = worker.start_batch(clips, channels, mode, key)
+        job = worker.start_batch(clips, channels, mode, key, org_id)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify(job)
+
+
+@bp.route("/api/retry", methods=["POST"])
+def api_retry():
+    """Re-post every ledger post whose verified status is 'error' (one item
+    per failed clip+channel pair; the hosted Cloudinary asset is reused, so
+    no re-upload)."""
+    key = _state.load_api_key()
+    if not key:
+        return jsonify({"error": "Buffer API key file missing"}), 400
+    try:
+        channels = _get_channels()
+    except BufferAPIError as e:
+        return jsonify({"error": str(e)}), 502
+    by_service = {c.get("service"): c for c in channels}
+
+    pairs = []
+    for name, entry in _state.load_posted().items():
+        for p in entry.get("posts", []):
+            if p.get("status") != "error":
+                continue
+            ch = by_service.get(p.get("service"))
+            url = _cloudinary_url_for(entry)
+            if not ch or not url:
+                continue
+            pairs.append({
+                "name": name,
+                "caption": entry.get("caption") or derive_caption(name),
+                "mode": entry.get("mode") if entry.get("mode") in SHARE_MODES
+                        else "shareNow",
+                "media_url": url,
+                "channel": ch,
+            })
+    if not pairs:
+        return jsonify({"error": "no failed posts to retry"}), 400
+
+    org_id = (_state.account_cache or {}).get("organization_id")
+    try:
+        job = worker.start_retry(pairs, key, org_id)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 409
     return jsonify(job)

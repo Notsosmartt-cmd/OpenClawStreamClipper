@@ -29,11 +29,33 @@ per checked channel** (each clip = its own unique post on each network) →
 entry in the posted ledger. 2 s throttle between clips; one 429 retry
 honoring `Retry-After` (capped 15 min); per-clip failures never kill the batch.
 One batch at a time; cancel stops after the current clip. Job status is polled
-by the UI (`/api/job`) with per-card chips (uploading… / posting… / ✓ / ✗).
+by the UI (`/api/job`) with per-card chips (uploading… / posting… / per-network
+`tt✓ ig…` marks).
 
 **Caption** = the clip's auto-generated title (the filename) minus the trailing
 `" (B)"` / `" (Short)"` variant marker (owner spec) — editable per card before
-posting. Same caption goes to both networks.
+posting. Same caption goes to both networks. **Hashtags** (2026-07-16, owner
+req): one input applied to every post — normalized (`fyp, streamer` →
+`#fyp #streamer`, deduped, `#` auto-prefixed) and appended to each caption on
+its own line at post time; persisted in localStorage between batches.
+
+## Verification + Retry (createPost success ≠ published)
+
+> [!warning] Buffer publishing is ASYNC. `createPost` success only means Buffer
+> *accepted* the post — actual publishing happens 1–3 min later and can fail
+> server-side. Proven on the owner's first real batch (2026-07-16): 4/4 posts
+> accepted, but one TikTok post later hit Buffer's transient "An unknown error
+> has occurred. Please retry" while the UI said "✓ posted". (The other
+> "missing" post was just still publishing — IG took ~3 min.)
+
+So after posting, the batch enters a **verifying** phase: one `posts` list
+query per 20 s round (newest-first, one call regardless of batch size; ≤10
+rounds ≈ 3.5 min) until every post is terminal (`sent`/`error`); statuses land
+in the job items, the UI chips (`tt✓ ig✗`), and the ledger. Clips with a
+failed network get a red **posted ⚠** badge, and a **Retry failed (N)** button
+re-posts *only the errored clip+channel pairs*, reusing the hosted Cloudinary
+URL (no re-upload) and merging results back without clobbering the sibling
+network's record.
 
 ## Buffer API facts (verified live 2026-07-16)
 
@@ -74,8 +96,8 @@ saved via `/api/hosting`, and the production upload path verified end-to-end
 | `poster/_state.py` | paths (paths.json), key/config loading, job globals |
 | `poster/buffer_client.py` | GraphQL client: channels, `create_video_post` |
 | `poster/media_host.py` | Cloudinary signed upload + credential verify |
-| `poster/worker.py` | bounded batch thread (statuses, throttle, ledger) |
-| `poster/routes.py` | `/api/{status,clips,channels,hosting,post,job}` |
+| `poster/worker.py` | bounded batch thread + async-publish verification |
+| `poster/routes.py` | `/api/{status,clips,channels,hosting,post,retry,job}` |
 | `poster/templates` + `static/` | UI (dashboard theme copied; `poster.css/js`) |
 
 ## Posted ledger
@@ -94,7 +116,8 @@ green "posted" badges and the **Select unposted** button; partial successes
 
 ## Status
 
-Shipped + live-verified 2026-07-16 (channels/clips/captions/selection tested
-read-only against the real account; **no post was created by the agent** — the
-first real publish is the owner's click). Verified safe beside a running
-pipeline: read-only toward `clips/`, plus the render-stability guard.
+Shipped + live-verified 2026-07-16. **First real batch same evening (owner's
+click): 2 clips × 2 networks → 3/4 sent, 1 transient TikTok error** — which
+drove the verification phase + Retry button (see above). Agents never created
+a social post; retries are the owner's click too. Verified safe beside a
+running pipeline: read-only toward `clips/`, plus the render-stability guard.

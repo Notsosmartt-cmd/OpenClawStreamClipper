@@ -46,8 +46,13 @@ function wireButtons() {
     $("btn-sel-none").onclick = () => selectWhere(() => false);
     $("btn-sel-unposted").onclick = () => selectWhere((c) => !c.posted);
     $("btn-post").onclick = startPost;
+    $("btn-retry").onclick = startRetry;
     $("btn-cancel").onclick = cancelJob;
     $("btn-save-hosting").onclick = saveHosting;
+    // hashtags survive reloads — they rarely change between batches
+    const ht = $("inp-hashtags");
+    ht.value = localStorage.getItem("poster_hashtags") || "";
+    ht.oninput = () => localStorage.setItem("poster_hashtags", ht.value);
 }
 
 // ---------- status / setup ----------
@@ -213,12 +218,15 @@ function renderClips() {
         const badges = document.createElement("div");
         badges.className = "pick-badges";
         if (c.posted) {
+            const failed = (c.posted.posts || []).filter((p) => p.status === "error");
             const chip = document.createElement("span");
-            chip.className = "chip chip-posted";
-            chip.textContent = "posted" + (c.posted.times > 1 ? " ×" + c.posted.times : "");
-            chip.title = "Posted " + (c.posted.posted_at || "") + " → " +
-                (c.posted.posts || []).map((p) => p.service).join(" + ") +
-                (c.posted.partial ? " (partial!)" : "");
+            chip.className = "chip " + (failed.length ? "chip-err" : "chip-posted");
+            chip.textContent = (failed.length ? "posted ⚠" : "posted") +
+                (c.posted.times > 1 ? " ×" + c.posted.times : "");
+            chip.title = "Posted " + (c.posted.posted_at || "") + "\n" +
+                (c.posted.posts || []).map((p) =>
+                    `${p.service}: ${p.status || "accepted"}${p.error ? " — " + p.error : ""}`
+                ).join("\n");
             badges.appendChild(chip);
         }
         const status = document.createElement("span");
@@ -267,7 +275,7 @@ function selectWhere(pred) {
 // ---------- posting ----------
 
 function jobRunning() {
-    return state.job && state.job.state === "running";
+    return state.job && ["running", "verifying"].includes(state.job.state);
 }
 
 function updateControls() {
@@ -283,12 +291,20 @@ function updateControls() {
     } else {
         btn.title = n ? `${n} clip(s) → ${chans} channel(s) = ${n * chans} posts` : "Select clips below";
     }
+    // Retry failed (N): ledger posts whose verified status is error
+    const failed = state.clips.reduce((s, c) =>
+        s + ((c.posted && c.posted.posts) || []).filter((p) => p.status === "error").length, 0);
+    const rbtn = $("btn-retry");
+    rbtn.style.display = failed && !jobRunning() ? "" : "none";
+    rbtn.textContent = `Retry failed (${failed})`;
+    rbtn.title = "Re-posts only the clip+channel pairs Buffer reported as errored (no re-upload)";
     $("btn-cancel").style.display = jobRunning() ? "" : "none";
     $("sel-count").textContent = state.clips.length
         ? `· ${n}/${state.clips.length} selected` : "";
     const badge = $("status-badge");
     badge.classList.toggle("running", jobRunning());
-    $("status-label").textContent = jobRunning() ? "Posting…" : "Idle";
+    $("status-label").textContent = !jobRunning() ? "Idle"
+        : (state.job.state === "verifying" ? "Verifying…" : "Posting…");
 }
 
 async function startPost() {
@@ -303,6 +319,7 @@ async function startPost() {
         clips,
         channel_ids: checkedChannelIds(),
         mode: $("sel-mode").value,
+        hashtags: $("inp-hashtags").value,
     };
     $("btn-post").disabled = true;
     $("job-summary").textContent = "Starting…";
@@ -322,6 +339,24 @@ async function startPost() {
     updateControls();
 }
 
+async function startRetry() {
+    if (jobRunning()) return;
+    const btn = $("btn-retry");
+    btn.disabled = true;
+    $("job-summary").textContent = "Retrying failed posts…";
+    try {
+        const res = await fetch("/api/retry", { method: "POST" });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || res.status);
+        state.job = d;
+        startPolling();
+    } catch (e) {
+        $("job-summary").textContent = "Retry: " + e.message;
+    }
+    btn.disabled = false;
+    updateControls();
+}
+
 async function cancelJob() {
     $("btn-cancel").disabled = true;
     try { await fetch("/api/job/cancel", { method: "POST" }); } catch (e) { /* noop */ }
@@ -335,6 +370,16 @@ function startPolling() {
     updateControls();
 }
 
+// "tt✓ ig…" style per-network readout for one item's posts
+function netSummary(posts) {
+    return posts.map((p) => {
+        const svc = p.service === "tiktok" ? "tt"
+            : p.service === "instagram" ? "ig" : (p.service || "?").slice(0, 2);
+        const mark = p.status === "sent" ? "✓" : p.status === "error" ? "✗" : "…";
+        return svc + mark;
+    }).join(" ");
+}
+
 async function pollJob() {
     try {
         state.job = await (await fetch("/api/job")).json();
@@ -343,10 +388,14 @@ async function pollJob() {
     }
     const job = state.job;
     if (!job || !job.items) return;
-    let done = 0, errs = 0;
+    let sentP = 0, errP = 0, totP = 0, errItems = 0;
     job.items.forEach((it) => {
-        if (it.status === "done") done++;
-        if (it.status === "error") errs++;
+        (it.posts || []).forEach((p) => {
+            totP++;
+            if (p.status === "sent") sentP++;
+            else if (p.status === "error") errP++;
+        });
+        if (it.status === "error") errItems++;
         const entry = state.cards.get(it.name);
         if (!entry) return;
         const { chip, err } = entry;
@@ -358,7 +407,15 @@ async function pollJob() {
         } else if (it.status.startsWith("posting")) {
             chip.className = "chip chip-run"; chip.textContent = it.status + "…";
         } else if (it.status === "done") {
-            chip.className = "chip chip-done"; chip.textContent = "✓ posted";
+            // accepted by Buffer — the per-network marks refine as we verify
+            const posts = it.posts || [];
+            const anyErr = posts.some((p) => p.status === "error");
+            const anyPending = posts.some((p) => !["sent", "error"].includes(p.status));
+            chip.className = "chip " + (anyErr ? "chip-err" : anyPending ? "chip-run" : "chip-done");
+            chip.textContent = netSummary(posts) || "✓ accepted";
+            const failedPost = posts.find((p) => p.error);
+            err.textContent = failedPost ? failedPost.error : "";
+            err.title = failedPost ? failedPost.error : "";
         } else if (it.status === "error") {
             chip.className = "chip chip-err"; chip.textContent = "✗ failed";
             err.textContent = it.detail || "error";
@@ -367,10 +424,16 @@ async function pollJob() {
             chip.className = "chip chip-err"; chip.textContent = "cancelled";
         }
     });
+    const pend = totP - sentP - errP;
     $("job-summary").textContent =
-        `${done}/${job.items.length} posted` + (errs ? ` · ${errs} failed` : "") +
-        (job.state === "cancelled" ? " · stopped" : "");
-    if (job.state !== "running") {
+        job.state === "running"
+            ? `${totP} post(s) created…` + (errItems ? ` · ${errItems} clip(s) failed` : "")
+            : job.state === "verifying"
+                ? `verifying — ${sentP}/${totP} live` + (pend ? ` · ${pend} publishing…` : "") + (errP ? ` · ${errP} failed` : "")
+                : `${sentP}/${totP} posts live` + (errP ? ` · ${errP} failed — use Retry failed` : "") +
+                  (errItems ? ` · ${errItems} clip(s) errored before posting` : "") +
+                  (job.state === "cancelled" ? " · stopped" : "");
+    if (!["running", "verifying"].includes(job.state)) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
         fetchClips();               // refresh posted badges from the ledger

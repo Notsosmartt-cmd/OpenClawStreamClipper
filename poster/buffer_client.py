@@ -97,6 +97,47 @@ class BufferClient:
         )
         return d["channels"]
 
+    def posts_status(self, organization_id: str,
+                     post_ids: list[str]) -> dict[str, dict]:
+        """Fetch live status for the given post ids in as few calls as
+        possible (newest-first pages of 50; our batches are always the newest
+        posts). Returns {post_id: {status, sent_at, error}}.
+
+        Buffer publishing is ASYNC: createPost success only means accepted.
+        Real outcomes are status 'sent' or 'error' (enum also has draft/
+        needs_approval/scheduled/sending)."""
+        want = set(post_ids)
+        found: dict[str, dict] = {}
+        cursor = None
+        for _ in range(4):  # 200 newest posts max — plenty for any batch
+            after = f', after: "{cursor}"' if cursor else ""
+            d = self.gql(
+                """
+                query PosterPostStatuses {
+                  posts(input: { organizationId: "%s",
+                                 sort: [{ field: createdAt, direction: desc }] },
+                        first: 50%s) {
+                    edges { node { id status sentAt error { message } } }
+                    pageInfo { hasNextPage endCursor }
+                  }
+                }
+                """ % (organization_id, after)
+            )
+            conn = d.get("posts") or {}
+            for e in conn.get("edges", []):
+                n = e.get("node") or {}
+                if n.get("id") in want:
+                    found[n["id"]] = {
+                        "status": n.get("status"),
+                        "sent_at": n.get("sentAt"),
+                        "error": (n.get("error") or {}).get("message"),
+                    }
+            info = conn.get("pageInfo") or {}
+            if len(found) >= len(want) or not info.get("hasNextPage"):
+                break
+            cursor = info.get("endCursor")
+        return found
+
     # --- mutations ---
 
     def create_video_post(
