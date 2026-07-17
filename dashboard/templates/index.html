@@ -113,6 +113,16 @@
                         <option value="strict">Strict — legacy, known misses</option>
                     </select>
                 </div>
+                <div class="control-group" title="Only render clips the S4.5 text judge scores at/above the bar — the poster's ★ Top-rated view, enforced at the source. Gated moments also skip frames/vision/render (faster runs). Reference: on the 07-16 library, ≥5 ≈ the poster's top-33%, ≥7 ≈ the top ~11%. Unjudged moments always pass (judge-outage safe). Weak VODs can produce fewer or ZERO clips at high bars. Default: save all clips.">
+                    <label class="field-label">Quality gate</label>
+                    <select id="sel-min-judge">
+                        <option value="0" selected>All clips (default)</option>
+                        <option value="5">Top rated — judge ≥ 5</option>
+                        <option value="6">Selective — judge ≥ 6</option>
+                        <option value="7">Strict — judge ≥ 7</option>
+                        <option value="8">Elite — judge ≥ 8</option>
+                    </select>
+                </div>
             </div>
 
             <hr class="section-divider">

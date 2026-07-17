@@ -203,6 +203,42 @@ def _s45_text_judge(ctx, log, moments):
         return moments
 
 
+def _apply_quality_gate(ctx, log, moments):
+    """Owner quality gate (2026-07-17): CLIP_MIN_JUDGE_SCORE=N keeps only
+    moments the S4.5 judge scored >= N — "top rated only", enforced at the
+    source so the clips folder (and everything downstream: frames, vision,
+    renders) only pays for clips that would land in the poster's ★ view.
+    Unjudged moments PASS (fail-open — a judge outage must not zero a VOD).
+    Default 0 = off. A weak VOD can legitimately produce zero clips here."""
+    try:
+        thresh = float(os.environ.get("CLIP_MIN_JUDGE_SCORE", "0") or 0)
+    except ValueError:
+        thresh = 0.0
+    if thresh <= 0 or not moments:
+        return moments
+    kept, dropped = [], []
+    for m in moments:
+        score = (m.get("s45_judge") or {}).get("score")
+        try:
+            below = score is not None and float(score) < thresh
+        except (TypeError, ValueError):
+            below = False
+        (dropped if below else kept).append(m)
+    if not dropped:
+        log.log(f"Quality gate (judge >= {thresh:g}): all {len(moments)} moments pass")
+        return moments
+    log.log(f"Quality gate (judge >= {thresh:g}): {len(kept)}/{len(moments)} kept, "
+            f"{len(dropped)} below the bar"
+            + ("" if kept else " — this VOD produces NO clips (weak material)"))
+    for m in dropped[:20]:
+        j = (m.get("s45_judge") or {}).get("score")
+        log.log(f"  gated: t={m.get('timestamp')} judge={j} "
+                f"'{str(m.get('description') or '')[:60]}'")
+    ctx.paths.hype_moments.write_text(json.dumps(kept, indent=2),
+                                      encoding="utf-8")
+    return kept
+
+
 def run(ctx) -> None:
     log = ctx.log
     p = ctx.paths
@@ -217,6 +253,10 @@ def run(ctx) -> None:
     if (os.environ.get("CLIP_S45_JUDGE", "1").strip().lower()
             not in ("0", "false", "no", "off") and moments):
         moments = _s45_text_judge(ctx, log, moments)
+
+    # "Top rated only" gate — after the judge, before frames (owner toggle;
+    # the dashboard's Quality gate control sets CLIP_MIN_JUDGE_SCORE).
+    moments = _apply_quality_gate(ctx, log, moments)
 
     common.set_stage(log, "Stage 5/8 — Frame Extraction")
     log.log("=== Stage 5/8 — Frame Extraction ===")

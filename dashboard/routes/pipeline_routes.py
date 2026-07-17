@@ -99,6 +99,12 @@ def api_clip():
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
+    # "Top rated only" quality gate: render only judge-score >= N moments
+    # (0 = off/default). stage5 enforces via CLIP_MIN_JUDGE_SCORE.
+    try:
+        min_judge_score = float(data.get("min_judge_score") or 0)
+    except (TypeError, ValueError):
+        min_judge_score = 0.0
     orig_override = extract_originality_fields(data)
 
     if not vod:
@@ -133,6 +139,7 @@ def api_clip():
                 ab_variants=ab_variants,
                 post_kit=post_kit,
                 news_after=news_after,
+                min_judge_score=min_judge_score,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -163,6 +170,12 @@ def api_clip_all():
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
+    # "Top rated only" quality gate: render only judge-score >= N moments
+    # (0 = off/default). stage5 enforces via CLIP_MIN_JUDGE_SCORE.
+    try:
+        min_judge_score = float(data.get("min_judge_score") or 0)
+    except (TypeError, ValueError):
+        min_judge_score = 0.0
     orig_override = extract_originality_fields(data)
 
     with _state.pipeline_lock:
@@ -202,6 +215,7 @@ def api_clip_all():
                 ab_variants=ab_variants,
                 post_kit=post_kit,
                 news_after=news_after,
+                min_judge_score=min_judge_score,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -242,6 +256,12 @@ def api_clip_batch():
     passb_dead_gate = (data.get("passb_dead_gate") or "off").strip().lower()
     if passb_dead_gate not in ("off", "multi", "sample", "strict"):
         passb_dead_gate = "off"
+    # "Top rated only" quality gate: render only judge-score >= N moments
+    # (0 = off/default). stage5 enforces via CLIP_MIN_JUDGE_SCORE.
+    try:
+        min_judge_score = float(data.get("min_judge_score") or 0)
+    except (TypeError, ValueError):
+        min_judge_score = 0.0
     orig_override = extract_originality_fields(data)
 
     if not requested:
@@ -295,6 +315,7 @@ def api_clip_batch():
                 ab_variants=ab_variants,
                 post_kit=post_kit,
                 news_after=news_after,
+                min_judge_score=min_judge_score,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
