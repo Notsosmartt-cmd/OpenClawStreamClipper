@@ -33,7 +33,7 @@ sys.path.insert(0, str(HERE / "lib"))            # scripts/lib  → `import path
 sys.path.insert(0, str(HERE))                    # scripts      → `import pipeline`
 
 import paths  # noqa: E402
-from pipeline import common  # noqa: E402
+from pipeline import checkpoint, common  # noqa: E402
 from pipeline.common import PipelineExit  # noqa: E402
 
 
@@ -57,6 +57,12 @@ class Ctx:
         self.target_vod = args.vod or ""
         self.list_mode = bool(args.list)
         self.force = bool(args.force)
+        # Checkpoint semantics (2026-07-17): `fresh` = the USER's force choice
+        # (the dashboard checkbox) — it wipes any saved per-VOD state so the
+        # run starts from 0. The batch loop overrides this per-vctx because
+        # --all sets an INTERNAL force=True (processed.log semantics) that
+        # must not destroy resume state.
+        self.fresh = bool(args.force)
         self.type_hint = args.type or ""
 
         models = {}
@@ -256,19 +262,36 @@ def _prefetch_stage2(next_vod_name: str, p, ctx, log):
 def _execute_stages(ctx, log, after_stage6=None) -> int:
     """Run model verification + the 8 stages for one VOD. Returns an exit code.
     Catches PipelineExit (an intentional early stop) and returns its code.
-    ``after_stage6`` (C1) fires once, right after Stage 6, while the LLM is idle."""
+    ``after_stage6`` (C1) fires once, right after Stage 6, while the LLM is idle.
+
+    Per-VOD checkpoints (owner req 2026-07-17, pipeline/checkpoint.py): after
+    Stage 1 identifies the VOD, a valid saved state restores the work dir and
+    stages up to its snapshot are skipped; each expensive stage completion
+    re-snapshots; a clean finish clears the state. `ctx.fresh` (the user's
+    force choice) starts from 0 instead."""
     import importlib
     t0 = time.time()
+    resume_from = 1
     try:
         if not ctx.list_mode:
             common.verify_models(log, ctx.llm_url, ctx.configured_models())
         for i in range(1, 9):
+            if 1 < i < resume_from:
+                log.log(f"Stage {i}/8 skipped — checkpoint resume")
+                common.set_stage(log, f"Stage {i}/8 — skipped (resume)")
+                continue
             importlib.import_module(f"pipeline.stages.stage{i}").run(ctx)
+            if i == 1 and not ctx.list_mode:
+                resume_from = checkpoint.prepare(ctx, log)
+            if i in checkpoint.SAVE_AFTER and not ctx.list_mode:
+                checkpoint.save(ctx, log, i)
             if i == 6 and after_stage6 is not None:
                 try:
                     after_stage6()
                 except Exception as e:  # noqa: BLE001 - never let prefetch break the run
                     log.warn(f"C1 after-stage-6 hook failed: {e}")
+        if not ctx.list_mode:
+            checkpoint.clear(ctx, log, "VOD completed")
         return 0
     except PipelineExit as pe:
         if pe.summary:
@@ -471,6 +494,9 @@ def main(argv: list[str]) -> int:
                 vctx = Ctx(argparse.Namespace(
                     style=args.style, vod=vod_name, type=args.type,
                     list=False, force=batch_force, all=False))
+                # resume state answers to the USER's force choice, not the
+                # internal batch_force (--all forces past processed.log)
+                vctx.fresh = bool(ctx.force)
                 vctx.log = log
                 vctx.batch_pos = (i + 1, len(targets))   # stage1 refreshes the VOD marker
                 hook = None

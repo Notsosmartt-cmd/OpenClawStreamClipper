@@ -35,6 +35,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[entities/discord-bot]] — Primary user interface; natural-language commands; delivers clip attachments
 - [[entities/dashboard]] — Web UI (Flask, native port 5001; 5000 legacy); 8-stage monitor; SSE streaming; Models + Hardware panels
 - [[entities/buffer-poster]] — separate poster app (:5100): batch-post clips → TikTok + IG Reels via Buffer API + Cloudinary
+- [[concepts/pipeline-checkpoints-2026-07]] — per-VOD save-state: crash mid-VOD resumes at the last completed stage; force = from 0
 - [[entities/grounding]] — 2-tier grounding cascade (regex denylist + content overlap → main-model LLM judge); used by Pass B and Stage 6
 - [[entities/lmstudio]] — `lmstudio.py` HTTP **client module** for the grounding judge call (not the [[entities/lm-studio]] server)
 - [[entities/vision-judge]] — **Stage 5.5** multimodal tournament re-ranker; lets vision *select* which moments win (Plan 1.a)
