@@ -248,23 +248,30 @@ async function fetchClips() {
     renderClips();
 }
 
-// Apply the Top-rated filter: keep the best X% of SCORED clips (sorted by
-// score); unscored clips are hidden while the filter is on (counted in the
-// header note — never silently).
+// Apply the Top-rated filter: keep the best X% per scoring tier — judge
+// scores (0-10, comparable across eras: S4.5 at render time + the retro
+// scorer) rank first; clips with only a composite score rank in their own
+// tier (different scale). Unscored clips hide with a count, never silently.
 function applyFilter() {
     if (!state.filterOn) {
         state.visible = state.clips;
         return { hiddenUnscored: 0, hiddenLow: 0 };
     }
     const pct = parseFloat($("sel-filter-pct").value) || 0.33;
-    const scored = state.clips.filter((c) => c.score != null);
-    const sorted = [...scored].sort((a, b) => b.score - a.score);
-    const keepN = Math.max(1, Math.round(sorted.length * pct));
-    const cutoff = sorted.length ? sorted[keepN - 1].score : Infinity;
-    state.visible = sorted.filter((c) => c.score >= cutoff);
+    const judged = state.clips.filter((c) => c.judge != null);
+    const compOnly = state.clips.filter((c) => c.judge == null && c.score != null);
+    const top = (arr, key) => {
+        const sorted = [...arr].sort((a, b) => key(b) - key(a));
+        return sorted.slice(0, Math.max(1, Math.round(sorted.length * pct)));
+    };
+    state.visible = [
+        ...(judged.length ? top(judged, (c) => c.judge) : []),
+        ...(compOnly.length ? top(compOnly, (c) => c.score) : []),
+    ];
+    const scoredN = judged.length + compOnly.length;
     return {
-        hiddenUnscored: state.clips.length - scored.length,
-        hiddenLow: scored.length - state.visible.length,
+        hiddenUnscored: state.clips.length - scoredN,
+        hiddenLow: scoredN - state.visible.length,
     };
 }
 
@@ -355,11 +362,13 @@ function renderClips() {
         meta.className = "pick-meta";
         const left = document.createElement("span");
         let info = c.size_mb + " MB · " + c.modified;
-        if (c.score != null) {
-            info = `★ ${Number(c.score).toFixed(2)}` +
-                (c.judge != null ? ` · ⚖ ${c.judge}` : "") + " · " + info;
-            left.title = "Pipeline composite score" +
-                (c.judge != null ? " · S4.5 judge score /10" : "") +
+        if (c.judge != null || c.score != null) {
+            const parts = [];
+            if (c.judge != null) parts.push(`⚖ ${Number(c.judge).toFixed(1)}`);
+            if (c.score != null) parts.push(`★ ${Number(c.score).toFixed(2)}`);
+            info = parts.join(" · ") + " · " + info;
+            left.title = (c.judge != null ? "Judge score /10" : "") +
+                (c.score != null ? (c.judge != null ? " · " : "") + "pipeline composite score" : "") +
                 (c.category ? ` · ${c.category}` : "");
         }
         if (c.folder) {

@@ -145,16 +145,25 @@ saved via `/api/hosting`, and the production upload path verified end-to-end
 
 ## Top-rated filter + posted_clips auto-move (v1.3, 2026-07-16)
 
-**★ Top rated** (clips toolbar): keeps the best 20/33/50% of SCORED clips by
-the pipeline's composite score (~0.3–2.0), sorted best-first; unscored clips
-hide with an explicit count, never silently. Score chip on each card:
-`★ 1.62 · ⚖ 8` (composite · S4.5 judge when known). Scores come from
-`poster/scores.py`, which joins (newest-first): a durable
-`clips/.diagnostics/clip_scores.jsonl` (reader shipped first — the pipeline
-writer is a queued follow-up) → `last_run_*` traces via `clips_made` rows
-(`<stem incl variant>|score|category|…`, a direct filename join) → the
-`enriched_<t>`/`moment_<t>` sidecars + `hype_moments.data` via the stage7
-title sanitize.
+**★ Top rated** (clips toolbar): keeps the best 20/33/50% **per scoring
+tier** — judge scores (0-10, comparable across eras) rank first, composite-
+only clips rank in their own tier — sorted best-first; unscored clips hide
+with an explicit count, never silently. Card chip: `⚖ 7.5 · ★ 1.62` (judge ·
+composite). Scores come from `poster/scores.py`, which joins (newest-first):
+the durable `clips/.diagnostics/clip_scores.jsonl` (Stage 7 writes it at
+render time; **the retro scorer backfills old clips**) → `last_run_*` traces
+via `clips_made` rows (direct filename join) → `enriched_<t>`/`moment_<t>`
+sidecars + `hype_moments.data` via the stage7 title sanitize.
+
+**Retro scorer** (`scripts/research/score_clips.py`, 2026-07-17): judges
+FINISHED clips without reprocessing VODs — whisper-base (CPU, VRAM-neutral
+beside the resident 35B) transcribes each clip's own audio, the 35B scores
+postability 0-10 in batches of 8 (S4.5 pattern), rows append to
+`clip_scores.jsonl` with rationales. First run: **131/131 scored, 0 failed
+(~6 min)** → 134/134 folder coverage; healthy spread (median ~3.5, 15 clips
+≥7, top 8.5). Honest limit: it judges the TRANSCRIPT — visual-only clips
+(screaming/physical comedy that whisper hears as noise) underrate; treat low
+scores on caption-light clips with an eyeball.
 
 > [!warning] Coverage gap on 2026-07-16: traces are per-INVOCATION snapshots
 > written at batch end — a batch STOPPED mid-queue writes none (batch A), and
