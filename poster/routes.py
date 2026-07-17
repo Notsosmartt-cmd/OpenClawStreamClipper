@@ -13,6 +13,9 @@ from .buffer_client import SHARE_MODES, BufferAPIError, BufferClient
 bp = Blueprint("poster_api", __name__)
 
 CHANNELS_TTL_S = 300
+LIMITS_TTL_S = 60
+
+_limits_cache: dict = {"at": 0.0, "data": None}
 
 # Caption = the clip's auto-generated title (the filename) minus the trailing
 # " (B)" / " (Short)" variant marker the pipeline adds for distinction.
@@ -125,6 +128,35 @@ def api_channels():
     return jsonify({"account": _state.account_cache, "channels": chans})
 
 
+def _get_limits(force: bool = False) -> dict:
+    """Live per-channel daily posting quota, cached briefly. Returns
+    {channel_id: {service, sent, scheduled, limit, remaining}}."""
+    now = time.time()
+    if (not force and _limits_cache["data"] is not None
+            and now - _limits_cache["at"] < LIMITS_TTL_S):
+        return _limits_cache["data"]
+    channels = _get_channels()
+    raw = _client().daily_posting_limits([c["id"] for c in channels])
+    by_id = {}
+    for c in channels:
+        row = raw.get(c["id"]) or {}
+        by_id[c["id"]] = {"service": c.get("service"),
+                          "name": c.get("displayName") or c.get("name"),
+                          **row}
+    _limits_cache["data"] = by_id
+    _limits_cache["at"] = now
+    return by_id
+
+
+@bp.route("/api/limits")
+def api_limits():
+    """Rolling-24h posting room per channel (network caps — plan-independent)."""
+    try:
+        return jsonify(_get_limits(force=request.args.get("refresh") == "1"))
+    except BufferAPIError as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @bp.route("/api/hosting", methods=["GET", "POST"])
 def api_hosting():
     if request.method == "GET":
@@ -155,8 +187,12 @@ def api_hosting():
 def api_post():
     body = request.get_json(silent=True) or {}
     mode = body.get("mode") or "addToQueue"
-    if mode not in SHARE_MODES:
-        return jsonify({"error": f"mode must be one of {SHARE_MODES}"}), 400
+    drip_spacing_s = None
+    if mode == "drip":
+        spacing_min = max(10, int(body.get("spacing_min") or 90))
+        drip_spacing_s = spacing_min * 60
+    elif mode not in SHARE_MODES:
+        return jsonify({"error": f"mode must be drip or one of {SHARE_MODES}"}), 400
     key = _state.load_api_key()
     if not key:
         return jsonify({"error": "Buffer API key file missing"}), 400
@@ -186,9 +222,30 @@ def api_post():
     if not clips:
         return jsonify({"error": "no clips selected"}), 400
 
+    # Pre-flight quota gate (failure-soft: no limits -> worker posts ungated,
+    # exactly the old behavior). Immediate modes with EVERY channel already
+    # at cap get a clear refusal instead of a batch of skips.
+    limits = None
+    try:
+        limits = _get_limits(force=True)
+    except BufferAPIError:
+        pass
+    if limits and drip_spacing_s is None:
+        room = {c["id"]: (limits.get(c["id"]) or {}).get("remaining")
+                for c in channels}
+        if all(r is not None and r <= 0 for r in room.values()):
+            detail = " · ".join(
+                f"{(limits.get(cid) or {}).get('service')}: 0 left today"
+                for cid in room)
+            return jsonify({"error": f"all selected channels are at their "
+                            f"daily cap ({detail}) — use Drip mode or retry "
+                            f"tomorrow"}), 429
+
     org_id = (_state.account_cache or {}).get("organization_id")
     try:
-        job = worker.start_batch(clips, channels, mode, key, org_id)
+        job = worker.start_batch(clips, channels, mode, key, org_id,
+                                 limits=limits,
+                                 drip_spacing_s=drip_spacing_s)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 409
     return jsonify(job)
@@ -211,7 +268,8 @@ def api_retry():
     pairs = []
     for name, entry in _state.load_posted().items():
         for p in entry.get("posts", []):
-            if p.get("status") != "error":
+            # error = Buffer/network refused; skipped_cap = we never sent it
+            if p.get("status") not in ("error", "skipped_cap"):
                 continue
             ch = by_service.get(p.get("service"))
             url = _cloudinary_url_for(entry)
@@ -228,12 +286,57 @@ def api_retry():
     if not pairs:
         return jsonify({"error": "no failed posts to retry"}), 400
 
+    limits = None
+    try:
+        limits = _get_limits(force=True)
+    except BufferAPIError:
+        pass
     org_id = (_state.account_cache or {}).get("organization_id")
     try:
-        job = worker.start_retry(pairs, key, org_id)
+        job = worker.start_retry(pairs, key, org_id, limits=limits)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 409
     return jsonify(job)
+
+
+@bp.route("/api/verify-ledger", methods=["POST"])
+def api_verify_ledger():
+    """Re-check every non-terminal ledger post (accepted/scheduled/sending)
+    against Buffer in one pass — the on-demand refresh for scheduled posts."""
+    org_id = (_state.account_cache or {}).get("organization_id")
+    if not org_id:
+        try:
+            _get_channels()
+            org_id = (_state.account_cache or {}).get("organization_id")
+        except BufferAPIError as e:
+            return jsonify({"error": str(e)}), 502
+    posted = _state.load_posted()
+    pending_ids = [p["post_id"] for entry in posted.values()
+                   for p in entry.get("posts", [])
+                   if p.get("post_id")
+                   and p.get("status") not in ("sent", "error", "skipped_cap")]
+    if not pending_ids:
+        return jsonify({"checked": 0, "updated": 0})
+    try:
+        statuses = _client().posts_status(org_id, pending_ids)
+    except BufferAPIError as e:
+        return jsonify({"error": str(e)}), 502
+    updated = 0
+    for name, entry in posted.items():
+        posts = entry.get("posts", [])
+        changed = False
+        for p in posts:
+            st = statuses.get(p.get("post_id"))
+            if st and st["status"] != p.get("status"):
+                p["status"] = st["status"]
+                p["sent_at"] = st["sent_at"]
+                if st["error"]:
+                    p["error"] = st["error"]
+                changed = True
+                updated += 1
+        if changed:
+            _state.update_posted_posts(name, posts)
+    return jsonify({"checked": len(pending_ids), "updated": updated})
 
 
 @bp.route("/api/job")
