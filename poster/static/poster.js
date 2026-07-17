@@ -4,6 +4,7 @@
 
 const state = {
     clips: [],
+    visible: [],           // clips after the Top-rated filter
     channels: [],
     selected: new Set(),
     captions: new Map(),   // name -> edited caption (uneditied = derived)
@@ -11,6 +12,7 @@ const state = {
     job: null,
     ready: false,          // key + hosting both present
     pollTimer: null,
+    filterOn: localStorage.getItem("poster_filter_on") === "1",
 };
 
 // Lazy preview loading: with 80+ clips, eagerly fetching metadata for every
@@ -50,6 +52,26 @@ function wireButtons() {
     $("btn-cancel").onclick = cancelJob;
     $("btn-save-hosting").onclick = saveHosting;
     $("btn-verify-ledger").onclick = verifyLedger;
+    // Top-rated filter: composite-score percentile over the scored clips
+    const fbtn = $("btn-filter");
+    const fpct = $("sel-filter-pct");
+    fpct.value = localStorage.getItem("poster_filter_pct") || "0.33";
+    const syncFilter = () => {
+        fbtn.classList.toggle("btn-primary", state.filterOn);
+        fbtn.classList.toggle("btn-ghost", !state.filterOn);
+        fpct.style.display = state.filterOn ? "" : "none";
+    };
+    fbtn.onclick = () => {
+        state.filterOn = !state.filterOn;
+        localStorage.setItem("poster_filter_on", state.filterOn ? "1" : "0");
+        syncFilter();
+        renderClips();
+    };
+    fpct.onchange = () => {
+        localStorage.setItem("poster_filter_pct", fpct.value);
+        renderClips();
+    };
+    syncFilter();
     // spacing selector only matters in drip mode
     const mode = $("sel-mode");
     const syncSpacing = () => {
@@ -93,7 +115,8 @@ async function verifyLedger() {
         const res = await fetch("/api/verify-ledger", { method: "POST" });
         const d = await res.json();
         btn.textContent = d.error ? "Refresh statuses"
-            : `Refresh statuses (${d.updated ?? 0} updated)`;
+            : `Refresh statuses (${d.updated ?? 0} updated` +
+              (d.moved && d.moved.length ? `, ${d.moved.length} archived` : "") + ")";
         await fetchClips();
         fetchLimits();
     } catch (e) {
@@ -225,10 +248,31 @@ async function fetchClips() {
     renderClips();
 }
 
+// Apply the Top-rated filter: keep the best X% of SCORED clips (sorted by
+// score); unscored clips are hidden while the filter is on (counted in the
+// header note — never silently).
+function applyFilter() {
+    if (!state.filterOn) {
+        state.visible = state.clips;
+        return { hiddenUnscored: 0, hiddenLow: 0 };
+    }
+    const pct = parseFloat($("sel-filter-pct").value) || 0.33;
+    const scored = state.clips.filter((c) => c.score != null);
+    const sorted = [...scored].sort((a, b) => b.score - a.score);
+    const keepN = Math.max(1, Math.round(sorted.length * pct));
+    const cutoff = sorted.length ? sorted[keepN - 1].score : Infinity;
+    state.visible = sorted.filter((c) => c.score >= cutoff);
+    return {
+        hiddenUnscored: state.clips.length - scored.length,
+        hiddenLow: scored.length - state.visible.length,
+    };
+}
+
 function renderClips() {
     const grid = $("clips-grid");
     grid.textContent = "";
     state.cards.clear();
+    const hidden = applyFilter();
     if (!state.clips.length) {
         const d = document.createElement("div");
         d.className = "empty-state";
@@ -237,7 +281,17 @@ function renderClips() {
         updateControls();
         return;
     }
-    state.clips.forEach((c) => {
+    if (state.filterOn && !state.visible.length) {
+        const d = document.createElement("div");
+        d.className = "empty-state";
+        d.textContent = "No scored clips match the filter — " +
+            `${hidden.hiddenUnscored} clip(s) have no score on record ` +
+            "(scores come from the pipeline's run traces).";
+        grid.appendChild(d);
+        updateControls();
+        return;
+    }
+    state.visible.forEach((c) => {
         const card = document.createElement("div");
         card.className = "pick-card" + (state.selected.has(c.name) ? " sel" : "");
 
@@ -300,7 +354,20 @@ function renderClips() {
         const meta = document.createElement("div");
         meta.className = "pick-meta";
         const left = document.createElement("span");
-        left.textContent = c.size_mb + " MB · " + c.modified;
+        let info = c.size_mb + " MB · " + c.modified;
+        if (c.score != null) {
+            info = `★ ${Number(c.score).toFixed(2)}` +
+                (c.judge != null ? ` · ⚖ ${c.judge}` : "") + " · " + info;
+            left.title = "Pipeline composite score" +
+                (c.judge != null ? " · S4.5 judge score /10" : "") +
+                (c.category ? ` · ${c.category}` : "");
+        }
+        if (c.folder) {
+            info += " · 📁 posted";
+            left.title = (left.title ? left.title + " · " : "") +
+                "lives in clips/posted_clips/";
+        }
+        left.textContent = info;
         const err = document.createElement("span");
         err.className = "err";
         meta.appendChild(left);
@@ -314,8 +381,9 @@ function renderClips() {
 }
 
 function selectWhere(pred) {
-    state.selected = new Set(state.clips.filter(pred).map((c) => c.name));
-    state.clips.forEach((c) => {
+    // selection tools act on what's VISIBLE (respects the Top-rated filter)
+    state.selected = new Set(state.visible.filter(pred).map((c) => c.name));
+    state.visible.forEach((c) => {
         const entry = state.cards.get(c.name);
         if (!entry) return;
         const on = state.selected.has(c.name);
@@ -353,8 +421,12 @@ function updateControls() {
     rbtn.textContent = `Retry failed (${failed})`;
     rbtn.title = "Re-posts only the clip+channel pairs Buffer reported as errored (no re-upload)";
     $("btn-cancel").style.display = jobRunning() ? "" : "none";
+    const shown = state.visible.length;
     $("sel-count").textContent = state.clips.length
-        ? `· ${n}/${state.clips.length} selected` : "";
+        ? `· ${n}/${shown} selected` +
+          (state.filterOn && shown < state.clips.length
+              ? ` · filter hides ${state.clips.length - shown}` : "")
+        : "";
     const badge = $("status-badge");
     badge.classList.toggle("running", jobRunning());
     $("status-label").textContent = !jobRunning() ? "Idle"
@@ -496,6 +568,8 @@ async function pollJob() {
             : job.state === "verifying"
                 ? `verifying — ${bits.join(" · ")}` + (pend ? ` · ${pend} publishing…` : "")
                 : `${totP} posts: ` + (bits.join(" · ") || "none") +
+                  (job.moved && job.moved.length
+                      ? ` · ${job.moved.length} clip(s) → posted_clips/` : "") +
                   (job.state === "cancelled" ? " · stopped" : "");
     if (!["running", "verifying"].includes(job.state)) {
         clearInterval(state.pollTimer);

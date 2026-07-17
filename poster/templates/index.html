@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw — Clip Poster</title>
-    <link rel="stylesheet" href="/static/style.css?v=4">
-    <link rel="stylesheet" href="/static/poster.css?v=4">
+    <link rel="stylesheet" href="/static/style.css?v=5">
+    <link rel="stylesheet" href="/static/poster.css?v=5">
 </head>
 <body>
 
@@ -137,8 +137,16 @@
         <div class="panel-header">
             <span class="panel-title">Clips <span id="sel-count" class="hint"></span></span>
             <div class="toolbar">
+                <button id="btn-filter" class="btn-ghost btn-sm"
+                        title="Show only the pipeline's top-rated clips (composite detection score; clips without a resolvable score are hidden while on)">★ Top rated</button>
+                <select id="sel-filter-pct" class="btn-sm" style="display:none;"
+                        title="Keep the best X% of scored clips">
+                    <option value="0.2">top 20%</option>
+                    <option value="0.33" selected>top 33%</option>
+                    <option value="0.5">top 50%</option>
+                </select>
                 <button id="btn-verify-ledger" class="btn-ghost btn-sm"
-                        title="Re-check scheduled/accepted posts against Buffer (updates badges)">Refresh statuses</button>
+                        title="Re-check scheduled/accepted posts against Buffer (updates badges + moves fully-posted clips to posted_clips/)">Refresh statuses</button>
                 <button id="btn-sel-unposted" class="btn-ghost btn-sm">Select unposted</button>
                 <button id="btn-sel-all" class="btn-ghost btn-sm">Select all</button>
                 <button id="btn-sel-none" class="btn-ghost btn-sm">Clear</button>
@@ -154,6 +162,6 @@
 
 </div>
 
-<script type="module" src="/static/poster.js?v=4"></script>
+<script type="module" src="/static/poster.js?v=5"></script>
 </body>
 </html>
