@@ -62,8 +62,9 @@ credentials entered once in the Setup panel → stored in
 **`config/buffer_poster.json`** (gitignored). Uploaded assets are **not**
 auto-deleted — `addToQueue` posts fetch the media at publish time, possibly
 hours later. Free-plan cap: 100 MB per video (guarded at 98 MB with a clear
-per-clip error). **Owner one-time setup**: create the free Cloudinary account
-and paste cloud name / API key / API secret into the Setup panel.
+per-clip error). **Owner setup DONE 2026-07-16**: free account created, creds
+saved via `/api/hosting`, and the production upload path verified end-to-end
+(real clip up → public URL 200 → destroyed). Poster is fully armed.
 
 ## Module map
 
