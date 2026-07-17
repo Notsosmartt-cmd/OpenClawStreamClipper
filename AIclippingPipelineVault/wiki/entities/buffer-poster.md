@@ -158,13 +158,18 @@ title sanitize.
 
 > [!warning] Coverage gap on 2026-07-16: traces are per-INVOCATION snapshots
 > written at batch end — a batch STOPPED mid-queue writes none (batch A), and
-> a running batch writes its trace only when it finishes (batch B). Hence
-> 2/134 scored on ship day; batch B's trace covers its ~70 clips when it
-> completes, and the `clip_scores.jsonl` stage-7 writer (follow-up task —
-> pipeline code is frozen while a batch runs) makes every FUTURE clip scored
-> at render time. Related discovery: the whole run-end reporting block
-> (run_metrics + last_run) stopped firing on 07-16's daytime runs — separate
-> bug, queued.
+> batch B ALSO ended with no trace (see the reports bug below). Hence 2/134
+> scored on ship day — clips rendered before 07-17 stay unscored.
+>
+> **FIXED FORWARD same night**: `stage7._record_clip` now appends every
+> rendered file to `clips/.diagnostics/clip_scores.jsonl` at render time
+> (`{clip: stem incl. variant, score, judge, category, run, ts}`; judge rides
+> the manifest row from the moment's `s45_judge`). Failure-soft, stop-proof
+> (written per render, not at batch end). Writer↔reader round-trip selftests
+> PASS. Every clip from the NEXT run onward is scored automatically; stitch
+> compilations (stitch_render's own clips_made append) are the one un-indexed
+> lane. Still open (queued chip): why the run-end reporting block
+> (run_metrics + last_run) stopped firing on 07-16's runs.
 
 **posted_clips auto-move** (owner req): after verification, any clip whose
 posts ALL read `sent` (strict — one error/skip/scheduled keeps it in place)
