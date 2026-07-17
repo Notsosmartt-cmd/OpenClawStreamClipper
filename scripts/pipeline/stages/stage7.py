@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -146,6 +147,9 @@ def _row_from_moment(m: dict) -> dict:
         # P-TIGHT exemption inputs (owner review 2026-07-08): pattern survives
         # Stage 6 now; without it the rap/freestyle exemption never fired.
         "primary_pattern": _scrub(m.get("primary_pattern") or ""),
+        # S4.5 text-judge score (0-10) rides along for the durable per-clip
+        # score index written at render time (_record_clip).
+        "judge": (m.get("s45_judge") or {}).get("score"),
     }
 
 
@@ -749,6 +753,31 @@ def _record_clip(ctx, row, out: Path, clip_length, profile: bool = False) -> Non
     with open(ctx.paths.clips_made, "a", encoding="utf-8") as f:
         f.write(f"{row['title']}|{row['score']}|{row['category']}|{row['description']}|"
                 f"{mb}MB|{row['segment_type']}|{clip_length}s\n")
+    # Durable per-clip score index (clips/.diagnostics/clip_scores.jsonl),
+    # consumed by the poster's Top-rated filter (poster/scores.py). Written
+    # HERE, the moment the file exists, because clips_made.txt is work-dir
+    # ephemeral and last_run traces only survive a batch that ENDS cleanly —
+    # a stopped batch used to leave every clip unscored (2026-07-16, 2/134).
+    # One line per rendered file; the variant marker stays in `clip`.
+    try:
+        _score = None
+        try:
+            _score = float(row["score"])
+        except (TypeError, ValueError, KeyError):
+            pass
+        diag = ctx.paths.diagnostics_dir
+        diag.mkdir(parents=True, exist_ok=True)
+        with open(diag / "clip_scores.jsonl", "a", encoding="utf-8") as jf:
+            jf.write(json.dumps({
+                "clip": out.stem,
+                "score": _score,
+                "judge": row.get("judge"),
+                "category": row.get("category"),
+                "run": os.environ.get("CLIP_RUN_STAMP", ""),
+                "ts": int(time.time()),
+            }) + "\n")
+    except Exception:
+        pass  # the index is a convenience — never fail a render over it
 
 
 # ---------------------------------------------------------------------------
