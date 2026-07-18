@@ -4,7 +4,7 @@ type: concept
 tags: [performance, speed, cuda, vulkan, lm-studio, runtime, stage-3, stage-4, pass-b, serving, gpu, reference]
 sources: 0
 status: shipped
-updated: 2026-07-16
+updated: 2026-07-18
 ---
 
 # Single-card CUDA lane — where qwen3.5-9b-class models fit for speed
@@ -232,6 +232,54 @@ single-vendor box or the concurrency stance changes by an order of magnitude.
 **The cheap experiment if the lane needs more speed**: workers 2→3 inside the pool
 rule (pool 49152, needs ~+1.5 GB KV — fits when the 35B is unloaded), one sectional
 `bench_s45.py` A/B, zero new stack.
+
+## §9 gemma-4-e4b as the text/finder model — BENCHED, REJECTED (2026-07-18)
+
+Owner asked whether `google/gemma-4-e4b` (7.5 B raw / ~4 B effective, 6.33 GB Q4)
+would match qwen3.5-9b on text + segment detection and buy more speed/workers.
+**Benched head-to-head on the CUDA lane** (both loaded via the lane's own runtime
+`nvidia-cuda-avx2@2.24.0`, ctx 8192, fully GPU-resident, `bench_serving.py --mode
+decode` on the real moment-finder prompt over cached transcript windows; a game +
+Edge held ~8 GB VRAM so absolute tok/s ran low, but both models saw IDENTICAL
+conditions so the ratio is clean):
+
+| Model | decode tok/s (median) | ntok/call | wall/call (median) | finish | output |
+|---|---|---|---|---|---|
+| qwen3.5-9b | 40.3 (noisy 25–61) | 98–332 (**stops**) | 9.20 s | `stop` | valid `{"moments":[…]}` |
+| gemma-4-e4b | **79.4** (tight 78–80) | **512 every time** (cap) | 8.93 s | `length` | **0 content — pure `reasoning_content`** |
+
+**Two findings kill it:**
+
+1. **e4b is a thinking model with NO working off-switch on this path.** The
+   finder prompt starts with `/no_think`; e4b ignores it and burns the entire
+   budget on hidden `reasoning_content` ("Here's a thinking process…", 3.7–4 k
+   chars) → **`content` is empty, finish_reason=length, zero parseable JSON**.
+   Adding `chat_template_kwargs.enable_thinking=False` (what the pipeline sends)
+   **did not help** — the kwarg doesn't reach it. This is [[concepts/bugs-and-fixes#BUG 67]]
+   exactly (thinking-on wedges Stage 4 → empty JSON → 100 % failure); qwen3.5-9b
+   returned a clean 98-token `{"moments":[…]}` in 5.2 s on the same prompt. As
+   loaded via the standard `lms load` path (= `common.py`'s load path), e4b is a
+   **100 % finder failure**, not a slower-but-working option.
+2. **Even if thinking were fixable, the ~2× raw tok/s buys ~0 wall-clock.** e4b
+   hit the 512-token cap on all 8 bench calls while the 9B stopped naturally at a
+   ~250-token median — so at 2× the speed it generates ~2× the tokens and **wall
+   time is a dead heat** (8.93 vs 9.20 s). S4 is output-token-bound; a faster
+   per-token model that emits more tokens is a wash, and this one emits an
+   unbounded think trace.
+
+**Speed/workers claim, specifically:** e4b frees **no** meaningful VRAM (6.33 vs
+6.55 GB — 220 MB) so it buys **no extra workers** (the lane's worker cap is the
+ctx *pool*, not weights — BUG 73). Its only real asset is raw decode tok/s, which
+§2-logic above neutralizes.
+
+**Escape hatch (documented, not recommended):** thinking is suppressible for the
+Gemma family only at the **LM Studio app-side per-model template** (BUG 57/67
+territory), not via API. A user could hand-configure e4b's template to fresh-load
+with reasoning off, then re-bench — but the 07-16 finder A/B already showed the
+*bigger* gemma-4-12b losing to the 9B on quality (5.1 vs 6.2, +31 % slower), so
+the smaller e4b is a poor bet even with thinking fixed. **Verdict: rejected on a
+bench.** Keep qwen3.5-9b on the text lane. Repro:
+`scripts/research/bench_serving.py --mode decode` + the scratch `raw_output_probe`.
 
 ## Related
 
