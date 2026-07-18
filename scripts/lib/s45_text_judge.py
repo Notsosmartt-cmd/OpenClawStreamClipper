@@ -42,8 +42,18 @@ def _default_chat(prompt: str, model: str, url: str):
                          max_tokens=220 * GROUP_SIZE)
 
 
-def _parse_verdicts(raw: str, lo_idx: int, hi_idx: int) -> dict[int, dict]:
-    """Verdict rows keyed by ABSOLUTE candidate idx; invalid rows dropped."""
+def _parse_verdicts(raw: str, lo_idx: int, hi_idx: int, log=None) -> dict[int, dict]:
+    """Verdict rows keyed by ABSOLUTE candidate idx; invalid rows dropped.
+
+    BUG 76 (2026-07-18): a verdict carrying keep+rationale but NO `score` key
+    used to become a SILENT `score=0.0` (`float(r.get("score", 0))`). That
+    fabricates a contradictory row — "keep": true with a glowing rationale and a
+    0.0 score — which then (a) overwrites the moment's ranking score with 0.0
+    (`m["score"] = d["score"]/10`), (b) makes `CLIP_MIN_JUDGE_SCORE` DROP a clip
+    the judge explicitly KEPT, and (c) sinks it to the bottom of the poster's ★
+    filter. Observed live: 7/15 candidates in one group. A score-less verdict is
+    now treated as UNJUDGED (fail-open — the same path a failed group takes) and
+    logged, never silently zeroed."""
     try:
         import lmstudio
         data = lmstudio.loads_lenient(raw)
@@ -54,6 +64,7 @@ def _parse_verdicts(raw: str, lo_idx: int, hi_idx: int) -> dict[int, dict]:
             return {}
     rows = (data or {}).get("verdicts") if isinstance(data, dict) else None
     out: dict[int, dict] = {}
+    _no_score = 0
     for r in rows or []:
         if not isinstance(r, dict):
             continue
@@ -63,9 +74,14 @@ def _parse_verdicts(raw: str, lo_idx: int, hi_idx: int) -> dict[int, dict]:
             continue
         if not (lo_idx <= idx <= hi_idx):
             continue
+        # BUG 76: absent/None/garbage score -> leave UNJUDGED, never fabricate 0.0
+        if r.get("score") is None:
+            _no_score += 1
+            continue
         try:
-            score = max(0.0, min(10.0, float(r.get("score", 0))))
+            score = max(0.0, min(10.0, float(r.get("score"))))
         except (TypeError, ValueError):
+            _no_score += 1
             continue
         out[idx] = {
             "keep": bool(r.get("keep", True)),
@@ -73,6 +89,9 @@ def _parse_verdicts(raw: str, lo_idx: int, hi_idx: int) -> dict[int, dict]:
             "subtype": str(r.get("subtype") or "unchanged").strip().lower(),
             "rationale": str(r.get("rationale") or "")[:160],
         }
+    if _no_score and log:
+        log(f"[s45] group {lo_idx}-{hi_idx}: {_no_score} verdict(s) had NO usable "
+            f"score — left UNJUDGED (fail-open) rather than a fabricated 0.0 (BUG 76)")
     return out
 
 
@@ -116,7 +135,7 @@ def judge_moments(moments: list[dict], packets: list[str], *, model: str,
         prompt = _PROMPT.format(n=len(moments), packets=block)
         try:
             raw = chat(prompt, model, url)
-            got = _parse_verdicts(raw or "", lo, hi)
+            got = _parse_verdicts(raw or "", lo, hi, log=log)
         except Exception as e:  # noqa: BLE001
             log(f"[s45] group {lo}-{hi} FAILED ({type(e).__name__}: {e}) — kept unjudged")
             got = {}

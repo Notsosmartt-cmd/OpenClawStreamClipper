@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-07-15
+updated: 2026-07-18
 ---
 
 # Bugs and Fixes
@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 75 bugs (highest number BUG 75; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest: [[#BUG 75]] reference SFX density inflated ~10× by a vocal CLAP prompt (2026-07-15); from the Wave-3 speed campaign: [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 76 bugs (highest number BUG 76; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest: [[#BUG 76]] S4.5 judge silently fabricated `score=0.0` for score-less verdicts, turning fail-open into fail-closed (2026-07-18); [[#BUG 75]] reference SFX density inflated ~10× by a vocal CLAP prompt (2026-07-15); from the Wave-3 speed campaign: [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1840,6 +1840,40 @@ FIRST — one stack dump ended a day of plausible-but-wrong theories (OpenMP, FI
 Tool: `scripts/research/bench_audio_scan.py` (serial/threads/procs micro-bench on a real WAV).
 
 ---
+
+## BUG 76 — S4.5 judge silently fabricated `score = 0.0` for verdicts that carried keep + rationale but no score
+
+> [!success] Status: FIXED 2026-07-18 (`scripts/lib/s45_text_judge.py::_parse_verdicts`). A verdict with an absent/None/unparseable `score` is now left **UNJUDGED (fail-open)** — the same path a failed group already takes — and logged; it is never zeroed. An explicitly-returned `0` is still honored. Selftests: 2 new + the module's own ALL PASS.
+
+**Symptom (found while running the 07-18 finder A/B):** the qwen arm's judge report showed
+**7 of 15 candidates with `score: 0.0`** — while carrying `"keep": true` and *glowing*
+rationales ("Strong social callout with immediate punchline", "high comedic tension",
+"Sharp critique followed by constructive validation; good arc"). A 0.0 score attached to a
+keep decision with a positive rationale is self-contradictory on its face. The e4b arm,
+same VOD and same judge, had **zero** such rows — so the A/B looked like "e4b finds much
+better moments" (qwen ALL-scores mean 3.47 vs e4b 5.80) when it was purely an artifact.
+Re-judging after the fix flipped the picture to a near-tie (qwen 5.93 vs e4b 5.80).
+
+**Cause:** `_parse_verdicts` did `score = float(r.get("score", 0))`. When the judge's JSON
+verdict object omitted `score` (a real, intermittent LM emission failure — the group log
+still read "7 verdicts", because `keep`/`subtype`/`rationale` parsed fine), the `, 0`
+default **fabricated a 0.0** and the row was accepted as a fully-valid verdict.
+
+**Blast radius (why this mattered beyond the A/B):**
+1. `m["score"] = round(d["score"]/10, 3)` — the fabricated 0.0 **overwrites the moment's
+   ranking score**, so a judge-approved moment sinks to the bottom of Pass-C selection,
+   S5.5 seeding, and the ≥8 A/B-variant gate.
+2. **`CLIP_MIN_JUDGE_SCORE` would DROP a clip the judge explicitly KEPT** — the quality
+   gate reads the score, sees 0.0 < threshold, and culls it. Fail-open was the design
+   intent for unjudged moments; a fabricated zero silently converted fail-open into
+   fail-closed.
+3. `clip_scores.jsonl` → the poster's ★ Top-rated filter ranks these clips last.
+
+**Lesson**: `dict.get(key, <neutral-looking default>)` on a *semantically meaningful*
+field is a silent-corruption generator — 0.0 is not a neutral default for a 0–10 quality
+score, it is the strongest possible negative claim. Missing data must stay missing
+(unjudged) rather than being coerced into a confident value. The tell was the internal
+contradiction (keep + praise + 0.0), which no consumer of the score ever checked.
 
 ## BUG 75 — Reference SFX density inflated ~10× by a VOCAL CLAP prompt ("bruh" matched all speech) + OCR-resampled caption wps
 
