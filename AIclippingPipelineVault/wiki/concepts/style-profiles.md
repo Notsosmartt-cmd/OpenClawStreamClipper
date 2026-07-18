@@ -3,7 +3,7 @@ title: "AI Editing Profiles (Per-Category)"
 type: concept
 tags: [editing, profiles, style, originality, fingerprint, kinetic-captions, sfx, broll, memes, zoom-punch, freeze-frame, slow-mo, chat-overlay, stage-7]
 sources: 0
-updated: 2026-06-13
+updated: 2026-07-17
 ---
 
 # AI Editing Profiles
@@ -84,15 +84,26 @@ dashboard/routes/library_routes.py       ← /api/libraries/scan
 | Category | zoom_punch | freeze | slow_mo | meme | b-roll | mirror | shake | vignette | sfx_on_cuts | sfx_on_peak | caption preset | music | chat |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **hype** | 2–3 | 0% | 0% | 0% | 0% | 50% | 40% | 10% | whoosh, impact | impact, riser | neon | hype | – |
-| **comedy** | 1–2 | 85% | 0% | 75% | 10% | 20% | 20% | 20% | scratch, ding | scratch | bouncy | funny | – |
+| **comedy** | 0–1 | 40% | 0% | 35% | 10% | 20% | 20% | 20% | scratch, ding | scratch | bouncy | funny | – |
 | **skill** | 1–2 | 10% | 85% | 0% | 0% | 10% | 20% | 10% | impact, riser | impact | clean | hype | – |
 | **reactive** | 1–2 | 30% | 0% | 20% | 0% | 50% | 25% | 15% | whoosh, ding | impact | bouncy | reactive | – |
 | **controversy** | 1–2 | 50% | 0% | 0% | 10% | 0% | 10% | 30% | impact | riser | news | tension | yes |
-| **hot_take** | 1–2 | 50% | 0% | 0% | 0% | 0% | 10% | 30% | impact | riser | news | tension | yes |
+| **hot_take** | 0–1 | 25% | 0% | 0% | 0% | 0% | 10% | 30% | impact | riser | news | tension | yes |
 | **emotional** | 0–1 | 0% | 0% | 0% | 0% | 0% | 0% | 60% | – | – | soft | emotional | – |
-| **storytime** | 0–1 | 10% | 0% | 0% | 85% | 0% | 0% | 20% | whoosh | – | clean | storytime | – |
+| **storytime** | 0–1 | 10% | 0% | 0% | 25% | 0% | 0% | 20% | whoosh | – | clean | storytime | – |
 | **irl** | 1–2 | 10% | 0% | 10% | 50% | 20% | 15% | 15% | whoosh, ding | – | clean | reactive | – |
 | **dancing** | 3–5 | 0% | 0% | 0% | 0% | 50% | 30% | 10% | – | – | neon | hype | – |
+
+> [!note] R3 recalibration 2026-07-17 — visual-transition trim (comedy / hot_take / storytime)
+> The 07-17 corpus diff (270 cards, subtype-resolved) showed our clips carry ~2× the reference's
+> **visual transitions**: ref banter 3.6 cuts/30s vs ours 5.9; ref monologues **0.75** vs ours 4.2.
+> Routing tally (`_ground_truth.category` on 155 our-cards): irl clips render as comedy 71 /
+> storytime 26 / hot_take 25 — so the trim targets those three: comedy zoom 1–2→0–1, freeze
+> 85→40%, meme 75→35%; hot_take zoom→0–1, freeze 50→25%; storytime b-roll 85→25% (reference
+> monologues are near-zero-edit; b-roll inserts were adding 2 transitions to 85% of them).
+> **SFX deliberately untouched** — owner veto: "the high sfx density is funny", the sfx gap items
+> are intentional style, don't apply them. Gaming/skill untouched pending the cuts-source
+> investigation (our gaming reads 10 cuts/30s but injected effects only explain ~1–2).
 
 Every probabilistic / range field resolves per-clip via a deterministic seed (the moment timestamp) — same category + same seed always produces the same effect set, but two same-category clips never render identically.
 

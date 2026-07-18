@@ -51,11 +51,15 @@ PROFILES: dict[str, dict[str, Any]] = {
         "punchline_echo":         False,
         "chat_overlay":           False,
     },
+    # 2026-07-17 R3 recalibration (comedy/hot_take/storytime): reference banter
+    # carries 3.6 visual transitions/30s vs our 5.9, monologues 0.75 vs our 4.2 —
+    # trim INJECTED transitions (zoom/freeze/cutaway/b-roll). SFX untouched: the
+    # high SFX density is intentional owner style (veto on the sfx gap items).
     "comedy": {
-        "zoom_punch_count":       (1, 2),
-        "freeze_frame_prob":      0.85,
+        "zoom_punch_count":       (0, 1),
+        "freeze_frame_prob":      0.40,
         "slow_mo_prob":           0.0,
-        "meme_cutaway_prob":      0.75,
+        "meme_cutaway_prob":      0.35,
         "broll_insert_prob":      0.10,
         "use_glitch_transition":  False,
         "saturation_boost":       0.10,
@@ -132,8 +136,8 @@ PROFILES: dict[str, dict[str, Any]] = {
         "chat_overlay":           True,
     },
     "hot_take": {
-        "zoom_punch_count":       (1, 2),
-        "freeze_frame_prob":      0.50,
+        "zoom_punch_count":       (0, 1),
+        "freeze_frame_prob":      0.25,
         "slow_mo_prob":           0.0,
         "meme_cutaway_prob":      0.0,
         "broll_insert_prob":      0.0,
@@ -176,7 +180,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "freeze_frame_prob":      0.10,
         "slow_mo_prob":           0.0,
         "meme_cutaway_prob":      0.0,
-        "broll_insert_prob":      0.85,
+        "broll_insert_prob":      0.25,
         "use_glitch_transition":  False,
         "saturation_boost":       0.05,
         "contrast_boost":         0.03,

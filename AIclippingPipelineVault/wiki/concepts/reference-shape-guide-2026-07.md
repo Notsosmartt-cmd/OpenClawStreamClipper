@@ -3,7 +3,7 @@ title: "Reference Shape Guide (2026-07) — DRAFT"
 type: concept
 tags: [reference, shapes, subtype, detection, draft]
 sources: 0
-updated: 2026-07-15
+updated: 2026-07-17
 ---
 
 # Reference Shape Guide — DRAFT
@@ -18,6 +18,16 @@ updated: 2026-07-15
 > **7 applied** — `solo_monologue` promoted into the card prompt, Pass-B vocabulary, and
 > the judge's verdict enum, with a selective re-card of the irl_other clips. The same
 > config feeds the S4.5 judge's packet norms (J7).
+
+> [!note] Priors v2 refresh (2026-07-17)
+> `config/shape_priors.json` numbers recomputed from the grown **115-card** corpus (was 86)
+> after the R3 validity audit: banter_roast n 45→47, duration **30→24s** (corpus median 24.5;
+> our banter clips were running 41s even with the 30s hint — note strengthened to "the build is
+> LEAN"), payoff 84→83%, bed 68→79%; freakout n=10, duration 31→27s, **payoff 34→59%** (the
+> "FRONT-loaded" claim didn't survive the larger corpus — note softened to early-to-mid);
+> solo_monologue n 16→32, duration **54→39s** (the corpus doubled with shorter monologues;
+> "do not tighten to banter length" kept), bed 28→2%, payoff 89% added; gaming hint **55→49s**
+> (n=8). Same soft-priors/n≥8 doctrine — numbers only, no cap changes.
 
 Data basis: 100 v3 cards (owner's 35B, anti-lazy subtype prompt), decomposed with the
 BUG-75-clean counting, per-clip outro trims, and the gap-tonality music-bed scan.

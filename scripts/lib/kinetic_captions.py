@@ -412,6 +412,31 @@ def _resolve_casing(caps: bool) -> str:
     return mode if mode in ("sentence", "keep", "caps") else "sentence"
 
 
+def sentence_case_text(text: str) -> str:
+    """String form of _sentence_case_words, for overlay text (hook card etc.)."""
+    words = [{"text": t} for t in str(text or "").split()]
+    if not words:
+        return text
+    return " ".join(w["text"] for w in _sentence_case_words(words))
+
+
+def normalize_overlay_casing(text: str) -> str:
+    """Casing for NON-caption on-screen text (the hook overlay). Follows the
+    caption casing mode so the whole frame reads ONE casing — R3 audit
+    2026-07-17: the lowercase hook next to sentence-cased captions is what
+    scored our clips 'mixed' against the reference corpus's uniform
+    sentence case. CLIP_CAPTION_CASING: sentence (default) | keep | caps."""
+    t = str(text or "")
+    if not t.strip():
+        return t
+    mode = _resolve_casing(False)
+    if mode == "caps":
+        return t.upper()
+    if mode == "sentence":
+        return sentence_case_text(t)
+    return t
+
+
 def srt_to_ass(srt_path: Path, ass_path: Path,
                preset: str = "capcut",
                emphasis_indices: list[int] | None = None,

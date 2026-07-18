@@ -3,7 +3,7 @@ title: "Captions and Hook Text"
 type: concept
 tags: [captions, subtitles, hook, rendering, ffmpeg, originality, stage-7, video]
 sources: 2
-updated: 2026-06-06
+updated: 2026-07-17
 ---
 
 # Captions and Hook Text
@@ -76,6 +76,15 @@ drawtext=textfile='…/clip_{T}_hook.txt'
 ```
 
 The hook text is written to a per-clip temp file (avoids shell quoting issues with apostrophes). `textwrap.wrap(hook, 18)` wraps to max 3 lines (tightened from 22 — Montserrat Black is wider).
+
+> [!note] Hook casing follows the caption casing (2026-07-17)
+> The R3 audit found why our cards kept scoring `casing: mixed` against the reference corpus's
+> uniform sentence case even though kinetic captions were already sentence-cased (R4 apply,
+> 2026-07-11): the **hook overlay rendered verbatim all-lowercase** next to sentence-cased
+> captions — two casings on screen at once. Both `_wrap_hook`s (stage7 legacy drawtext + 
+> `profile_render`) now pass the hook through `kinetic_captions.normalize_overlay_casing()`,
+> which follows `CLIP_CAPTION_CASING` (default `sentence`; `keep` leaves the hook untouched,
+> `caps` uppercases). Covers A/B variant hooks too (same call sites). Failure-soft in stage7.
 
 > [!note] Font — Montserrat Black (2026-06-06)
 > The hook card now uses the **bundled `assets/fonts/Montserrat-Black.ttf`** (same face as the CapCut subtitle captions), resolved by `stage7._resolve_font()` and `profile_render._resolve_hook_font()` with installed-bold fallbacks (Segoe UI Black → Arial Bold → DejaVu). This fixed a real bug: `profile_render.py` hard-coded the **Linux** path `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf`, which doesn't exist on the Windows bare-metal host, so the hook silently fell back to an ugly default face. (`fonts-dejavu-core` is still only relevant to the in-Docker render path.)
