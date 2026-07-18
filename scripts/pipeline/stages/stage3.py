@@ -69,7 +69,14 @@ def run(ctx) -> None:
     key = _seg_config_key(ctx) if _cache_on else ""
     cache_file = _segcache_path(ctx, key) if key else None
 
-    if cache_file and cache_file.exists() and not ctx.force:
+    # CLIP_REUSE_SEGMENTS (2026-07-18): dev/harness flag — reuse cached segments
+    # EVEN under --force, mirroring CLIP_REUSE_TRANSCRIPT in stage 2. Stage 3 is
+    # LLM-VOTED, so a forced re-roll yields a DIFFERENT segment set each run; a
+    # finder A/B (two models, same VOD) is only valid if both arms see the
+    # IDENTICAL segments. Default off = strict force-re-roll, unchanged.
+    _reuse_segments = _truthy(os.environ.get("CLIP_REUSE_SEGMENTS", "0"))
+
+    if cache_file and cache_file.exists() and (not ctx.force or _reuse_segments):
         try:
             payload = json.loads(cache_file.read_text(encoding="utf-8"))
             segs, prof = payload["segments"], payload["stream_profile"]

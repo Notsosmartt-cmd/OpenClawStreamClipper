@@ -4,7 +4,7 @@ type: concept
 tags: [plan, stage4, judgment, two-phase, quality, speed]
 sources: 0
 status: shipped
-updated: 2026-07-16
+updated: 2026-07-18
 ---
 
 > [!success] SHIPPED — DEFAULT ON since 2026-07-16 (owner flip on the bench evidence).
@@ -140,6 +140,18 @@ costing frames + tournament slots.
   snapshot so later benches run **judge-only with ZERO VOD processing** (transcript+events
   materialized from the per-VOD caches). The stage helper itself now logs+persists a
   packets-vs-judge timing split (the new section-metric device).
+  **Harness additions (2026-07-18, for bounded finder A/Bs on long VODs):**
+  `--max-hours N` truncates the WORK-DIR transcript to its first N hours after stage 3,
+  and the report gains `finder_model` / `judge_model` provenance. Two traps this
+  encodes — both hit live: (a) **stage 4 chunks the TRANSCRIPT** (`max_time = max(end)`
+  over `transcript.json`); `segments.json` is only a segment-TYPE map, so truncating
+  *it* does NOT bound S4 (a 0.6 h cap still ran chunks at T=10,681 s until this was
+  fixed); (b) the truncation must happen **after** stage 3, whose cache key is a sha1
+  over the transcript bytes. Companion flag `CLIP_REUSE_SEGMENTS=1` (stage 3, mirrors
+  `CLIP_REUSE_TRANSCRIPT`) reuses cached segments **even under --force** — the bench
+  hardcodes `force=True`, and stage 3 is LLM-VOTED, so without it each A/B arm re-rolls
+  a DIFFERENT segment set and the comparison is void. Both default off; no production
+  behavior change.
   **First sectional run DONE (2026-07-16, Runiktvlive 5.31 h fresh)**:
   s1 7.9 s · **s2 fresh 395 s = 1.24 min/VOD-h** (≈half the Wave-0 fresh rate — batched
   CLAP + GPU compounding) · s3 128 s · **s4 recall-on 3,703 s = 11.6 min/VOD-h** ·
@@ -188,6 +200,43 @@ mode is judgment (this plan's target) or recall (tune J2 harder) — and the app
 lines feed J7). Default-off + A/B first; the flip to default is an owner call on the A/B
 numbers + their clip impressions. Per the learn boundary, the judge's prompt criteria are
 static reviewed text — the Lab never edits them autonomously.
+
+## Finder A/B #2 (2026-07-18): gemma-4-e4b (thinking OFF) vs qwen3.5-9b — qwen keeps the seat, narrowly
+
+Same protocol as #1 below, bounded to a **5 h slice** of the 11.3 h yourragegaming VOD
+(`--max-hours 5`), both arms on the IDENTICAL transcript + cached segments
+(`CLIP_REUSE_SEGMENTS`), only `CLIP_TEXT_MODEL_PASSB` differing, both snapshots judged
+by the same pinned 35B.
+
+| | qwen3.5-9b | gemma-4-e4b (thinking off) |
+|---|---|---|
+| Candidates | 15 | 15 |
+| Judge-kept | **10** | 8 |
+| ALL candidate scores (mean / med) | **5.93 / 7.0** | 5.80 / 6.0 |
+| KEPT scores (mean / med) | 7.30 / 7.0 | **7.75 / 8.0** |
+| **Exclusive finds (mean / med)** | **5.82 / 7.0** | 5.55 / 5.0 |
+| Exclusives surviving the judge | **7/11** | 5/11 |
+
+**Verdict: qwen keeps the finder seat — but this is much closer than #1.** Overall
+candidate quality is a near-tie (5.93 vs 5.80); e4b's *kept* set is actually slightly
+sharper (7.75/8.0 — it culls harder, keeping 8 vs 10). The decisive metric is the same
+one that settled #1: **qwen's exclusive finds are better** (5.82/7.0 with 7/11 surviving
+vs 5.55/5.0 with 5/11), so swapping would trade away more good unique moments than it
+gains. Not the blowout gemma-12b was (6.2 vs 5.1) — e4b is a legitimately competent
+finder, just not a *better* one.
+
+> [!warning] S4 timings in this run are INVALID — do not cite them
+> The qwen arm ran 4,478 s vs e4b's 808 s, but a leftover IDLE model from an earlier
+> bench oversubscribed the 16 GB card during the qwen arm (~180 s/chunk; unloading it
+> restored ~63 s/chunk mid-run) while the e4b arm ran on a clean card. Contention, not
+> model speed. The controlled figure stands: **~1.85× decode, ~15–30 % wall**
+> ([[concepts/single-card-cuda-lane-2026-07]] §9). **Always `lms unload --all` between
+> A/B arms.**
+
+**Overlap confirms the #1 discovery, harder: only 4/15 moments matched (±90 s)** —
+lower than #1's 6/16. Each finder surfaced 11 exclusives, and **5 of e4b's survived the
+judge** (two 9s, two 8s). Third independent measurement that finder recall lives in
+DIFFERENT LENSES, not thresholds.
 
 ## Finder A/B via judge arbitration (2026-07-16, owner query: gemma-4-12b vs qwen3.5-9b)
 
