@@ -608,6 +608,11 @@ def _maybe_ab_variant(ctx, row, clip_start, clip_length, clip_srt_render, moment
 
 def _wrap_hook(hook: str) -> str:
     import textwrap
+    try:
+        import kinetic_captions as kc
+        hook = kc.normalize_overlay_casing(hook)
+    except Exception:
+        pass
     lines = textwrap.wrap(hook.strip(), 18)[:3]
     return "\n".join(lines) if lines else hook[:60]
 

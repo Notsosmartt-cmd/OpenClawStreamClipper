@@ -1,32 +1,33 @@
 {
-  "version": 1,
-  "_note": "Track E / J7 (2026-07-16): per-species SHAPE PRIORS distilled from the subtyped reference corpus (wiki: reference-shape-guide-2026-07). SOFT priors only - injected as 'typical, not required' guidance into the Pass-B prompt (stage4_moments) and the S4.5 judge's evidence packets (evidence_packets). NEVER used as hard filters or rejection rules. Mechanical approval gate per the owner's dropped-sit-down rule: only species with n>=8 reference samples appear here (performance_rap n=4 and the wholesome hook exception n=5 were auto-skipped). solo_monologue = the promoted species (was irl_other; 12-13/16 justifications described it). Regenerate/extend by editing this file - both consumers read it at runtime, failure-soft.",
+  "version": 2,
+  "_note": "Track E / J7 (2026-07-16): per-species SHAPE PRIORS distilled from the subtyped reference corpus (wiki: reference-shape-guide-2026-07). SOFT priors only - injected as 'typical, not required' guidance into the Pass-B prompt (stage4_moments) and the S4.5 judge's evidence packets (evidence_packets). NEVER used as hard filters or rejection rules. Mechanical approval gate per the owner's dropped-sit-down rule: only species with n>=8 reference samples appear here (performance_rap n=4 and the wholesome hook exception n=5 were auto-skipped). solo_monologue = the promoted species (was irl_other; 12-13/16 justifications described it). Regenerate/extend by editing this file - both consumers read it at runtime, failure-soft. v2 (2026-07-17): numbers refreshed from the grown 115-card corpus (was 86) after the R3 validity audit; banter tightened 30->25s (corpus median 24.5, our clips ran 41s).",
   "subtypes": {
     "banter_roast": {
-      "n": 45,
-      "payoff_pct_typical": 84,
-      "duration_s_typical": 30,
+      "n": 47,
+      "payoff_pct_typical": 83,
+      "duration_s_typical": 24,
       "arc_typical": "instant or setup_payoff",
-      "music_bed_pct_typical": 68,
-      "note": "payoff lands LATE (final fifth) - keep the build before the beat"
+      "music_bed_pct_typical": 79,
+      "note": "payoff lands LATE (final fifth) - keep the build before the beat, but the build is LEAN: reference banter runs ~25s median. Trim setup to the minimum that makes the payoff land."
     },
     "freakout_overreaction": {
       "n": 10,
-      "payoff_pct_typical": 34,
-      "duration_s_typical": 31,
+      "payoff_pct_typical": 59,
+      "duration_s_typical": 27,
       "arc_typical": "escalation",
-      "music_bed_pct_typical": 52,
-      "note": "FRONT-loaded - the eruption comes early; the value is the sustained reaction after it"
+      "music_bed_pct_typical": 74,
+      "note": "eruption lands early-to-mid clip (median ~59% on the grown corpus, earlier on some) - the value is the sustained reaction after it, not a late punchline"
     },
     "solo_monologue": {
-      "n": 16,
-      "duration_s_typical": 54,
+      "n": 32,
+      "duration_s_typical": 39,
       "arc_typical": "story",
-      "music_bed_pct_typical": 28,
-      "note": "long-form story spine (~45-60s) - needs its full arc, do not tighten to banter length"
+      "music_bed_pct_typical": 2,
+      "note": "story spine ~40s typical (range 30-60) - needs its full arc, do not tighten to banter length",
+      "payoff_pct_typical": 89
     }
   },
   "category_hints": {
-    "gaming": 55
+    "gaming": 49
   }
 }

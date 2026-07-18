@@ -697,6 +697,7 @@ def _wrap_hook(text: str) -> str:
     text = (text or "").strip()
     if not text:
         return text
+    text = kc.normalize_overlay_casing(text)
     lines = textwrap.wrap(text, 18)[:3]
     return "\n".join(lines) if lines else text[:60]
 
