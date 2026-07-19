@@ -4,7 +4,7 @@ type: concept
 tags: [plan, editing, rendering, captions, framing, duration, stage-7, reference, quality]
 sources: 0
 status: in-progress
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Plan: Edit-Quality Revisions (2026-07)
