@@ -300,7 +300,9 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
     fill_vf = ""
     try:
         import framing as _framing
-        _ok, _why = _framing.should_fill(str(ctx.vod_path))
+        _ok, _why = _framing.should_fill(str(ctx.vod_path),
+                                         segment_type=row.get("segment_type"),
+                                         category=category)
         if _ok:
             _cx, _cwhy = _framing.resolve_center_x(
                 str(ctx.vod_path), start_s=float(clip_start),
@@ -308,8 +310,8 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
             fill_vf = (f"{speed_vf},{_framing.fill_filter(_cx)}{mirror_vf},"
                        f"{color_vf}{shake_vf}")
             log.log(f"  [framing] fill mode ({_why}, {_cwhy})")
-        elif _framing.mode() == "fill":
-            log.log(f"  [framing] fill requested but skipped: {_why}")
+        elif _framing.mode() in ("fill", "auto"):
+            log.log(f"  [framing] fill not applied: {_why}")
     except Exception as _fe:  # noqa: BLE001 — framing must never break a render
         log.warn(f"framing fill skipped for T={T}: {_fe}")
 

@@ -123,6 +123,14 @@
                         <option value="8">Elite — judge ≥ 8</option>
                     </select>
                 </div>
+                <div class="control-group" title="How a 16:9 source fits the 9:16 frame. Blur fill = the classic letterbox over a blurred copy (best for gaming/desktop — keeps the HUD and screen content). Full-bleed = fills the height and crops the sides around the action (best for IRL — bigger subject, and the stream's chat/overlay chrome gets cropped away). Auto picks per clip from its segment type: IRL/just-chatting → full-bleed, gaming/reaction → blur fill. Sources already 9:16 are never cropped.">
+                    <label class="field-label">Frame fit</label>
+                    <select id="sel-frame-mode">
+                        <option value="auto" selected>Auto — IRL full-bleed, gaming blur (default)</option>
+                        <option value="blur">Blur fill — letterbox (classic)</option>
+                        <option value="fill">Full-bleed — crop to action</option>
+                    </select>
+                </div>
             </div>
 
             <hr class="section-divider">

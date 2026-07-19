@@ -3,7 +3,7 @@ title: "Web Dashboard"
 type: entity
 tags: [dashboard, flask, web, ui, sse, docker-exec, originality, detached-exec, interface, hub, forensics, tabs]
 sources: 3
-updated: 2026-07-13
+updated: 2026-07-19
 ---
 
 # Web Dashboard
@@ -101,7 +101,7 @@ Natively it runs the pipeline directly as a subprocess (`scripts/run_pipeline.py
 | Feature | Description |
 |---|---|
 | **VOD Library** | All VODs with size, duration, processed status, transcription cache indicator. **Multi-select (2026-06-06):** a checkbox per row + a header **select-all** checkbox (indeterminate when a subset is picked). Clicking anywhere on a row also toggles it; selection state lives in `state.selectedVods` (array of stems). |
-| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox (re-runs from selection AND re-transcribes, replacing the cached transcript — see [[concepts/bugs-and-fixes]] BUG 58). **"Clip Selected (N)"** runs the checked VODs sequentially via `/api/clip-batch` (label shows the count; disabled when none checked). **"Clip All"** still clips every VOD via `/api/clip-all` regardless of checkboxes. |
+| **Clip Controls** | Style dropdown (8 styles), stream type hint, force reprocess checkbox (re-runs from selection AND re-transcribes, replacing the cached transcript — see [[concepts/bugs-and-fixes]] BUG 58). **"Clip Selected (N)"** runs the checked VODs sequentially via `/api/clip-batch` (label shows the count; disabled when none checked). **"Clip All"** still clips every VOD via `/api/clip-all` regardless of checkboxes. **Frame fit** select (2026-07-19, W1): auto (default — per-clip: irl/just_chatting → full-bleed fill, gaming/reaction → blur letterbox) / blur / fill → `CLIP_FRAME_MODE`; see [[concepts/plan-edit-quality-2026-07]]. |
 | **Clip toggles (checkboxes)** | Captions, hook caption, `chk-enable-thinking` (model thinking, default off — BUG 67), `chk-companion-shorts` (`CLIP_COMPANION_SHORTS`, default off), **`chk-ab-variants` → `CLIP_AB_VARIANTS=2`** and **`chk-post-kit` → `CLIP_POST_KIT`** — both **pre-checked / DEFAULT ON since 2026-07-10** (owner promotion after the 9/9-GOOD run; uncheck to disable; post kits land in `clips/post_kits/`). `style_profiles` in `DEFAULT_ORIGINALITY` also defaults **true** now (A/B + SFX lanes need profile mode; note the untracked runtime `config/originality.json` overrides it per-machine). Each JS checkbox → request field → `spawn_pipeline`/`pipeline_env` env var (both docker + bare-metal paths). See [[concepts/plan-captions-and-ab-variants-2026-07]]. |
 | **Pipeline Monitor** | 8-stage progress dots, real-time log streaming via SSE, stage history with timestamps. **Batch VOD progress (2026-07-14):** in a multi-VOD run, a line under the stage label shows `VOD 3/9 · <name> (2 done, 6 left)` — `run_pipeline` writes `pipeline_vod.txt` ({name,index,total}) per VOD, `/api/status` returns `vod_progress`, the UI renders it (hidden for single-VOD runs; degrades gracefully if the backend predates the field). |
 | **Clips Gallery** | In-browser video preview, download links |

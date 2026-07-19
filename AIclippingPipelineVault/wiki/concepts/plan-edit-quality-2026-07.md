@@ -13,7 +13,7 @@ updated: 2026-07-19
 > | Wave | State | Flag / outcome |
 > |---|---|---|
 > | W0 verification run | **OPEN — owner gate** | needs one pipeline run + eyeball |
-> | W1 full-bleed framing | **SHIPPED** | `CLIP_FRAME_MODE=fill` (default `blur`) — new `scripts/lib/framing.py` + `visual_sense.action_center_x()`; **visually verified** |
+> | W1 full-bleed framing | **SHIPPED + owner-approved for IRL** | `CLIP_FRAME_MODE=blur\|fill\|auto`; dashboard **Frame fit** dropdown (default **auto**: irl/just_chatting→fill, gaming/reaction→blur, per clip via segment type); env default stays `blur` |
 > | W2a species tail | **SHIPPED** | inside `clip_tighten` (itself still `CLIP_TIGHT_PUNCHLINE=0`) |
 > | W2b soft duration caps | **SHIPPED, default ON** | `CLIP_SPECIES_DUR_CAP=0` reverts; only ever TIGHTENS below the 90/150 hard cap |
 > | W2c jump cuts | **OPEN — owner gate** | `CLIP_JUMP_CUTS=gaps`, zero code |
@@ -21,6 +21,7 @@ updated: 2026-07-19
 > | W4 caption grouping | **SHIPPED, default ON** | `CLIP_CAPTION_SENTENCE_GROUPS=0` reverts |
 > | W5 emoji | **SPIKE FAILED → guard shipped** | see below; `CLIP_HOOK_EMOJI=1` opts in |
 > | W6 gaming cuts | **CLOSED — not a defect** | see below |
+> | freeze/meme/b-roll dig | **CLOSED — dormant since inception** | [[concepts/bugs-and-fixes#BUG 77]]: `_synthesize_plan` fills only zooms+SFX; 433/433 renders zero of each; wiring them = owner call |
 > | W7 split-screen | **primitive only** | `framing.stack_filter()`; composition needs a 2nd source |
 > | W8 measurement | **SHIPPED** | card schema v4 + 3 new diff aggregates + subtype-aware scopes |
 >

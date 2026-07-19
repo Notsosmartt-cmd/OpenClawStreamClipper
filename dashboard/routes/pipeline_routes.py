@@ -105,6 +105,9 @@ def api_clip():
         min_judge_score = float(data.get("min_judge_score") or 0)
     except (TypeError, ValueError):
         min_judge_score = 0.0
+    frame_mode = str(data.get("frame_mode") or "auto").strip().lower()
+    if frame_mode not in ("blur", "fill", "auto"):
+        frame_mode = "auto"
     orig_override = extract_originality_fields(data)
 
     if not vod:
@@ -140,6 +143,7 @@ def api_clip():
                 post_kit=post_kit,
                 news_after=news_after,
                 min_judge_score=min_judge_score,
+                frame_mode=frame_mode,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -176,6 +180,9 @@ def api_clip_all():
         min_judge_score = float(data.get("min_judge_score") or 0)
     except (TypeError, ValueError):
         min_judge_score = 0.0
+    frame_mode = str(data.get("frame_mode") or "auto").strip().lower()
+    if frame_mode not in ("blur", "fill", "auto"):
+        frame_mode = "auto"
     orig_override = extract_originality_fields(data)
 
     with _state.pipeline_lock:
@@ -216,6 +223,7 @@ def api_clip_all():
                 post_kit=post_kit,
                 news_after=news_after,
                 min_judge_score=min_judge_score,
+                frame_mode=frame_mode,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503
@@ -262,6 +270,9 @@ def api_clip_batch():
         min_judge_score = float(data.get("min_judge_score") or 0)
     except (TypeError, ValueError):
         min_judge_score = 0.0
+    frame_mode = str(data.get("frame_mode") or "auto").strip().lower()
+    if frame_mode not in ("blur", "fill", "auto"):
+        frame_mode = "auto"
     orig_override = extract_originality_fields(data)
 
     if not requested:
@@ -316,6 +327,7 @@ def api_clip_batch():
                 post_kit=post_kit,
                 news_after=news_after,
                 min_judge_score=min_judge_score,
+                frame_mode=frame_mode,
             )
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 503

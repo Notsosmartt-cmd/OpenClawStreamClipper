@@ -127,7 +127,8 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
                  ab_variants: int = 2,
                  post_kit: bool = True,
                  news_after: bool = False,
-                 min_judge_score: float = 0.0) -> dict:
+                 min_judge_score: float = 0.0,
+                 frame_mode: str = "auto") -> dict:
     """Build environment dict for direct pipeline subprocess (inside Docker).
 
     ``passb_dead_gate`` (added 2026-06-04) controls the Pass B dead-chunk
@@ -192,6 +193,11 @@ def pipeline_env(captions: bool = True, speed: str = "1.0",
     # S4.5 judge scored >= N (0 = off, save everything). stage5 enforces it.
     if min_judge_score and float(min_judge_score) > 0:
         env["CLIP_MIN_JUDGE_SCORE"] = str(float(min_judge_score))
+    # W1 framing (2026-07-19): blur (legacy letterbox) | fill (full-bleed crop)
+    # | auto (fill for irl/just_chatting, blur for gaming/reaction) — owner
+    # verdict after the fill-run eyeball. Dashboard default = auto.
+    if frame_mode and str(frame_mode).lower() in ("blur", "fill", "auto"):
+        env["CLIP_FRAME_MODE"] = str(frame_mode).lower()
     for k, v in originality_to_env(originality or load_originality_config()).items():
         env[k] = v
     return env
@@ -373,7 +379,7 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                    passb_dead_gate: str | None = None, enable_thinking: bool = False,
                    companion_shorts: bool = False, ab_variants: int = 2,
                    post_kit: bool = True, news_after: bool = False,
-                   min_judge_score: float = 0.0):
+                   min_judge_score: float = 0.0, frame_mode: str = "auto"):
     """Launch pipeline subprocess.
 
     Outside Docker: runs detached via `docker exec -d` inside the container.
@@ -426,6 +432,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
         env_flags += ["-e", f"CLIP_NEWS_AFTER={'1' if news_after else '0'}"]
         if min_judge_score and float(min_judge_score) > 0:
             env_flags += ["-e", f"CLIP_MIN_JUDGE_SCORE={float(min_judge_score)}"]
+        if frame_mode and str(frame_mode).lower() in ("blur", "fill", "auto"):
+            env_flags += ["-e", f"CLIP_FRAME_MODE={str(frame_mode).lower()}"]
         for k, v in orig_env.items():
             env_flags += ["-e", f"{k}={v}"]
 
@@ -487,7 +495,8 @@ def spawn_pipeline(cmd: list[str], captions: bool = True, speed: str = "1.0",
                          companion_shorts=companion_shorts,
                          ab_variants=ab_variants, post_kit=post_kit,
                          news_after=news_after,
-                         min_judge_score=min_judge_score),
+                         min_judge_score=min_judge_score,
+                         frame_mode=frame_mode),
     )
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP

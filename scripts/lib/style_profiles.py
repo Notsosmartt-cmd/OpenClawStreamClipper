@@ -55,6 +55,12 @@ PROFILES: dict[str, dict[str, Any]] = {
     # carries 3.6 visual transitions/30s vs our 5.9, monologues 0.75 vs our 4.2 —
     # trim INJECTED transitions (zoom/freeze/cutaway/b-roll). SFX untouched: the
     # high SFX density is intentional owner style (veto on the sfx gap items).
+    # 2026-07-19 DORMANT-KNOB finding: freeze_frame_prob / meme_cutaway_prob /
+    # broll_insert_prob / slow_mo_prob have NEVER fired in profile mode — the
+    # renderer's _synthesize_plan fills only zoom punches + SFX, and Stage 6
+    # never emits an edit_plan (433/433 historical renders: zero of each).
+    # Only zoom_punch_count and the SFX pools are LIVE knobs. Wire freeze/meme/
+    # b-roll synthesis before treating those probabilities as real.
     "comedy": {
         "zoom_punch_count":       (0, 1),
         "freeze_frame_prob":      0.40,

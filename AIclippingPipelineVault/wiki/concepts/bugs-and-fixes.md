@@ -3,7 +3,7 @@ title: "Bugs and Fixes"
 type: concept
 tags: [bugs, fixes, debugging, history, hub, reference]
 sources: 3
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Bugs and Fixes
@@ -22,7 +22,7 @@ Known bugs encountered during development and how they were resolved. Useful for
 
 ## Status summary (2026-06-12)
 
-**Total recorded: 76 bugs (highest number BUG 76; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest: [[#BUG 76]] S4.5 judge silently fabricated `score=0.0` for score-less verdicts, turning fail-open into fail-closed (2026-07-18); [[#BUG 75]] reference SFX density inflated ~10× by a vocal CLAP prompt (2026-07-15); from the Wave-3 speed campaign: [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
+**Total recorded: 77 bugs (highest number BUG 77; BUG 71 has sub-entries 71b/71c — 71c is the unifying root cause) + 3 REMOVAL records.** Newest: [[#BUG 77]] style-profile freeze/meme/b-roll knobs INERT since inception — _synthesize_plan fills only zooms+SFX and Stage 6 never emits an edit_plan (2026-07-19); [[#BUG 76]] S4.5 judge silently fabricated `score=0.0` for score-less verdicts, turning fail-open into fail-closed (2026-07-18); [[#BUG 75]] reference SFX density inflated ~10× by a vocal CLAP prompt (2026-07-15); from the Wave-3 speed campaign: [[#BUG 73]] shared-context-pool overflow, [[#BUG 74]] phase-unpinned judge models JIT-summoning ghost co-residents. Numbering note: BUG 22 was never assigned; BUG 37 has sub-entries 37b/37c; and BUG 60 / BUG 61 each have two distinct entries (an older LLM/Pass-C entry and a newer 2026-06-06 entry) — the `[[#BUG 60]]` / `[[#BUG 61]]` anchors resolve to the first (older) occurrence.
 
 **📦 Obsolete — subsystem removed** (failure mode cannot recur):
 - **Docker-era bugs**: [[#BUG 8]], [[#BUG 11]], [[#BUG 12]], [[#BUG 13]], [[#BUG 14]], [[#BUG 31]], [[#BUG 32]] — Docker container retired 2026-06-04 (system migrated to bare-metal Windows, see [[concepts/bare-metal-windows]]; Docker files moved to `legacy/`).
@@ -1840,6 +1840,33 @@ FIRST — one stack dump ended a day of plausible-but-wrong theories (OpenMP, FI
 Tool: `scripts/research/bench_audio_scan.py` (serial/threads/procs micro-bench on a real WAV).
 
 ---
+
+## BUG 77 — style-profile freeze/meme/b-roll/slow-mo knobs have been INERT since profiles shipped (dormant, not broken)
+
+> [!warning] Status: DOCUMENTED 2026-07-19 (owner asked "dig into the freeze/cutaway path" after a run showed `freeze=n meme=n broll=0` on all 18 renders). Not fixed — whether to WIRE these effects is an owner call; the reference corpus barely uses them (freeze-bait ~3%, refs are raw), so dormancy currently matches the desired restraint.
+
+**Symptom:** every render logs `freeze=n slowmo=n meme=n broll=0`; effects_log ground truth
+shows **433/433 historical renders across all 10 runs with zero freezes, zero meme
+cutaways, zero b-roll, zero slow-mo** — while zoom punches (378) and SFX (388) fire
+constantly. The per-category probabilities (`freeze_frame_prob: 0.85` etc.) LOOK live and
+were even "recalibrated" on 2026-07-17 — a no-op on dead knobs.
+
+**Cause:** two facts compose. (1) `profile_render._synthesize_plan` fills **only
+zoom punches and SFX cues** when no edit_plan exists — freeze/meme/b-roll/slow-mo stay at
+the edit_plan defaults (None/[]). (2) Stage 6 **never emits an edit_plan** (deliberately
+unmodified to avoid the historic HTTP-400 cascades). Downstream machinery is all present
+(freeze_frame.py, meme_pick.py, broll_pick.py consume plan fields; libraries stocked:
+15 memes, 9 b-roll) — nothing upstream ever populates the plan.
+
+**Consequences for analysis:** any attribution of our cut-rate to "freeze/cutaway
+effects" was wrong — the only injected transitions are zoom punches + cold-open. The
+2026-07-17 trims to freeze/meme/b-roll probabilities changed nothing (the zoom trim was
+real). VLM cards claiming freezes in our clips were eyeballing noise.
+
+**Lesson:** a probability knob in config is only as real as the code path that consults
+it — verify with ground-truth logs (effects_log), not with the config's existence. The
+tell was statistical: ~3 freezes expected across 18 renders at the configured rates; zero
+observed across 433 is not variance.
 
 ## BUG 76 — S4.5 judge silently fabricated `score = 0.0` for verdicts that carried keep + rationale but no score
 

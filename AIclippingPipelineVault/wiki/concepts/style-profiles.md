@@ -3,7 +3,7 @@ title: "AI Editing Profiles (Per-Category)"
 type: concept
 tags: [editing, profiles, style, originality, fingerprint, kinetic-captions, sfx, broll, memes, zoom-punch, freeze-frame, slow-mo, chat-overlay, stage-7]
 sources: 0
-updated: 2026-07-17
+updated: 2026-07-19
 ---
 
 # AI Editing Profiles
@@ -104,6 +104,15 @@ dashboard/routes/library_routes.py       ← /api/libraries/scan
 > **SFX deliberately untouched** — owner veto: "the high sfx density is funny", the sfx gap items
 > are intentional style, don't apply them. Gaming/skill untouched pending the cuts-source
 > investigation (our gaming reads 10 cuts/30s but injected effects only explain ~1–2).
+
+> [!warning] freeze / meme / b-roll / slow-mo columns are INERT ([[concepts/bugs-and-fixes#BUG 77]], 2026-07-19)
+> Ground truth over 433 historical renders: **zero** freezes, meme cutaways, b-roll inserts,
+> or slow-mos ever fired. `profile_render._synthesize_plan` fills only **zoom punches + SFX
+> cues**, and Stage 6 never emits an `edit_plan`, so those probability columns are placebo.
+> The LIVE knobs per profile are: `zoom_punch_count`, `sfx_on_cuts`/`sfx_on_peak`,
+> `caption_preset`, mirror/saturation/contrast/vignette/shake (fingerprint layer), and
+> `punchline_pitch/echo`. Also note the gaming cut-rate is the GAME's own editing
+> (raw gameplay source measures 8.25 cuts/30s with zero pipeline edits vs talky 0.00).
 
 Every probabilistic / range field resolves per-clip via a deterministic seed (the moment timestamp) — same category + same seed always produces the same effect set, but two same-category clips never render identically.
 

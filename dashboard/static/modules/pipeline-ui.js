@@ -228,6 +228,7 @@ export async function startClip() {
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     // Quality gate: only render clips the S4.5 judge scored >= N (0 = all).
     const min_judge_score = parseFloat(document.getElementById("sel-min-judge")?.value || "0") || 0;
+    const frame_mode = document.getElementById("sel-frame-mode")?.value || "auto";
     const originality = collectOriginality();
 
     // One or many — the batch endpoint runs them sequentially in selection order.
@@ -235,6 +236,7 @@ export async function startClip() {
         vods, style, type, force, captions, hook_caption, speed,
         passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, news_after,
         min_judge_score,
+        frame_mode,
         ...originality,
     });
     if (ok) {
@@ -291,10 +293,11 @@ export async function startClipAll() {
     const speed = document.getElementById("sel-speed").value;
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     const min_judge_score = parseFloat(document.getElementById("sel-min-judge")?.value || "0") || 0;
+    const frame_mode = document.getElementById("sel-frame-mode")?.value || "auto";
     const originality = collectOriginality();
 
     const { ok, data } = await apiPost("/api/clip-all", {
-        style, force, captions, hook_caption, speed, passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, news_after, min_judge_score, ...originality,
+        style, force, captions, hook_caption, speed, passb_dead_gate, enable_thinking, companion_shorts, ab_variants, post_kit, news_after, min_judge_score, frame_mode, ...originality,
     });
     if (ok) {
         state.pipelineRunning = true;

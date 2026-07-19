@@ -36,9 +36,46 @@ MAX_OFFSET_FRAC = 0.85
 
 
 def mode() -> str:
-    """'fill' | 'blur' (default). `CLIP_FRAME_MODE` selects."""
+    """'fill' | 'blur' | 'auto'. `CLIP_FRAME_MODE` selects; default 'blur'
+    (module-level legacy safety — the DASHBOARD defaults to 'auto', the
+    owner-approved behavior after the 2026-07-19 fill-run eyeball)."""
     m = os.environ.get("CLIP_FRAME_MODE", "blur").strip().lower()
-    return "fill" if m in ("fill", "full", "fullbleed", "full_bleed") else "blur"
+    if m in ("fill", "full", "fullbleed", "full_bleed"):
+        return "fill"
+    if m == "auto":
+        return "auto"
+    return "blur"
+
+
+# Owner verdict (2026-07-19, after eyeballing the fill run): full-bleed FILL is
+# best for IRL-style content, the blur-fill letterbox is best for gaming /
+# desktop-screen content. Segment type is the reliable signal (it labels the
+# STREAM content at that timestamp); category is a weak fallback (a gaming clip
+# is often categorized 'hype'). `reaction` counts as desktop — the screen being
+# watched IS the content, and cropping it loses the thing being reacted to.
+_BLUR_SEGMENTS = {"gaming", "reaction"}
+_BLUR_CATEGORIES = {"gaming", "skill", "skill_play", "gameplay", "clutch"}
+
+
+def effective_mode(segment_type: str | None = None,
+                   category: str | None = None) -> str:
+    """Resolve the per-clip mode: 'fill' or 'blur'. In auto, gaming/desktop
+    content keeps the letterbox; IRL/talky content goes full-bleed. Unknown
+    signals fall back to 'blur' (the owner's baseline look)."""
+    m = mode()
+    if m != "auto":
+        return m
+    # Segment type is authoritative in BOTH directions (it labels the actual
+    # stream content); category is only a fallback when the segment is unknown.
+    seg = str(segment_type or "").strip().lower()
+    if seg in _BLUR_SEGMENTS:
+        return "blur"
+    if seg in ("irl", "just_chatting"):
+        return "fill"
+    cat = str(category or "").strip().lower()
+    if cat in _BLUR_CATEGORIES:
+        return "blur"
+    return "blur"
 
 
 def probe_dims(path: str) -> tuple[int, int] | None:
@@ -97,11 +134,14 @@ def fill_filter(center_x: float = 0.5) -> str:
             f"x='max(0\\,min(iw-{OUT_W}\\,(iw-{OUT_W})*{cx:.4f}))':y=0")
 
 
-def should_fill(src: str) -> tuple[bool, str]:
+def should_fill(src: str, *, segment_type: str | None = None,
+                category: str | None = None) -> tuple[bool, str]:
     """Fill mode only helps a source WIDER than 9:16; anything already vertical
-    is passed through untouched."""
-    if mode() != "fill":
-        return False, "mode=blur"
+    is passed through untouched. Resolves 'auto' per clip via effective_mode."""
+    eff = effective_mode(segment_type, category)
+    if eff != "fill":
+        return False, (f"auto->blur(seg={segment_type},cat={category})"
+                       if mode() == "auto" else "mode=blur")
     dims = probe_dims(src)
     if not dims:
         return False, "probe-failed"
@@ -139,9 +179,18 @@ if __name__ == "__main__":  # selftest
     assert "scale=1080:1920:force_original_aspect_ratio=increase" in f
     assert "crop=1080:1920" in f and "0.5000" in f
     assert "0.0000" in fill_filter(-3.0) and "1.0000" in fill_filter(9.0)  # clamped
-    assert mode() in ("fill", "blur")
+    assert mode() in ("fill", "blur", "auto")
     os.environ["CLIP_FRAME_MODE"] = "fill"
-    assert mode() == "fill"
+    assert mode() == "fill" and effective_mode("gaming") == "fill"  # explicit wins
+    os.environ["CLIP_FRAME_MODE"] = "auto"
+    assert effective_mode("irl") == "fill"
+    assert effective_mode("just_chatting") == "fill"
+    assert effective_mode("gaming") == "blur"
+    assert effective_mode("reaction") == "blur"            # desktop content
+    assert effective_mode("irl", "gaming") == "fill"       # segment outranks category
+    assert effective_mode(None, "skill") == "blur"
+    assert effective_mode(None, None) == "blur"            # unknown -> owner baseline
+    assert effective_mode("unknown") == "blur"
     os.environ["CLIP_FRAME_MODE"] = "blur"
-    assert mode() == "blur"
+    assert mode() == "blur" and effective_mode("irl") == "blur"
     print("framing selftest: ALL PASS")

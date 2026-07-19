@@ -463,8 +463,10 @@ def render(*,
     _fill_base = ""
     try:
         import framing as _framing
-        if _framing.mode() == "fill":
-            _ok, _why = _framing.should_fill(str(src))
+        if _framing.mode() in ("fill", "auto"):
+            _ok, _why = _framing.should_fill(
+                str(src), segment_type=moment.get("segment_type"),
+                category=moment.get("category") or plan.get("category"))
             if _ok:
                 _cx, _cwhy = _framing.resolve_center_x(
                     str(src), start_s=float(clip_start or 0.0),
@@ -475,7 +477,7 @@ def render(*,
                     f"eq=saturation={sat:.3f}:contrast={con:.3f}[v_base]")
                 _log(f"framing: FILL ({_why}, {_cwhy}, x={_cx:.3f})")
             else:
-                _log(f"framing: fill requested but skipped ({_why})")
+                _log(f"framing: blur ({_why})")
     except Exception as _fe:  # noqa: BLE001
         _log(f"framing: fill skipped ({type(_fe).__name__}: {_fe})")
 
