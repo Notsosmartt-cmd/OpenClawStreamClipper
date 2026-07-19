@@ -3,11 +3,51 @@ title: "Plan: Edit-Quality Revisions (2026-07) — framing, duration discipline,
 type: concept
 tags: [plan, editing, rendering, captions, framing, duration, stage-7, reference, quality]
 sources: 0
-status: planned
+status: in-progress
 updated: 2026-07-18
 ---
 
 # Plan: Edit-Quality Revisions (2026-07)
+
+> [!success] IMPLEMENTED 2026-07-18 — all code waves shipped, **every render change default-OFF**
+> | Wave | State | Flag / outcome |
+> |---|---|---|
+> | W0 verification run | **OPEN — owner gate** | needs one pipeline run + eyeball |
+> | W1 full-bleed framing | **SHIPPED** | `CLIP_FRAME_MODE=fill` (default `blur`) — new `scripts/lib/framing.py` + `visual_sense.action_center_x()`; **visually verified** |
+> | W2a species tail | **SHIPPED** | inside `clip_tighten` (itself still `CLIP_TIGHT_PUNCHLINE=0`) |
+> | W2b soft duration caps | **SHIPPED, default ON** | `CLIP_SPECIES_DUR_CAP=0` reverts; only ever TIGHTENS below the 90/150 hard cap |
+> | W2c jump cuts | **OPEN — owner gate** | `CLIP_JUMP_CUTS=gaps`, zero code |
+> | W3 caption-presence A/B | **SHIPPED** | `CLIP_AB_CAPTION_TEST=1` renders variant B caption-less |
+> | W4 caption grouping | **SHIPPED, default ON** | `CLIP_CAPTION_SENTENCE_GROUPS=0` reverts |
+> | W5 emoji | **SPIKE FAILED → guard shipped** | see below; `CLIP_HOOK_EMOJI=1` opts in |
+> | W6 gaming cuts | **CLOSED — not a defect** | see below |
+> | W7 split-screen | **primitive only** | `framing.stack_filter()`; composition needs a 2nd source |
+> | W8 measurement | **SHIPPED** | card schema v4 + 3 new diff aggregates + subtype-aware scopes |
+>
+> Selftests 27/27 PASS (`waves_selftest.py`). W1 verified by rendering the same
+> source both ways and reading the frames: legacy = subject in a letterboxed band
+> with the chat panel + timers visible; fill = full-bleed subject, chrome cropped away.
+
+> [!warning] W5 SPIKE RESULT — emoji cannot go in the burned hook (yet)
+> Rendered the real hook path with an emoji: **ffmpeg `drawtext` + the bundled
+> Montserrat Black produces TOFU BOXES** ("boy has to be stopped␣␣"). Segoe UI Emoji
+> renders the shapes but only **monochrome**, and drags the whole line off the brand
+> font. So the naive "add emoji to the hook prompt" would have shipped visible
+> garbage. **Shipped instead: a guard** (`strip_unrenderable_emoji`) so a
+> model-emitted emoji can never render as tofu. The reference corpus's 68 % emoji
+> rate is still matchable **today** in NON-burned copy — post-kit captions, social
+> descriptions, titles — which is where it should go until a two-pass drawtext or
+> PNG-compositing strategy exists.
+
+> [!success] W6 CLOSED — the gaming cut gap is the GAME, not our editing
+> Measured the scene detector on **raw source with zero pipeline edits**:
+> **gameplay 8.25 cuts/30 s vs talking 0.00 cuts/30 s**. Our gaming clips read ~10,
+> so ~8 of those 10 are source-native (kill cams, spectator switches, respawns) and
+> our injected effects add only ~1–2. Zeroing every gaming effect would move 10 →
+> ~8.25, still far above the reference's 3.31. **Do not tune gaming profiles on this
+> metric** — it measures the footage, not the edit. (Also explains the per-clip data:
+> the highest-cut clips are all short gameplay moments, and one reads 11.2 cuts/30 s
+> with ZERO injected zooms.)
 
 Consolidates every open finding from the 2026-07-18 review arc into buildable
 workstreams. Three evidence tiers, kept distinct on purpose:

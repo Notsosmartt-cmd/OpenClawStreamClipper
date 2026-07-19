@@ -114,6 +114,27 @@ def _agg(cards: list[dict], ours: bool) -> dict:
         "chat_overlay_pct": round(100 * sum(
             1 for c in cards if (c.get("engagement") or {}).get("added_chat_overlay")) / len(cards))
             if cards and any("added_chat_overlay" in (c.get("engagement") or {}) for c in cards) else None,
+        # W8 (2026-07-18) — three dimensions the diff was structurally blind to until
+        # the direct frame audit surfaced them. All schema-v4 fields: cards written
+        # before v4 lack them, so each aggregate is None (excluded) rather than
+        # silently mixing an absent field in as a zero.
+        # caption PRESENCE: refs overwhelmingly run one static hook line, not
+        # word-by-word subtitles — we caption everything.
+        "caption_wordbyword_pct": round(100 * sum(
+            1 for c in cards if (c.get("captions") or {}).get("style") == "word_by_word")
+            / len(cards)) if cards and any((c.get("captions") or {}).get("style") for c in cards) else None,
+        "caption_style_top": Counter((c.get("captions") or {}).get("style") for c in cards
+                                     if (c.get("captions") or {}).get("style")).most_common(2) or None,
+        # emoji: present on cards since v2 but never aggregated (refs ~68%, ours ~1%)
+        "emoji_pct": round(100 * sum(
+            1 for c in cards if (c.get("engagement") or {}).get("emoji")) / len(cards))
+            if cards and any("emoji" in (c.get("engagement") or {}) for c in cards) else None,
+        # framing: full-bleed vs letterboxed — the biggest visual gap on sight
+        "framing_top": Counter(c.get("framing") for c in cards
+                               if c.get("framing")).most_common(2) or None,
+        "full_bleed_pct": round(100 * sum(
+            1 for c in cards if c.get("framing") == "full_bleed") / len(cards))
+            if cards and any(c.get("framing") for c in cards) else None,
     }
 
 
@@ -133,6 +154,13 @@ _LEVERS = {
                          "EDITOR-ADDED overlays only (schema v2); the stream's own on-screen chat doesn't count"),
     "cut_alignment_top": ("clip_cuts seed/beats", "align cuts to punchline beats vs loose"),
     "category_coverage": ("feature-card", "formats the corpus has that we never produce (e.g. news_compilation -> plan-news-compilation-2026-07)"),
+    # W8 additions (plan-edit-quality-2026-07)
+    "caption_wordbyword_pct": ("CLIP_AB_CAPTION_TEST (W3 presence A/B) + kinetic_captions",
+                               "caption PRESENCE: references mostly run ONE static hook line, not word-by-word subtitles"),
+    "emoji_pct": ("hook/caption copy — NOT the burned overlay (W5 spike: drawtext+Montserrat renders emoji as TOFU)",
+                  "emoji belong in post-kit/social copy until a hook font strategy exists"),
+    "full_bleed_pct": ("CLIP_FRAME_MODE=fill (W1 framing)",
+                       "full-bleed vertical vs letterboxed-over-blur; also crops edge-mounted stream chrome"),
 }
 
 
@@ -171,6 +199,29 @@ def _gap_items(ref_by_cat: dict, ours_by_cat: dict, ref_all: dict, ours_all: dic
         rcards = ref_by_cat.get(cat) or []
         if len(rcards) >= 2 and len(ocards) >= 2:
             _cmp(cat, _agg(rcards, ours=False), _agg(ocards, ours=True))
+
+    # W8 (2026-07-18): SUBTYPE-aware scopes. Grouping by `category` alone blends
+    # species that behave nothing alike — reference banter runs a 79% music bed at
+    # 3.6 cuts/30s while reference solo_monologue runs 2.45% at 0.75, so the blended
+    # "irl_moment" median produced a music-bed gap item that was pure artifact (our
+    # banter was already on target; our monologues were the real 30x miss). Subtype
+    # rows are ADDITIVE — category rows stay for continuity — and use the same n>=2
+    # floor. Cards written before schema v3 carry no subtype and simply don't appear.
+    def _by_sub(cards: list[dict]) -> dict[str, list]:
+        out: dict[str, list] = defaultdict(list)
+        for c in cards:
+            s = (c.get("subtype") or "").strip().lower()
+            if s and s not in ("none", "other", "unchanged"):
+                out[f"{c.get('category') or '?'}/{s}"] = out[f"{c.get('category') or '?'}/{s}"]
+                out[f"{c.get('category') or '?'}/{s}"].append(c)
+        return out
+
+    ref_by_sub = _by_sub([c for cards in ref_by_cat.values() for c in cards])
+    ours_by_sub = _by_sub([c for cards in ours_by_cat.values() for c in cards])
+    for sub, ocards in ours_by_sub.items():
+        rcards = ref_by_sub.get(sub) or []
+        if len(rcards) >= 2 and len(ocards) >= 2:
+            _cmp(sub, _agg(rcards, ours=False), _agg(ocards, ours=True))
 
     # coverage: reference categories we produce ZERO clips in
     missing = [c for c, cards in ref_by_cat.items()

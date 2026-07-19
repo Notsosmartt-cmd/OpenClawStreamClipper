@@ -99,6 +99,85 @@ def motion_events(media: str, *, sample_fps: float = 8.0, width: int = 160,
             pass
 
 
+def action_center_x(media: str, *, sample_fps: float = 4.0, width: int = 192,
+                    max_frames: int = 160, start_s: float = 0.0,
+                    duration_s: float | None = None) -> dict | None:
+    """W1 (2026-07-18) — where the ACTION sits horizontally, as a fraction of frame
+    width. Deterministic CV, no VLM: reuses this module's frame-diff loop but keeps
+    the COLUMN profile of each abs-diff instead of only its mean, then takes the
+    energy-weighted centroid per sampled pair and the MEDIAN across the clip.
+
+    Purpose: pick a stable x for a full-bleed 9:16 crop of a 16:9 source
+    (`CLIP_FRAME_MODE=fill`) so the subject is centered rather than letterboxed —
+    and so the stream's chat/overlay chrome (which lives at a frame edge) gets
+    cropped out for free.
+
+    Returns {"center_x": 0..1, "spread": 0..1, "samples": n} or None when it cannot
+    decide. `spread` is the median absolute deviation of the per-sample centroids —
+    the CALLER falls back to a center crop when it is high (subject moving across
+    frame / multi-speaker), because v1 is deliberately a STATIC crop.
+    """
+    cap = None
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except Exception as e:  # noqa: BLE001
+        _log(f"cv2/numpy unavailable ({type(e).__name__}); action_center_x=None")
+        return None
+    try:
+        cap = cv2.VideoCapture(media)
+        if not cap.isOpened():
+            return None
+        src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        if start_s > 0:
+            cap.set(cv2.CAP_PROP_POS_MSEC, start_s * 1000.0)
+        step = max(1, int(round(src_fps / max(0.5, sample_fps))))
+        end_idx = int(duration_s * src_fps) if duration_s else None
+        prev = None
+        centers: list[float] = []
+        idx = read = 0
+        while read < max_frames:
+            if end_idx is not None and idx > end_idx:
+                break
+            if not cap.grab():
+                break
+            if idx % step == 0:
+                ok, frame = cap.retrieve()
+                if not ok or frame is None:
+                    break
+                read += 1
+                h, w = frame.shape[:2]
+                if w > width:
+                    frame = cv2.resize(frame, (width, max(1, int(h * width / w))))
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if prev is not None:
+                    col = cv2.absdiff(gray, prev).astype("float32").sum(axis=0)
+                    tot = float(col.sum())
+                    if tot > 1e-3:
+                        xs = np.arange(col.shape[0], dtype="float32")
+                        centers.append(float((xs * col).sum() / tot)
+                                       / max(1, col.shape[0] - 1))
+                prev = gray
+            idx += 1
+        if len(centers) < 5:
+            _log(f"action_center_x: only {len(centers)} usable samples; None")
+            return None
+        arr = np.asarray(centers, dtype="float32")
+        med = float(np.median(arr))
+        spread = float(np.median(np.abs(arr - med)))
+        return {"center_x": round(max(0.0, min(1.0, med)), 4),
+                "spread": round(spread, 4), "samples": len(centers)}
+    except Exception as e:  # noqa: BLE001
+        _log(f"action_center_x failed ({type(e).__name__}: {e}); None")
+        return None
+    finally:
+        try:
+            if cap is not None:
+                cap.release()
+        except Exception:
+            pass
+
+
 def caption_ocr(media: str, *, sample_fps: float = 2.0, max_frames: int = 120,
                 langs: tuple[str, ...] = ("en",), gpu: bool = False,
                 min_conf: float = 0.4, band: float = 0.0) -> dict:

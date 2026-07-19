@@ -455,14 +455,40 @@ def render(*,
     con = max(0.5, min(2.0, 1.0 + float(profile.get("contrast_boost", 0.0))))
     mirror_op = "hflip" if profile.get("mirror_prob") else "null"
 
+    # W1 (2026-07-18): full-bleed framing. `CLIP_FRAME_MODE=fill` fills the height
+    # and crops the sides around the action (deterministic motion centroid, center
+    # fallback) instead of letterboxing the source over a blurred copy of itself.
+    # Also crops out edge-mounted stream chrome (chat panel). Default `blur` keeps
+    # the legacy graph byte-identical. Failure-soft: any problem -> legacy.
+    _fill_base = ""
+    try:
+        import framing as _framing
+        if _framing.mode() == "fill":
+            _ok, _why = _framing.should_fill(str(src))
+            if _ok:
+                _cx, _cwhy = _framing.resolve_center_x(
+                    str(src), start_s=float(clip_start or 0.0),
+                    duration_s=(float(clip_duration) if clip_duration else None),
+                    log=_log)
+                _fill_base = (
+                    f"[0:v]{speed_vf},{_framing.fill_filter(_cx)},{mirror_op},"
+                    f"eq=saturation={sat:.3f}:contrast={con:.3f}[v_base]")
+                _log(f"framing: FILL ({_why}, {_cwhy}, x={_cx:.3f})")
+            else:
+                _log(f"framing: fill requested but skipped ({_why})")
+    except Exception as _fe:  # noqa: BLE001
+        _log(f"framing: fill skipped ({type(_fe).__name__}: {_fe})")
+
     chain_parts: list[str] = [
-        f"[0:v]{speed_vf},split[bg][fg];"
-        f"[bg]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-        f"crop={OUT_W}:{OUT_H},boxblur=24:5[blurred];"
-        f"[fg]scale={OUT_W}:-2:force_original_aspect_ratio=decrease,"
-        f"{mirror_op}[sharp];"
-        f"[blurred][sharp]overlay=(W-w)/2:(H-h)/2,"
-        f"eq=saturation={sat:.3f}:contrast={con:.3f}[v_base]"
+        _fill_base or (
+            f"[0:v]{speed_vf},split[bg][fg];"
+            f"[bg]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+            f"crop={OUT_W}:{OUT_H},boxblur=24:5[blurred];"
+            f"[fg]scale={OUT_W}:-2:force_original_aspect_ratio=decrease,"
+            f"{mirror_op}[sharp];"
+            f"[blurred][sharp]overlay=(W-w)/2:(H-h)/2,"
+            f"eq=saturation={sat:.3f}:contrast={con:.3f}[v_base]"
+        )
     ]
     cur = "v_base"
 

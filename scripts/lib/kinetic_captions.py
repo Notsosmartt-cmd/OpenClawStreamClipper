@@ -177,22 +177,54 @@ def _ass_escape(s: str) -> str:
 # Word grouping (~3 words per visible chunk for muted-watch readability)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _group_words(words: list[dict], group_size: int = 3) -> list[dict]:
-    """Group consecutive Whisper words into 3-word chunks. Each chunk has
-    .start, .end, and .word_specs (list of per-word [start_in_chunk, text])."""
-    chunks: list[dict] = []
-    for i in range(0, len(words), group_size):
-        slice_ = words[i:i + group_size]
-        if not slice_:
-            continue
-        chunks.append({
+_SENTENCE_END = (".", "!", "?")
+
+
+def _ends_sentence(text: str) -> bool:
+    """True when a word closes a sentence (trailing quotes/brackets tolerated)."""
+    return str(text or "").rstrip().rstrip("\"'”’)]}").endswith(_SENTENCE_END)
+
+
+def _group_words(words: list[dict], group_size: int = 3,
+                 sentence_aware: bool = True) -> list[dict]:
+    """Group consecutive Whisper words into <=group_size-word chunks.
+
+    W4 (2026-07-18, eyeball audit): the old version was a blind
+    `range(0, len, group_size)` slice, so a new sentence began mid-box — real
+    output read "advice. You were", "room? Yes. So", "I'm muted. And". A caption
+    box now BREAKS after a sentence-final word, so each box starts a clean
+    thought (reference captions never straddle). group_size stays the MAX, not a
+    quota — short trailing groups are expected and fine.
+    `CLIP_CAPTION_SENTENCE_GROUPS=0` restores the blind slicing."""
+    if sentence_aware and os.environ.get(
+            "CLIP_CAPTION_SENTENCE_GROUPS", "1").strip().lower() in ("0", "false", "no", "off"):
+        sentence_aware = False
+
+    def _mk(slice_: list[dict]) -> dict:
+        return {
             "start": slice_[0]["start"],
             "end":   slice_[-1]["end"],
             "words": [
                 {"start": w["start"], "end": w["end"], "text": w["text"]}
                 for w in slice_
             ],
-        })
+        }
+
+    chunks: list[dict] = []
+    if not sentence_aware:
+        for i in range(0, len(words), group_size):
+            if words[i:i + group_size]:
+                chunks.append(_mk(words[i:i + group_size]))
+        return chunks
+
+    cur: list[dict] = []
+    for w in words:
+        cur.append(w)
+        if len(cur) >= group_size or _ends_sentence(w.get("text", "")):
+            chunks.append(_mk(cur))
+            cur = []
+    if cur:
+        chunks.append(_mk(cur))
     return chunks
 
 
@@ -420,6 +452,44 @@ def sentence_case_text(text: str) -> str:
     return " ".join(w["text"] for w in _sentence_case_words(words))
 
 
+_EMOJI_RANGES = (
+    (0x1F000, 0x1FAFF),   # pictographs, emoticons, symbols, supplemental
+    (0x2600, 0x27BF),     # misc symbols + dingbats
+    (0xFE00, 0xFE0F),     # variation selectors
+    (0x1F1E6, 0x1F1FF),   # regional indicators (flags)
+    (0x2190, 0x21FF),     # arrows
+    (0x2B00, 0x2BFF),
+)
+
+
+def _is_emoji(ch: str) -> bool:
+    o = ord(ch)
+    return any(lo <= o <= hi for lo, hi in _EMOJI_RANGES) or o == 0x200D  # ZWJ
+
+
+def strip_unrenderable_emoji(text: str) -> str:
+    """W5 (2026-07-18) — SPIKE RESULT: the burned hook card renders through ffmpeg
+    `drawtext` with the bundled Montserrat Black, which has NO emoji glyphs, so any
+    emoji in hook text renders as a **tofu box** (verified: 'boy has to be stopped␣␣').
+    Segoe UI Emoji renders shapes but only in MONOCHROME and drags the whole line off
+    the brand font. So emoji cannot go into the burned overlay until a real font
+    strategy exists (two-pass drawtext or PNG compositing).
+
+    This guard strips emoji from overlay text so a model-emitted emoji can never ship
+    as tofu. `CLIP_HOOK_EMOJI=1` opts back in (for when a font strategy lands).
+    NOTE: emoji remain fully appropriate in NON-burned copy — post-kit captions,
+    social descriptions, titles — which is where the reference corpus's 68 % emoji
+    rate can be matched today at zero rendering risk."""
+    if os.environ.get("CLIP_HOOK_EMOJI", "0").strip().lower() in ("1", "true", "yes", "on"):
+        return text
+    t = str(text or "")
+    if not t:
+        return t
+    out = "".join(ch for ch in t if not _is_emoji(ch))
+    # collapse whitespace the removal may have left behind
+    return " ".join(out.split())
+
+
 def normalize_overlay_casing(text: str) -> str:
     """Casing for NON-caption on-screen text (the hook overlay). Follows the
     caption casing mode so the whole frame reads ONE casing — R3 audit
@@ -429,6 +499,7 @@ def normalize_overlay_casing(text: str) -> str:
     t = str(text or "")
     if not t.strip():
         return t
+    t = strip_unrenderable_emoji(t)   # W5: never ship tofu boxes in the overlay
     mode = _resolve_casing(False)
     if mode == "caps":
         return t.upper()

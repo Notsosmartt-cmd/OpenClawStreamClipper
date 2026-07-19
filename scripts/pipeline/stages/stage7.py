@@ -294,7 +294,28 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
         f"[fg]scale=1080:-2:force_original_aspect_ratio=decrease{mirror_vf}[sharp];"
         f"[blurred][sharp]overlay=(W-w)/2:(H-h)/2,{color_vf}{shake_vf}")
 
-    if ctx.framing == "camera_pan":
+    # W1 (2026-07-18): full-bleed framing. `CLIP_FRAME_MODE=fill` replaces the
+    # letterbox-over-blur look with a height-filling crop centered on the action
+    # (deterministic centroid; center-crop fallback). Default `blur` is unchanged.
+    fill_vf = ""
+    try:
+        import framing as _framing
+        _ok, _why = _framing.should_fill(str(ctx.vod_path))
+        if _ok:
+            _cx, _cwhy = _framing.resolve_center_x(
+                str(ctx.vod_path), start_s=float(clip_start),
+                duration_s=float(clip_length), log=log.log)
+            fill_vf = (f"{speed_vf},{_framing.fill_filter(_cx)}{mirror_vf},"
+                       f"{color_vf}{shake_vf}")
+            log.log(f"  [framing] fill mode ({_why}, {_cwhy})")
+        elif _framing.mode() == "fill":
+            log.log(f"  [framing] fill requested but skipped: {_why}")
+    except Exception as _fe:  # noqa: BLE001 — framing must never break a render
+        log.warn(f"framing fill skipped for T={T}: {_fe}")
+
+    if fill_vf:
+        frame_vf = fill_vf
+    elif ctx.framing == "camera_pan":
         pan_path = p.work(f"clip_{T}_campath.json")
         pan_expr = ""
         if ctx.camera_pan and pan_path.exists():
@@ -583,12 +604,21 @@ def _maybe_ab_variant(ctx, row, clip_start, clip_length, clip_srt_render, moment
         seed_off = int(os.environ.get("CLIP_VARIANT_SEED_OFFSET", "1") or "1") or 1
         b_hook = b.get("hook") or row.get("hook", "")
         out_b = ctx.paths.clips_dir / f"{row['title']} (B).mp4"
+        # W3 (2026-07-18): caption-PRESENCE A/B. Direct frame audit found 4 of 5
+        # reference clips carry NO word-by-word captions — one persistent hook line
+        # does the whole job (corpus_diff measures casing/speed but never presence,
+        # so this divergence was structurally invisible). `CLIP_AB_CAPTION_TEST=1`
+        # renders variant B caption-LESS (hook only) so the owner can judge the two
+        # styles side by side. Default off => B keeps today's captions.
+        _cap_test = os.environ.get("CLIP_AB_CAPTION_TEST", "0").strip().lower() in (
+            "1", "true", "yes", "on")
+        _b_captions = ctx.captions_enabled and not _cap_test
         r = common.run_module(ctx.log, "profile_render.py", [
             "--moment-json", str(moment_json), "--src", str(ctx.vod_path),
             "--srt", str(clip_srt_render), "--out", str(out_b),
             "--clip-start", str(clip_start), "--clip-duration", str(clip_length),
             "--speed", ctx.clip_speed,
-            "--captions", "true" if ctx.captions_enabled else "false",
+            "--captions", "true" if _b_captions else "false",
             "--hook", "true" if ctx.hook_caption_enabled else "false",
             "--hook-text", b_hook, "--temp-dir", str(ctx.paths.work_dir),
             "--music-folder", ctx.music_bed,
@@ -596,7 +626,8 @@ def _maybe_ab_variant(ctx, row, clip_start, clip_length, clip_srt_render, moment
         ], env=ctx.child_env(), check=False)
         if r.returncode == 0 and out_b.exists():
             ctx.log.log(f"  [ab-variant] {row['title']} (B) [{b.get('angle', 'alt')}] "
-                        f"hook=\"{b_hook}\" seed+{seed_off}")
+                        f"hook=\"{b_hook}\" seed+{seed_off}"
+                        f"{' captions=OFF (W3 presence test)' if _cap_test else ''}")
             _record_clip(ctx, {**row, "title": f"{row['title']} (B)", "hook": b_hook},
                          out_b, clip_length, profile=True)
         else:

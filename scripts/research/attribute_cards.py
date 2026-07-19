@@ -50,7 +50,11 @@ CACHE = cf.REF_DIR / ".cache"
 # v3 (2026-07-15): `subtype` field — irl_moment was 66% of the corpus, a mixture of
 # genuinely different species (owner: "should irl be broken up?"). category stays
 # the stable JOIN KEY between reference and our cards; subtype refines within it.
-CARD_SCHEMA_VERSION = 3
+# v4 (2026-07-18, W8 of plan-edit-quality): captions.style (word_by_word |
+# static_hook | keyword | none) + top-level `framing` — the direct frame audit
+# found 4/5 reference clips carry NO word captions and every one is full-bleed,
+# two dimensions the card schema simply had no field for.
+CARD_SCHEMA_VERSION = 4
 
 
 def _log(msg: str) -> None:
@@ -282,7 +286,8 @@ Respond with ONLY a JSON object (no prose, no markdown fences):
   "comedy": {{"device": "what makes it funny/engaging, 1 phrase", "verbal_vs_visual": "verbal|visual|both"}},
   "edit_grammar": {{"cut_alignment": "on-beat|on-punchline|loose|none", "zooms": <int>, "freezes": <int>}},
   "sfx_grammar": {{"kinds": ["boom","whoosh","..."], "offset_from_payoff_ms": <int or null>, "loudness_vs_speech": "over|under|ducked|none"}},
-  "captions": {{"casing": "all-lowercase|Title Case|SCREAMING CAPS|sentence case|mixed|none", "voice": "the caption WRITING voice in 1 phrase", "on_screen_text_samples": ["verbatim lines you can read in the frames"]}},
+  "captions": {{"casing": "all-lowercase|Title Case|SCREAMING CAPS|sentence case|mixed|none", "voice": "the caption WRITING voice in 1 phrase", "on_screen_text_samples": ["verbatim lines you can read in the frames"], "style": "REQUIRED. word_by_word (spoken-word subtitles that ADVANCE between frames — karaoke/CapCut style) | static_hook (ONE persistent line/title card that does NOT change across frames) | keyword (sparse punchy label cards, not full speech) | none (no on-screen text at all). Judge from whether the text CHANGES between the time-ordered frames."}},
+  "framing": "REQUIRED: full_bleed (footage fills the whole vertical frame) | letterboxed (footage sits in a band with blurred/black bars above+below) | split_screen (two stacked sources) | other",
   "engagement": {{"source_chat_visible": true/false (the STREAM's own chat panel, part of the source footage), "added_chat_overlay": true/false (a chat box the EDITOR composited in — different style/position than the stream layout), "emoji": true/false, "freeze_bait": true/false}},
   "essence_commentary": "one plain-language paragraph: what an editor should copy from this clip",
   "confidence": <0.0-1.0>

@@ -1213,6 +1213,18 @@ def parse_llm_moments(response_text, chunk_start, chunk_end):
             # Tier-1 Q5: storytime/emotional get up to 150s for genuine narrative arcs;
             # everything else stays capped at 90s. Min remains 15s.
             max_dur = 150 if category in ("storytime", "emotional") else 90
+            # W2b (2026-07-18): SOFT species cap layered UNDER the hard 90/150.
+            # Measured: reference banter runs ~24.5 s and freakouts ~27 s, but our
+            # clips of those species render at 40-85 s (three of four eyeballed
+            # clips sat at 85 s, judge 7-9 — the judge does not score length). The
+            # cap is species norm x SOFT_MULT so a genuinely long moment still has
+            # room; the hard cap remains the backstop. Never RAISES a cap.
+            # `CLIP_SPECIES_DUR_CAP=0` disables (restores pure 90/150 behavior).
+            if os.environ.get("CLIP_SPECIES_DUR_CAP", "1").strip().lower() not in (
+                    "0", "false", "no", "off"):
+                _soft = _species_soft_max_dur(m, category)
+                if _soft:
+                    max_dur = min(max_dur, _soft)
             if duration < 15:
                 clip_start_time = None
                 clip_end_time = None
@@ -1935,6 +1947,50 @@ if _moment_workers >= 2:
 
 
 _SPECIES_PRIORS_CACHE: str | None = None
+
+
+_SOFT_DUR_MULT = 1.6      # species norm x this = the soft cap (room for long-but-real)
+_SOFT_DUR_FLOOR = 30      # never let a soft cap fall below this (recall guard)
+_SPECIES_DUR_CACHE: dict | None = None
+
+
+def _species_norm_durations() -> dict:
+    """{species/category: typical_seconds} from config/shape_priors.json (the same
+    file the Pass-B prompt + judge packets read). Failure-soft -> {}."""
+    global _SPECIES_DUR_CACHE
+    if _SPECIES_DUR_CACHE is not None:
+        return _SPECIES_DUR_CACHE
+    out: dict = {}
+    try:
+        from pathlib import Path as _P
+        cfg = json.loads((_P(__file__).resolve().parents[3] / "config" /
+                          "shape_priors.json").read_text(encoding="utf-8"))
+        for name, p in (cfg.get("subtypes") or {}).items():
+            d = p.get("duration_s_typical")
+            if d:
+                out[str(name).lower()] = float(d)
+        for name, d in (cfg.get("category_hints") or {}).items():
+            if d:
+                out[str(name).lower()] = float(d)
+    except Exception:
+        out = {}
+    _SPECIES_DUR_CACHE = out
+    return out
+
+
+def _species_soft_max_dur(m: dict, category: str) -> int | None:
+    """Soft duration cap (s) for this moment's species, or None when unknown.
+    W2b — subtype first (the reference join key), then category hints."""
+    norms = _species_norm_durations()
+    if not norms:
+        return None
+    key = str(m.get("subtype") or "").strip().lower()
+    typical = norms.get(key)
+    if typical is None:
+        typical = norms.get(str(category or "").strip().lower())
+    if typical is None:
+        return None
+    return int(max(_SOFT_DUR_FLOOR, round(typical * _SOFT_DUR_MULT)))
 
 
 def _species_priors_block() -> str:

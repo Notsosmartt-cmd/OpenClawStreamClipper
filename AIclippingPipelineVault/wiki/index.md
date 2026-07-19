@@ -80,7 +80,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[concepts/reference-lab]] — **Owner's guide** to the Reference Lab tab: panels, the 2 actions, where the LLM runs, model dropdown, judged-report export
 - [[concepts/plan-news-compilation-2026-07]] — "Streamer News Today" third output mode: multi-VOD → one compilation from FINISHED clips (grid intro, headline banners, piper anchor VO); dashboard News Compile button (**v1 shipped 2026-07-11 — owner ear-check gate open**)
 - [[concepts/plan-jump-cuts-v2-2026-07]] — Beat-aware jump cuts: unify cut timing w/ the SFX beat machinery (beat_map), payoff halo, text-anchored micro-call, seam styling, per-category posture (**shipped 2026-07-13 — J0–J6; default-off pending owner gaps run**)
-- [[concepts/plan-edit-quality-2026-07]] — W0–W8 edit revisions from the 07-18 review+eyeball arc: full-bleed framing, duration discipline, caption presence/grouping, emoji (**status: planned**)
+- [[concepts/plan-edit-quality-2026-07]] — W0–W8 edit revisions: full-bleed framing, duration discipline, caption presence/grouping (**in-progress — code shipped default-OFF; W0/W2c owner gates open**)
 - [[entities/beat-map]] — shared tuned timing primitives (refined payoff, laughter, transients, breaths) used by BOTH the SFX placer and the jump-cut compressor
 - [[concepts/model-senses]] — Perception inventory: what each model "senses" (speech-only / 3 audio dials / 6 still frames) + the two blind spots
 - [[concepts/quality-leverage-ranking-2026-07]] — Which stage affects clip QUALITY most (S4 > S2 > S7 > S6 > S5.5 …) + complaint→stage routing map for owner reviews

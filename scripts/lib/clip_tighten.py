@@ -69,6 +69,38 @@ _DEFAULTS = {
     "min_final_s": 6.0,         # safety floor — never emit a clip shorter than this
 }
 
+# W2a (2026-07-18): per-SPECIES tail bounds. Measured on the 115-card reference
+# corpus: banter ends ~3.0 s after the payoff while OUR clips linger ~6.1 s —
+# half the banter length excess is pure tail. These cap `tail_max_s` for the
+# species that resolve on a punchline; storytime/monologue keep the generous
+# default (their value IS the aftermath). Species is read from the moment's
+# subtype (pipeline label-only field) and falls back to category.
+_TAIL_MAX_BY_SPECIES = {
+    "banter_roast": 4.0,
+    "freakout_overreaction": 5.0,
+    "prank_public": 4.0,
+    "performance_rap": 3.0,
+}
+_TAIL_MAX_BY_CATEGORY = {
+    "funny": 4.0,
+    "comedy": 4.0,
+    "hot_take": 5.0,
+    "controversial": 5.0,
+    "reactive": 5.0,
+    # storytime / emotional deliberately absent -> default 8.0
+}
+
+
+def _species_tail_max(moment: dict, default_s: float) -> tuple[float, str]:
+    """(tail_max_s, why) for this moment — species norm when known, else default."""
+    sub = str(moment.get("subtype") or moment.get("s45_subtype") or "").strip().lower()
+    if sub in _TAIL_MAX_BY_SPECIES:
+        return _TAIL_MAX_BY_SPECIES[sub], f"subtype={sub}"
+    cat = str(moment.get("category") or moment.get("primary_category") or "").strip().lower()
+    if cat in _TAIL_MAX_BY_CATEGORY:
+        return _TAIL_MAX_BY_CATEGORY[cat], f"category={cat}"
+    return float(default_s), "default"
+
 
 def _cfg() -> dict:
     c = dict(_DEFAULTS)
@@ -246,7 +278,12 @@ def tighten(moment: dict, clip_start: float, clip_duration: float, *,
         new_start = _natural_head_start(payoff_abs, clip_start, temp_dir, cfg)
 
         # --- TAIL: end at the last real activity within payoff + tail_max_s ---
-        env, hop_s = _rms_env(temp_dir, payoff_abs, min(clip_end, payoff_abs + cfg["tail_max_s"]))
+        # W2a: species-aware bound (punchline species resolve fast; storytime keeps
+        # its aftermath). An explicit CLIP_TIGHT_TAIL_MAX_S env override still wins.
+        _tail_max = float(cfg["tail_max_s"])
+        if not os.environ.get("CLIP_TIGHT_TAIL_MAX_S"):
+            _tail_max, _ = _species_tail_max(moment, _tail_max)
+        env, hop_s = _rms_env(temp_dir, payoff_abs, min(clip_end, payoff_abs + _tail_max))
         if env is not None:
             import numpy as np
             thr = 0.30 * float(env.max())
