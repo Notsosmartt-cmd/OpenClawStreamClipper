@@ -134,7 +134,11 @@ def extract_originality_fields(data: dict) -> dict | None:
     disk = load_originality_config()
     keys = ("framing", "originality", "stitch", "arc_stitch", "narrative",
             "camera_pan", "tts_vo", "music_bed", "music_tier_c",
-            "style_profiles", "jump_cuts", "cut_style", "flash_cuts", "cold_open")
+            "style_profiles", "jump_cuts", "cut_style", "flash_cuts", "cold_open",
+            # frame_mode (2026-07-19): the finer half of the consolidated Framing
+            # dropdown (auto|blur|fill). Persisted so the UI restores the exact
+            # selection; the launch route still passes it explicitly to the env.
+            "frame_mode")
     touched = False
     merged = dict(disk)
     for k in keys:

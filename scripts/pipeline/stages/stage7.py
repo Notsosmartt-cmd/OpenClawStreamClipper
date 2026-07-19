@@ -300,9 +300,15 @@ def _render_clip(ctx, row, speed_vf, speed_audio_filter) -> None:
     fill_vf = ""
     try:
         import framing as _framing
-        _ok, _why = _framing.should_fill(str(ctx.vod_path),
-                                         segment_type=row.get("segment_type"),
-                                         category=category)
+        # camera_pan owns the crop when selected — a static full-bleed crop must
+        # never fight the moving face-tracking one. The dashboard already maps
+        # camera_pan -> frame_mode=blur; this guards CLI/env combinations too.
+        if ctx.framing == "camera_pan":
+            _ok, _why = False, "camera_pan owns the crop"
+        else:
+            _ok, _why = _framing.should_fill(str(ctx.vod_path),
+                                             segment_type=row.get("segment_type"),
+                                             category=category)
         if _ok:
             _cx, _cwhy = _framing.resolve_center_x(
                 str(ctx.vod_path), start_s=float(clip_start),

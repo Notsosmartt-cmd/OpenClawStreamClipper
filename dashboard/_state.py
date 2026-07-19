@@ -97,6 +97,9 @@ reference_job = None
 # --- Default configuration constants ---
 DEFAULT_ORIGINALITY = {
     "framing": "blur_fill",
+    # Consolidated Framing dropdown, finer half (2026-07-19): auto|blur|fill.
+    # auto = per-clip by segment type (irl -> full-bleed, gaming -> blur).
+    "frame_mode": "auto",
     "originality": True,
     "stitch": False,
     "arc_stitch": False,

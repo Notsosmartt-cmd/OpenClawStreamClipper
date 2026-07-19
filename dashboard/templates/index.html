@@ -123,14 +123,6 @@
                         <option value="8">Elite — judge ≥ 8</option>
                     </select>
                 </div>
-                <div class="control-group" title="How a 16:9 source fits the 9:16 frame. Blur fill = the classic letterbox over a blurred copy (best for gaming/desktop — keeps the HUD and screen content). Full-bleed = fills the height and crops the sides around the action (best for IRL — bigger subject, and the stream's chat/overlay chrome gets cropped away). Auto picks per clip from its segment type: IRL/just-chatting → full-bleed, gaming/reaction → blur fill. Sources already 9:16 are never cropped.">
-                    <label class="field-label">Frame fit</label>
-                    <select id="sel-frame-mode">
-                        <option value="auto" selected>Auto — IRL full-bleed, gaming blur (default)</option>
-                        <option value="blur">Blur fill — letterbox (classic)</option>
-                        <option value="fill">Full-bleed — crop to action</option>
-                    </select>
-                </div>
             </div>
 
             <hr class="section-divider">
@@ -186,9 +178,11 @@
             <div class="controls" id="originality-controls">
                 <div class="control-group">
                     <label class="field-label">Framing</label>
-                    <select id="sel-framing" onchange="onOriginalityChange()" title="Blur-fill: 9:16 with blurred sidebars (safe default). Camera pan: face-tracking virtual camera; silently falls back to blur-fill if no faces are detected.">
-                        <option value="blur_fill" selected>Blur-fill</option>
-                        <option value="camera_pan">Camera pan</option>
+                    <select id="sel-framing" onchange="onOriginalityChange()" title="How a 16:9 source fits the 9:16 frame — ONE control for all modes (consolidated 2026-07-19).&#10;&#10;Auto (default): per clip from its segment type — IRL/just-chatting get full-bleed, gaming/reaction keep blur-fill (the HUD/screen IS the content).&#10;Blur-fill: the classic letterbox over a blurred copy; safest, keeps the whole frame.&#10;Full-bleed: fills the height and crops the sides around the action — bigger subject, and the stream's chat/overlay chrome gets cropped away.&#10;Camera pan: face-tracking virtual camera (a MOVING crop); silently falls back to blur-fill when no faces are detected.&#10;&#10;Sources already 9:16 are never cropped.">
+                        <option value="auto" selected>Auto — IRL full-bleed, gaming blur-fill</option>
+                        <option value="blur_fill">Blur-fill — letterbox (classic)</option>
+                        <option value="fill">Full-bleed — crop to action</option>
+                        <option value="camera_pan">Camera pan — face tracking</option>
                     </select>
                 </div>
             </div>

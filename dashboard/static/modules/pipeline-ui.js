@@ -10,11 +10,38 @@ import { fetchClips, fetchStages } from "./vods-panel.js";
 
 // --- Originality form ---
 
+// The Framing dropdown is the SINGLE source of truth for how a 16:9 source
+// fits the 9:16 frame. It drives three downstream values that must stay
+// consistent (2026-07-19 consolidation — a second "Frame fit" select briefly
+// existed in Clip Controls and could contradict this one, the same
+// split-control failure the 2026-05-02 camera_pan merge already fixed):
+//   dropdown     -> originality.framing | camera_pan | CLIP_FRAME_MODE
+//   auto            blur_fill             false        auto   (per-clip)
+//   blur_fill       blur_fill             false        blur
+//   fill            blur_fill             false        fill
+//   camera_pan      camera_pan            true         blur   (pan owns the crop)
+// camera_pan maps to frame_mode=blur so the static full-bleed crop can never
+// fight the moving face-tracking crop.
+export function frameModeFromFraming(framing) {
+    if (framing === "auto") return "auto";
+    if (framing === "fill") return "fill";
+    return "blur";   // blur_fill and camera_pan both render blur-side
+}
+
+export function getFrameMode() {
+    return frameModeFromFraming(
+        document.getElementById("sel-framing")?.value || "auto");
+}
+
 export function collectOriginality() {
     const q = (id) => document.getElementById(id);
-    const framing = q("sel-framing")?.value || "blur_fill";
+    const sel = q("sel-framing")?.value || "auto";
+    // Legacy field: the render path only understands blur_fill | camera_pan.
+    // auto/fill are blur-side there; CLIP_FRAME_MODE carries the real choice.
+    const framing = sel === "camera_pan" ? "camera_pan" : "blur_fill";
     return {
         framing,
+        frame_mode:     frameModeFromFraming(sel),
         originality:    !!q("chk-originality")?.checked,
         stitch:         !!q("chk-stitch")?.checked,
         arc_stitch:     !!q("chk-arc-stitch")?.checked,
@@ -27,7 +54,7 @@ export function collectOriginality() {
         // (CLIP_CAMERA_PAN). Used to be a separate checkbox; consolidated
         // 2026-05-02 because the two controls had to be set together to
         // do anything and the split caused silent fall-through to blur_fill.
-        camera_pan:     framing === "camera_pan",
+        camera_pan:     sel === "camera_pan",
         tts_vo:         !!q("chk-tts-vo")?.checked,
         music_bed:      (q("inp-music-bed")?.value || "").trim(),
         music_tier_c:   !!q("chk-music-tier-c")?.checked,
@@ -45,8 +72,15 @@ export async function fetchOriginality() {
         // If a saved config has framing=blur_fill but camera_pan=true (a
         // legacy state that never did anything), prefer the explicit
         // camera_pan signal so the user lands on the working mode.
+        // The saved originality config only stores the legacy blur_fill|camera_pan
+        // field; the finer choice (auto/fill) lives in cfg.frame_mode when the
+        // server persisted it. Prefer that, then fall back to the legacy field.
         let framing = cfg.framing || "blur_fill";
         if (framing === "blur_fill" && cfg.camera_pan) framing = "camera_pan";
+        if (framing !== "camera_pan" && cfg.frame_mode) {
+            framing = cfg.frame_mode === "fill" ? "fill"
+                    : cfg.frame_mode === "auto" ? "auto" : "blur_fill";
+        }
         if (q("sel-framing")) q("sel-framing").value = framing;
         if (q("chk-originality")) q("chk-originality").checked = cfg.originality !== false;
         if (q("chk-narrative")) q("chk-narrative").checked = cfg.narrative !== false;
@@ -228,7 +262,7 @@ export async function startClip() {
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     // Quality gate: only render clips the S4.5 judge scored >= N (0 = all).
     const min_judge_score = parseFloat(document.getElementById("sel-min-judge")?.value || "0") || 0;
-    const frame_mode = document.getElementById("sel-frame-mode")?.value || "auto";
+    const frame_mode = getFrameMode();
     const originality = collectOriginality();
 
     // One or many — the batch endpoint runs them sequentially in selection order.
@@ -293,7 +327,7 @@ export async function startClipAll() {
     const speed = document.getElementById("sel-speed").value;
     const passb_dead_gate = document.getElementById("sel-passb-gate")?.value || "off";
     const min_judge_score = parseFloat(document.getElementById("sel-min-judge")?.value || "0") || 0;
-    const frame_mode = document.getElementById("sel-frame-mode")?.value || "auto";
+    const frame_mode = getFrameMode();
     const originality = collectOriginality();
 
     const { ok, data } = await apiPost("/api/clip-all", {
