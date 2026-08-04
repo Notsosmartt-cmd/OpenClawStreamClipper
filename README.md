@@ -1,22 +1,29 @@
 # OpenClaw Stream Clipper
 
-A fully self-hosted, AI-powered livestream highlight clipper. Drop a VOD into a folder, tell your Discord bot to clip it, and receive vertical 9:16 highlight clips with burned-in captions — no cloud APIs, no subscriptions, everything runs on your own hardware.
+A self-hosted, AI-powered livestream highlight clipper. Drop a VOD into a folder, tell your Discord bot (or a web dashboard) to clip it, and get back vertical 9:16 highlight clips with burned-in captions, hooks, and optional editing effects — no cloud APIs, no subscriptions, everything runs on your own hardware.
 
-**Stack**: [OpenClaw](https://openclaw.ai) (AI agent framework) · [LM Studio](https://lmstudio.ai) (local LLM inference) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (GPU speech-to-text) · Docker · FFmpeg
+**Stack**: [LM Studio](https://lmstudio.ai) (local LLM inference, native Windows) · [OpenClaw](https://openclaw.ai) (Discord agent framework) · Python 3.11 (bare-metal orchestrator) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / [WhisperX](https://github.com/m-bain/whisperX) (GPU speech-to-text) · FFmpeg
+
+> **This README is a snapshot.** The authoritative, continuously-updated knowledge base for this project is the Obsidian wiki at [`AIclippingPipelineVault/wiki/`](AIclippingPipelineVault/wiki/index.md) — start at [`wiki/hot.md`](AIclippingPipelineVault/wiki/hot.md) for current state or [`wiki/overview.md`](AIclippingPipelineVault/wiki/overview.md) for architecture. It has far more depth than this file on every feature below.
 
 ---
 
 ## Table of Contents
 
 - [How It Works](#how-it-works)
-- [The 8-Stage Pipeline](#the-8-stage-pipeline)
-- [Classification System](#classification-system)
+- [Two Interfaces (+ a Third App)](#two-interfaces--a-third-app)
+- [The Pipeline](#the-pipeline)
+- [Feature Highlights](#feature-highlights)
 - [Models](#models)
 - [Requirements](#requirements)
 - [Setup Guide](#setup-guide)
 - [Dashboard](#dashboard)
+- [Buffer Clip Poster](#buffer-clip-poster)
 - [Usage](#usage)
+- [Configuration Files](#configuration-files)
 - [Troubleshooting](#troubleshooting)
+- [Project Structure](#project-structure)
+- [Legacy Docker Path](#legacy-docker-path)
 
 ---
 
@@ -25,30 +32,33 @@ A fully self-hosted, AI-powered livestream highlight clipper. Drop a VOD into a 
 ```
 Discord: "clip the funny moments from the lacy stream"
          │
-   OpenClaw Agent (LM Studio)
+   OpenClaw Agent (LM Studio, qwen3.5-9b)
    → infers: --style funny --vod lacy
-   → calls exec tool
+   → calls exec: clip.cmd --style funny --vod lacy
          │
-   bash /root/scripts/clip-pipeline.sh --style funny --vod lacy
+   scripts/run_pipeline.py  (native Python orchestrator, runs on Windows directly)
          │
-   ┌─────────────────────────────────────────────────────┐
-   │  Stage 1  Discovery        find VOD by name         │
-   │  Stage 2  Transcription    Whisper large-v3 (CUDA)  │
-   │  Stage 3  Segment Detect   classify stream sections │
-   │  Stage 4  Moment Detect    keyword + LLM analysis   │
-   │  Stage 5  Frame Extract    JPEG frames per moment   │
-   │  Stage 6  Vision Enrich    titles + score boost     │
-   │  Stage 7  Render           FFmpeg 9:16 blur-fill    │
-   │  Stage 8  Log & Report     Discord delivery         │
-   └─────────────────────────────────────────────────────┘
+   ┌───────────────────────────────────────────────────────────┐
+   │  Stage 1    Discovery          find VOD by name            │
+   │  Stage 2    Transcription      WhisperX / faster-whisper   │
+   │  Stage 3    Segment Detect     classify stream sections    │
+   │  Stage 4    Moment Detect      keyword + LLM + quality judge│
+   │  Stage 5    Frame Extract      JPEG frames per candidate   │
+   │  Stage 5.5  Vision Judge       pairwise tournament re-rank │
+   │  Stage 6    Vision Enrich      titles, hooks, categories   │
+   │  Stage 7    Editing & Export   captions, effects, render   │
+   │  Stage 8    Log & Report       processed.log, Discord msg  │
+   └───────────────────────────────────────────────────────────┘
          │
-   clips/ ← vertical MP4s with burned-in captions
+   clips/ ← vertical MP4s, captions burned in, ready to post
    Discord ← "Made 8 clips: Accidental PC Unplug Chaos, ..."
 ```
 
+Everything runs natively on the Windows host — **no Docker, no WSL2** (that path still exists but is legacy; see [Legacy Docker Path](#legacy-docker-path)). LM Studio serves the LLM at `http://localhost:1234`; the orchestrator, dashboard, and Discord gateway are plain Windows processes.
+
 ### Clip Styles
 
-The bot infers the clip style silently from your message — you never need to specify a flag:
+The bot infers style from your message — you rarely need to specify anything:
 
 | You say | Style | Prioritizes |
 |---|---|---|
@@ -64,234 +74,85 @@ The bot infers the clip style silently from your message — you never need to s
 
 ### Dynamic Clip Count
 
-Scales automatically with VOD length (3 clips/hour, capped at 20):
+Scales with VOD length — 3 clips/hour, minimum 3, capped at 20:
 
 | Stream Length | Target Clips |
 |---|---|
-| 1 hour | 3 clips |
-| 2 hours | 6 clips |
-| 4 hours | 12 clips |
-| 7+ hours | 20 clips |
+| 1 hour | 3 |
+| 2 hours | 6 |
+| 4 hours | 12 |
+| 7+ hours | 20 (capped) |
 
 ---
 
-## The 8-Stage Pipeline
+## Two Interfaces (+ a Third App)
 
-The pipeline script (`scripts/clip-pipeline.sh`) processes a single VOD end-to-end. All stages are logged to `/tmp/clipper/pipeline.log` (live) and to a persistent timestamped file at `clips/.pipeline_logs/YYYYMMDD_HHMMSS_VOD.log`.
+**Discord bot** (primary) — natural-language commands via the OpenClaw agent; results delivered as attachments. Driven by [`workspace/AGENTS.md`](workspace/AGENTS.md) (bot identity/rules) and [`workspace/skills/stream-clipper/SKILL.md`](workspace/skills/stream-clipper/SKILL.md) (trigger words → `clip.cmd` invocation).
 
-### Stage 1 — Discovery
+**Web dashboard** (secondary) — Flask app, default port **5001** (rolls forward to the next free port if squatted — check the terminal output for the actual port). VOD library, clip controls (style, quality gate, frame-fit mode, and more), live 8-stage progress monitor with SSE log streaming, clips gallery, and a **Reference Lab** tab for comparing your output against a corpus of reference clips. Start with:
+```powershell
+python dashboard\app.py
+```
 
-Scans `vods/` for `.mp4` and `.mkv` files. Checks `vods/processed.log` to skip already-clipped VODs (bypassed when `--vod` is specified). Gets duration via `ffprobe`.
-
-**Flags**: `--vod <keyword>` (target by name), `--force` (re-process latest), `--list` (inventory JSON, no processing)
-
-### Stage 2 — Chunked Audio Transcription
-
-1. Extracts audio to 16kHz mono WAV via FFmpeg
-2. Splits into 20-minute chunks (prevents faster-whisper's degenerate repetition loop on long files)
-3. Transcribes each chunk with `faster-whisper large-v3` — GPU (float16) first, CPU (int8) fallback
-4. Merges chunks with offset-corrected timestamps; filters degenerate segments (dots, empty text)
-5. **Caches** to `vods/.transcriptions/` — re-clips of the same VOD skip transcription entirely
-
-**Outputs**: `transcript.json` (timestamped segments), `transcript.srt`
-
-**Typical speed**: ~3.5 hours of audio → ~50 minutes on an RTX 5060 Ti with large-v3
-
-### Stage 3 — Segment Detection and Stream Profiling
-
-Chunks the transcript into 10-minute windows and classifies each with the LLM:
-
-| Type | What it means |
-|---|---|
-| `gaming` | Gameplay talk, strategy, callouts, wins/losses |
-| `irl` | Real life, walking around, eating, traveling |
-| `just_chatting` | Casual Q&A, stories, chat interaction |
-| `reaction` | Watching/reacting to videos or content |
-| `debate` | Arguments, heated discussion, controversy |
-
-Merges adjacent same-type blocks into contiguous segments. Outputs a **stream profile**: dominant type, percentage breakdown, variety detection flag. This profile is used by Stage 4 (score weighting) and Stage 6 (vision context hints).
-
-**Outputs**: `segments.json`, `stream_profile.json`
-
-### Stage 4 — Three-Pass Hybrid Moment Detection
-
-The core detection engine. Three independent passes, then a merge/select phase.
-
-**Pass A — Keyword Scanning** (instant, no LLM):
-
-Slides a 30-second window across the full transcript. Scores moments by keyword density across six categories. Applies segment-type weight multipliers (e.g., `funny` keywords score 1.4× during IRL segments). Detects universal signals: exclamation clusters, ALL-CAPS streaks, rapid short sentences, laughter markers. Deduplicates within 20 seconds.
-
-**Pass B — LLM Chunk Analysis** (LM Studio text model):
-
-Splits the transcript into 5-minute chunks (30-second overlap). Sends each chunk to the LLM with a segment-specific prompt: gaming prompts look for clutch plays and rage quits; just_chatting prompts look for hot takes, storytelling, social dynamics; IRL prompts look for funny encounters and emotional moments. The LLM returns a JSON array of moments with timestamps, scores, categories, and one-sentence explanations.
-
-**Pass C — Merge, Deduplicate, Time-Bucket Select**:
-
-- Cross-validates moments found by both Pass A and B (+1.5 score boost, `[CROSS-VALIDATED]` flag)
-- Applies style weighting (e.g., `--style funny` gives funny moments a 1.4× multiplier)
-- **Time-bucket distribution**: divides the VOD into equal time buckets and guarantees at least one clip per bucket before filling overflow slots — prevents early-VOD bias where the LLM focuses on the first hour
-- Enforces 45-second minimum spacing between final clips
-
-**Outputs**: `keyword_moments.json`, `llm_moments.json`, `hype_moments.json`
-
-### Stage 5 — Frame Extraction
-
-Extracts 6 JPEG frames per detected moment (30-second window, 960×540 resolution). Uses FFmpeg with `-nostdin` to prevent stdin consumption in bash loops.
-
-### Stage 6 — Vision Enrichment (Non-Gatekeeping)
-
-For each moment, sends 2 frames to the LM Studio vision model along with stream context (type, segment, transcript reason). The model returns a JSON with score (1–10), category, viral title, and one-sentence description.
-
-**Score blending** (vision is always a bonus, never a penalty):
-- Vision ≥ 7/10 → transcript score × 1.15
-- Vision ≥ 5/10 → transcript score × 1.08
-- Vision < 5/10 → transcript score unchanged
-
-If vision fails (timeout, bad JSON, model error), the moment proceeds to rendering with its transcript score as-is. **Every moment that survived Stage 4 is rendered regardless of vision.**
-
-**Outputs**: `scored_moments.json`
-
-### Stage 7 — Editing and Export
-
-1. Generates clip manifest with vision-generated titles as filenames
-2. Extracts clip audio (all clips in one FFmpeg pass)
-3. Transcribes clip audio with Whisper for per-clip SRT subtitles
-4. Renders each clip with FFmpeg:
-   - **Blur-fill 9:16**: full 16:9 frame on a 9:16 canvas — top/bottom filled with a blurred+zoomed version of the same frame (no content cropped)
-   - H.264 CRF 23, AAC 128kbps
-   - Subtitles burned in — white text, black outline, bottom-aligned
-
-**Outputs**: `clips/*.mp4`
-
-### Stage 8 — Log and Report
-
-Appends VOD entry to `vods/processed.log`. Saves full diagnostic JSON to `clips/.diagnostics/`. Prints JSON summary to stdout (relayed to Discord by OpenClaw). Cleans up `/tmp/clipper/`.
+**Buffer Clip Poster** (optional, separate app) — a sibling Flask app on port **5100** for batch-posting finished clips straight to TikTok + Instagram Reels via the Buffer API. Entirely independent of the main dashboard. See [Buffer Clip Poster](#buffer-clip-poster) below. Start with:
+```powershell
+start-poster.cmd
+```
 
 ---
 
-## Classification System
+## The Pipeline
 
-This section describes every file that participates in deciding what gets clipped.
+`scripts/run_pipeline.py` is a thin Python orchestrator; each stage is its own module under `scripts/pipeline/stages/stage{1..8}.py`, calling into the heavier logic in `scripts/lib/` (64 modules). All stages log to a live file plus a persistent timestamped copy at `clips/.pipeline_logs/`.
 
-### Agent-Level Classification (Discord → pipeline flags)
-
-These files teach the Discord bot how to translate natural language into pipeline flags:
-
-| File | Purpose |
+| Stage | What happens |
 |---|---|
-| `workspace/AGENTS.md` | Bot identity + mandatory rules: always call `exec`, never just reply with text, keep messages short |
-| `workspace/skills/stream-clipper/SKILL.md` | Skill trigger words, exact exec commands to run, `--style` and `--type` flag inference table |
+| **1 — Discovery** | Scans `vods/` for `.mp4`/`.mkv`, checks `vods/processed.log` to skip already-clipped VODs |
+| **2 — Transcription** | WhisperX (word-level timestamps + speaker diarization) by default, falls back to faster-whisper; cached per-VOD so re-clips skip this entirely |
+| **3 — Segment Detection** | Classifies the stream into `gaming` / `irl` / `just_chatting` / `reaction` / `debate` windows; builds a stream profile used to weight later stages |
+| **4 — Moment Detection** | Three-pass hybrid: keyword scan (instant) + LLM chunk analysis + merge/re-rank/time-bucket selection, followed by an **S4.5 text-quality judge** that reviews every candidate against its verbatim transcript evidence before any frames are extracted (kills weak candidates early — faster *and* higher quality) |
+| **5 — Frame Extraction** | Pulls JPEG frames per surviving candidate for vision analysis |
+| **5.5 — Vision Judge** | A pairwise tournament where the vision model actually *selects* which moments win, not just titles them |
+| **6 — Vision Enrichment** | Generates titles, hook lines, categories, and originality hints from frames + context |
+| **7 — Editing & Export** | Renders each clip: framing, captions, optional style-profile effects (zoom punches, SFX, kinetic captions), A/B variants, post-kit generation |
+| **8 — Log & Report** | Appends to `processed.log`, writes diagnostics to `clips/.diagnostics/`, reports back to Discord |
 
-When you say "clip the funny irl lacy stream", the agent (running on the LM Studio model configured in `config/openclaw.json`) reads these files and infers:
-- `--style funny` (from "funny")
-- `--type irl` (from "irl")
-- `--vod lacy` (from "lacy")
+Full per-stage detail, every environment flag, and the history behind each design decision live in the wiki — start at [`wiki/concepts/clipping-pipeline`](AIclippingPipelineVault/wiki/concepts/clipping-pipeline.md).
 
-The `--style` and `--type` values are passed as environment hints into the pipeline.
+---
 
-### Config Files
+## Feature Highlights
 
-| File | What it controls |
-|---|---|
-| `config/models.json` | `text_model`, `vision_model`, `whisper_model`, `llm_url`, `context_length` — read by `scripts/clip-pipeline.sh` at startup |
-| `config/hardware.json` | `whisper_device: "cuda"` or `"cpu"` — sets Whisper's compute device and precision |
-| `config/openclaw.json` | OpenClaw agent config: LM Studio provider, model IDs for Discord bot, compaction settings, Discord token, exec tool config |
-| `config/exec-approvals.json` | Allowlist of shell commands the agent is permitted to run — must contain `{"pattern": "*"}` for the pipeline to be executable |
-| `.env` | `DISCORD_BOT_TOKEN` — injected into `openclaw.json` at container startup |
+The pipeline has grown well past "transcribe, detect, render" — a non-exhaustive tour of what's actually in there today, all wiki-documented in depth:
 
-### Pipeline Classification Data Flow
+- **Quality judge** — every moment candidate gets reviewed against its verbatim transcript evidence by the vision-tier model before frames are ever extracted; an optional dashboard "Quality gate" can require a minimum judge score to render at all.
+- **Style profiles & A/B variants** — per-category editing templates (zoom punches, freeze frames, SFX cues, kinetic captions, fingerprint perturbation) plus optional automatic A/B render variants per clip.
+- **Frame fit modes** — one dashboard dropdown controls how a 16:9 source fits the 9:16 frame: classic blur-fill letterbox, full-bleed crop-to-action, an **auto** mode that picks per clip by content type (IRL → full-bleed, gaming/reaction → letterbox), or face-tracking camera pan.
+- **Kinetic captions** — CapCut-style word-box captions with sentence-aware grouping, configurable casing, and a bundled font — no system font dependencies.
+- **SFX + jump cuts** — a stocked sound-effect taxonomy keyed to transcript beats (payoff, build-up, laughter), and an optional silence-gap jump-cut compressor.
+- **News compilation mode** — a separate output mode that stitches finished clips from multiple VODs into one narrated news-style compilation.
+- **Per-VOD checkpoints** — a crashed or stopped run resumes from the last completed stage per VOD instead of restarting from scratch.
+- **Reference Lab** — a dashboard tab that decomposes a corpus of reference (competitor) clips into structured attribute cards, cards your own output the same way, and generates a gap report with concrete config levers.
+- **Buffer Clip Poster** — a separate app for batch-publishing finished clips to TikTok + Instagram Reels.
 
-```
-vods/YOUR_VOD.mp4
-    │
-    ▼ Stage 2
-vods/.transcriptions/YOUR_VOD.json   ← cached transcript (reused on re-clip)
-    │
-    ▼ Stage 3 (LLM: config/models.json → text_model)
-/tmp/clipper/segments.json           ← [{start, end, type: "just_chatting"|"gaming"|...}]
-/tmp/clipper/stream_profile.json     ← {dominant_type, type_breakdown, is_variety}
-    │
-    ▼ Stage 4 Pass A (keyword lists in scripts/clip-pipeline.sh)
-/tmp/clipper/keyword_moments.json    ← [{timestamp, score, category, why, segment_type}]
-    │
-    ▼ Stage 4 Pass B (LLM: config/models.json → text_model)
-/tmp/clipper/llm_moments.json        ← [{timestamp, score, category, why, segment_type}]
-    │
-    ▼ Stage 4 Pass C (merge + time-bucket select)
-/tmp/clipper/hype_moments.json       ← final selected moments with clip boundaries
-    │
-    ▼ Stage 5 (FFmpeg frame extraction — 6 payoff-window frames per moment)
-/tmp/clipper/frames_T{N}_tminus2.jpg ← T-2s (pre-peak setup)
-/tmp/clipper/frames_T{N}_t0.jpg      ← T+0s (peak)
-/tmp/clipper/frames_T{N}_tplus1.jpg  ← T+1s
-/tmp/clipper/frames_T{N}_tplus2.jpg  ← T+2s
-/tmp/clipper/frames_T{N}_tplus3.jpg  ← T+3s (typical payoff)
-/tmp/clipper/frames_T{N}_tplus5.jpg  ← T+5s (aftermath)
-    │
-    ▼ Stage 6 (LLM: config/models.json → vision_model; all 6 frames per moment in one call)
-/tmp/clipper/scored_moments.json     ← moments enriched with vision score + title + description
-    │
-    ▼ Stage 7 (FFmpeg render)
-clips/YOUR_CLIP_TITLE.mp4
-clips/.pipeline_logs/TIMESTAMP_VOD.log  ← persistent full log for this run
-clips/.diagnostics/last_run_*.json      ← full pipeline state snapshot
-```
-
-### Keyword Categories (Stage 4 Pass A)
-
-The keyword lists are defined directly in `scripts/clip-pipeline.sh` (around the Pass A section):
-
-| Category | Example keywords |
-|---|---|
-| `hype` | "oh my god", "no way", "clip that", "let's go", "clutch", "holy shit" |
-| `funny` | "i'm dead", "bruh", "that's so bad", "you're trolling", "i'm crying" |
-| `emotional` | "i love you", "thank you so much", "mental health", "from the bottom of my heart" |
-| `hot_take` | "hot take", "unpopular opinion", "fight me", "hear me out", "controversial" |
-| `storytime` | "so basically", "let me tell you", "you won't believe", "long story short" |
-| `reactive` | "what is wrong with", "are you kidding", "i'm so done", "tilted", "look at this" |
-| `dancing` | "go off", "slay", "moves", dance-related exclamations |
-| `controversial` | call-outs, drama, beef-related keywords |
-
-### Segment-Type Score Weights (Stage 4 Pass A)
-
-Each keyword category gets a multiplier based on what segment type the moment falls in:
-
-| Segment | Funny × | Hype × | Emotional × | Hot Take × | Controversial × |
-|---|---|---|---|---|---|
-| `gaming` | 1.0 | 1.5 | 1.0 | 1.0 | 1.0 |
-| `irl` | 1.4 | 1.0 | 1.3 | 1.0 | 1.2 |
-| `just_chatting` | 1.2 | 1.0 | 1.2 | 1.3 | 1.3 |
-| `reaction` | 1.2 | 1.1 | 1.0 | 1.2 | 1.5 |
-| `debate` | 1.0 | 1.0 | 1.2 | 1.5 | 1.5 |
+See [`wiki/index.md`](AIclippingPipelineVault/wiki/index.md) for the full list of concept pages — captions, style profiles, SFX taxonomy, jump cuts, originality/fingerprinting, the reference-comparison loop, and more each have their own page.
 
 ---
 
 ## Models
 
-LLM inference runs in **LM Studio** on your Windows host. The Docker container communicates with it at `http://host.docker.internal:1234`. Whisper runs inside the container via CUDA.
+LLM inference runs in **LM Studio** on your Windows host, reachable at `http://localhost:1234`. The orchestrator loads/unloads models between stages via the bundled `lms` CLI to keep VRAM usage bounded.
 
-### LM Studio Models (you download and manage these in LM Studio)
-
-| Model | Size | Role | Used in |
-|---|---|---|---|
-| `qwen/qwen3.5-35b-a3b` *(recommended)* | ~20GB (Q4) | Text analysis — segment classification, moment detection, Discord agent | Stages 3, 4; OpenClaw agent |
-| `qwen/qwen3.5-9b` *(lighter alternative)* | ~6GB (Q4) | Same role, faster but less accurate | Stages 3, 4; OpenClaw agent |
-| `qwen/qwen3-vl-8b` | ~5GB | Vision enrichment — frame analysis, clip titles | Stage 6 |
-| `qwen/qwen2.5-vl-7b` | ~5GB | Alternative vision model (lighter) | Stage 6 |
-
-Set which model to use for text and vision in the **Dashboard → Models** panel (writes to `config/models.json`).
-
-> **35B vs 9B tradeoffs**: The 35B model produces significantly better moment detection and more accurate classifications. It's slower (each Stage 4 chunk takes 3–8 minutes vs ~30 seconds for 9B) and requires 20+ GB of VRAM for the model alone. If you have less than 24GB VRAM, use the 9B model. Both work correctly with the pipeline — the 35B just finds more nuanced moments.
-
-> **35B thinking behavior**: `qwen3.5-35b-a3b` has reasoning mode permanently enabled in LM Studio — it cannot be disabled. The pipeline is designed for this: `max_tokens` is set high enough for the model to finish reasoning (~3000–6000 tokens) AND write its answer. This is why the pipeline runs slowly with 35B but correctly.
-
-### Whisper Model (baked into Docker image)
-
-| Model | Size | Role |
+| Role (config key) | Typical choice | Stages |
 |---|---|---|
-| `large-v3` | ~3GB | Speech-to-text — Stages 2 (transcription) and 7 (caption subtitles) |
+| `text_model` | a smaller/faster model (e.g. `qwen/qwen3.5-9b`) | Stage 3, Stage 4 detection |
+| `vision_model` | a larger multimodal model (e.g. `qwen/qwen3.6-35b-a3b`) | Stage 4.5 judge, Stage 5.5, Stage 6 |
+| Discord agent model | a small tool-calling model (e.g. `qwen/qwen3.5-9b`) | OpenClaw agent only — **not** the same config as the pipeline models |
+| Whisper | `large-v3-turbo` | Stage 2 (and Stage 7 for per-clip subtitle re-alignment) |
 
-Pre-downloaded during `docker build`. Runs on CUDA by default; falls back to CPU if unavailable. Set in `config/hardware.json` or the Dashboard → Hardware panel.
+Set text/vision models and context length in **Dashboard → Models**, which writes to `config/models.json`. The Discord agent's model is configured separately in `config/openclaw.json`. Per-stage overrides exist (`text_model_passb`, `vision_model_stage6`) for splitting extraction from judgment across two different models — see [`wiki/concepts/model-split`](AIclippingPipelineVault/wiki/concepts/model-split.md).
+
+There's no fixed "the" model — this project has run everything from a single 9B up through 35B-class MoE models across two GPUs. Pick what fits your VRAM; the pipeline adapts.
 
 ---
 
@@ -301,217 +162,111 @@ Pre-downloaded during `docker build`. Runs on CUDA by default; falls back to CPU
 
 | Component | Minimum | Recommended |
 |---|---|---|
-| **GPU** | NVIDIA 8GB VRAM | NVIDIA 16GB+ VRAM (RTX 3090, 4090, 5060 Ti, etc.) |
+| **GPU** | NVIDIA 8GB VRAM | NVIDIA 16GB+ VRAM (more headroom = bigger LLM) |
 | **RAM** | 16GB | 32GB+ |
 | **CPU** | 8 cores | 12+ cores |
-| **Storage** | 50GB free | 200GB+ (models ~25GB + VODs can be 10–50GB each) |
+| **Storage** | 50GB free | 200GB+ (models + VODs add up fast) |
 
-For the 35B model: at least 24GB VRAM (can split across two GPUs in LM Studio).
+An AMD GPU can be pooled alongside an NVIDIA one for LLM inference through LM Studio's Vulkan backend, letting a larger model fit than either card would hold alone.
 
 ### Software
 
-- **Windows 10/11** (tested on Windows 11; Linux also works with minor adjustments)
-- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** with WSL2 backend
-- **NVIDIA GPU drivers** (version 535+ recommended)
-- **NVIDIA Container Toolkit** — included with Docker Desktop on Windows when NVIDIA drivers are installed
-- **[LM Studio](https://lmstudio.ai)** (0.3.x or later) — free desktop app
+- **Windows 10/11** (this is the primary, tested target — the whole point of the bare-metal port was avoiding WSL2)
+- **Python 3.11+** with a venv (`requirements-windows.txt` has the consolidated dependency list for native operation)
+- **[LM Studio](https://lmstudio.ai)** — free desktop app, must be running with its local server enabled
+- **FFmpeg** and **ffprobe** on `PATH`
+- **Node.js 22+** (only if you want the Discord bot / OpenClaw gateway)
 
 ---
 
 ## Setup Guide
 
-Follow these steps in order. Discord bot setup is **last** because the bot is optional and you should verify the pipeline works without it first.
-
 ### Step 1 — Install Prerequisites
 
-1. Install **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** and start it. Ensure WSL2 integration is enabled (Settings → Resources → WSL Integration).
+1. Install **[LM Studio](https://lmstudio.ai)**, open it, confirm it runs.
+2. Install **Python 3.11+** and **FFmpeg** (make sure both are on `PATH`).
+3. If you want the Discord bot: install **Node.js 22+**.
 
-2. Install **[LM Studio](https://lmstudio.ai)**. Run it and confirm it opens correctly.
-
-3. Verify Docker can see your GPU:
-   ```powershell
-   docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
-   ```
-   You should see your GPU listed. If not, check that NVIDIA drivers are installed and Docker Desktop has GPU support enabled.
-
-### Step 2 — Clone the Repository
+### Step 2 — Clone and Create a Virtual Environment
 
 ```powershell
-git clone https://github.com/YOUR_USERNAME/OpenClawStreamClipper.git
+git clone <this-repo-url>
 cd OpenClawStreamClipper
+python -m venv .venv
+.venv\Scripts\pip install -r requirements-windows.txt
 ```
 
 ### Step 3 — Create Config Files
 
 ```powershell
-# Copy the example configs (do not edit yet — you'll configure via dashboard)
 copy config\openclaw.example.json config\openclaw.json
 copy config\exec-approvals.example.json config\exec-approvals.json
-```
-
-Create the `.env` file (required by Docker Compose even if you set the token later):
-```powershell
+copy config\originality.example.json config\originality.json
 copy .env.example .env
 ```
-Leave `DISCORD_BOT_TOKEN` blank for now — you'll fill it in after testing the pipeline.
+Leave `DISCORD_BOT_TOKEN` in `.env` blank for now — you can add it after confirming the pipeline works.
 
 ### Step 4 — Set Up LM Studio
 
-1. Open LM Studio.
-2. Go to the **Models** tab (puzzle piece icon) and download:
-   - Search `qwen3.5-9b` → download the **Q4_K_M** variant (~6GB) for a lighter setup, **or**
-   - Search `qwen3.5-35b-a3b` → download the **Q4_K_M** variant (~20GB) for best quality
-   - Search `qwen3-vl-8b` → download the **Q4_K_M** variant (~5GB) for vision
-3. Go to the **Developer** tab (the `</>` icon or "Local Server" section).
-4. Load your text model.
-5. Enable **"Serve on Local Network"** — this is what makes it reachable from Docker at `host.docker.internal:1234`.
-6. Click **Start Server**. You should see `Server running at http://0.0.0.0:1234`.
+1. Open LM Studio's **Models** tab and download a text-capable model and a vision-capable model (they can be the same model if it's multimodal).
+2. Go to the **Developer** tab, load a model, and **Start Server**. Confirm it's serving on `http://localhost:1234`.
 
-> **Keep LM Studio running** whenever you use the pipeline. The container will warn (non-fatal) if LM Studio isn't reachable at startup.
+> Keep LM Studio running whenever you use the pipeline — it loads/unloads models between stages automatically via the `lms` CLI.
 
-### Step 5 — Build and Start the Container
+### Step 5 — Configure Models in the Dashboard
 
 ```powershell
-docker compose up -d --build
+python dashboard\app.py
 ```
+Open the URL it prints (default `http://localhost:5001`, rolls forward if that port is taken). Go to **Models**, set your text and vision model IDs to match what's loaded in LM Studio exactly, set a context length appropriate to your VRAM, and save.
 
-The first build takes 5–15 minutes (downloads CUDA base image, installs packages, pre-bakes Whisper large-v3 into the image layer). Subsequent builds are fast.
+### Step 6 — Test the Pipeline
 
-Watch the startup logs:
+1. Drop a `.mp4` or `.mkv` VOD into `vods/`.
+2. In the dashboard, select it, leave style as `auto`, and click **Clip Selected**.
+3. Watch the stage progress monitor. First-time transcription is the slowest step; everything after is cached per-VOD.
+4. Finished clips land in `clips/` and show up in the dashboard's Clips gallery.
+
+Or from the command line:
 ```powershell
-docker compose logs -f stream-clipper
+clip.cmd --style auto --vod <name-fragment>
 ```
 
-You should see:
-```
-=== OpenClaw Stream Clipper ===
-Hardware: whisper=cuda (float16)
-Waiting for LM Studio server at http://host.docker.internal:1234...
-LM Studio server is reachable.
-Starting web dashboard on port 5000...
-Starting OpenClaw gateway...
-```
+### Step 7 — Set Up Discord Bot (Optional)
 
-If you see `WARNING: LM Studio not reachable`, make sure LM Studio's server is running with "Serve on Local Network" enabled.
+1. Create an application + bot at the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, copy the bot token.
+2. Put the token in `.env` as `DISCORD_BOT_TOKEN=...`.
+3. Invite the bot to your server (OAuth2 → URL Generator → scope `bot` → permissions: Send Messages, Read Message History, Attach Files).
+4. Start the gateway via `start.ps1`, then message the bot: `clip my stream`.
 
-### Step 6 — Open the Dashboard and Configure Models
-
-Open **http://localhost:5000** in your browser.
-
-1. Go to the **Models** panel.
-2. Set **Text Model** to the exact model ID from LM Studio (e.g., `qwen/qwen3.5-35b-a3b`). This must match LM Studio's ID exactly — click the dropdown to see loaded models.
-3. Set **Vision Model** (e.g., `qwen/qwen3-vl-8b`). You can use the same model as text if it supports vision.
-4. Set **Context Length** based on your VRAM (8192 is a safe default; 32768 if you have 24GB+ VRAM).
-5. Click **Save**.
-
-The dashboard status bar shows **LM Studio** (green = reachable, red = not reachable).
-
-### Step 7 — Test the Pipeline
-
-1. Copy a `.mp4` or `.mkv` stream recording into the `vods/` folder.
-
-2. In the Dashboard, click the VOD you added, set style to **auto**, and click **Clip Selected**.
-
-3. Watch the 8-stage progress in the Pipeline Monitor panel. A 3-hour VOD typically takes:
-   - Transcription: 40–60 minutes (first time; cached after)
-   - Segment detection: 5–20 minutes (depends on model)
-   - Moment detection: 30–180 minutes (depends on model and VOD length)
-   - Rendering: 5–10 minutes
-
-4. When complete, clips appear in the **Clips** panel and in the `clips/` folder.
-
-If anything fails, check the pipeline log: **Dashboard → Pipeline Monitor → View Log**, or:
-```powershell
-docker exec stream-clipper bash -c "tail -50 /tmp/clipper/pipeline.log"
-```
-
-Persistent logs are in `clips/.pipeline_logs/` and survive after the pipeline finishes.
-
-### Step 8 — Set Up Discord Bot (Optional)
-
-Once the pipeline works from the dashboard, you can add Discord integration.
-
-**Create the Discord application:**
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**.
-2. Give it a name (e.g., "Stream Clipper").
-3. Go to **Bot** → click **Add Bot**.
-4. Under **Privileged Gateway Intents**, enable **Message Content Intent** (required to read messages).
-5. Copy the **Token** (click Reset Token if needed). **Keep this secret.**
-
-**Configure the bot token:**
-
-Open `.env` and add your token:
-```
-DISCORD_BOT_TOKEN=your-bot-token-here
-```
-
-Restart the container to inject the token:
-```powershell
-docker compose down
-docker compose up -d
-```
-
-**Invite the bot to your server:**
-
-1. In the Developer Portal, go to **OAuth2 → URL Generator**.
-2. Under Scopes, check `bot`.
-3. Under Bot Permissions, check: **Send Messages**, **Read Message History**, **Add Reactions**, **Attach Files**.
-4. Copy the generated URL and open it in your browser to invite the bot to your server.
-
-**Test it in Discord:**
-
-Send the bot a message: `clip my stream`
-
-It will respond and start the pipeline. You can also be specific:
-```
-clip the funny parts from the lacy stream
-clip the irl jason stream
-find the hot takes
-```
-
-> **Note:** The bot uses the model configured in `config/openclaw.json → agents.defaults.model`. By default this is the same LM Studio model you configured in Step 6. A lighter model (9B) is recommended for the agent role since Discord commands are simple.
+The agent's behavior is governed by `workspace/AGENTS.md` and `workspace/skills/stream-clipper/SKILL.md` — it always calls the `exec` tool to run `clip.cmd`, never just replies with text.
 
 ---
 
 ## Dashboard
 
-Access at **http://localhost:5000** while the container is running.
-
-### Running on Windows (Recommended for Development)
-
-The dashboard can also run directly on Windows without being inside the container:
-```powershell
-pip install flask
-python dashboard/app.py
-```
-
-When running on Windows, the dashboard auto-detects this and routes all pipeline executions through `docker exec` into the running container.
-
-### Features
+Runs natively on Windows (`python dashboard/app.py`), default port **5001**. Key panels:
 
 | Panel | Function |
 |---|---|
-| **VOD Library** | Browse VODs with size, duration, processing status, transcription cache |
-| **Clip Controls** | Select style, stream type hint, force reprocess |
-| **Pipeline Monitor** | 8-stage progress dots, real-time log streaming (SSE), stage timestamps |
+| **VOD Library** | Browse VODs, processing status, transcription cache state |
+| **Clip Controls** | Style, stream-type hint, force reprocess, quality gate, frame-fit mode |
+| **Originality & Render** | Framing mode, style profiles toggle, jump cuts, captions, A/B variants, music bed |
+| **Pipeline Monitor** | 8-stage progress, live SSE log stream |
 | **Clips Gallery** | Preview and download rendered clips |
-| **Models** | Text model, vision model, context length — saves to `config/models.json` |
-| **Hardware** | Whisper device (CUDA/CPU) — saves to `config/hardware.json` |
-| **Status Bar** | LM Studio connectivity, pipeline running/idle |
+| **Models** | Text/vision model selection, context length |
+| **Hardware** | Whisper compute device (CUDA/CPU) |
+| **Reference Lab** | Decompose reference clips + your own output into attribute cards, generate a gap report |
 
-### Dashboard API
+The dashboard is a Flask app split into blueprints under `dashboard/routes/`; the frontend is vanilla JS modules under `dashboard/static/modules/`.
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `GET /api/vods` | GET | List all VODs with metadata |
-| `GET /api/status` | GET | Pipeline state + LM Studio connectivity |
-| `POST /api/clip` | POST | Start clipping a VOD |
-| `POST /api/stop` | POST | Stop the running pipeline |
-| `GET /api/clips` | GET | List generated clips |
-| `GET /api/models` | GET | Current model config + context guide |
-| `PUT /api/models` | PUT | Update model config |
-| `GET /api/log/stream` | GET | SSE live pipeline log |
+---
+
+## Buffer Clip Poster
+
+A separate app (`poster/`, port **5100**) for batch-publishing finished clips to TikTok + Instagram Reels through the [Buffer](https://buffer.com) API. Select clips from your `clips/` folder, apply hashtags, and post — each clip becomes its own post on each platform. Requires a Buffer API key and (since Buffer has no direct upload endpoint) a media-hosting leg — see [`wiki/entities/buffer-poster`](AIclippingPipelineVault/wiki/entities/buffer-poster.md) for the full setup, rate-limit behavior, and the top-rated clip filter.
+
+Start it with `start-poster.cmd` — it's fully independent of the main dashboard and safe to run alongside it.
 
 ---
 
@@ -519,34 +274,35 @@ When running on Windows, the dashboard auto-detects this and routes all pipeline
 
 ### Discord Commands
 
-The bot infers everything from natural language — no special syntax required:
-
 ```
-clip my stream                → auto style, next unprocessed VOD
-find the funny parts          → funny style
-clip the hype moments         → hype style
-get the emotional clips       → emotional style
-find the hot takes            → hot_take style
-get the dancing moments       → dancing style
-clip the lacy stream          → target VOD named "lacy"
-clip the funny irl lacy stream → funny style, irl type hint, VOD "lacy"
-list my vods / what streams   → list available VODs
+clip my stream                  → auto style, next unprocessed VOD
+find the funny parts            → funny style
+clip the hype moments           → hype style
+get the emotional clips         → emotional style
+find the hot takes              → hot_take style
+clip the lacy stream            → target VOD named "lacy"
+clip the funny irl lacy stream  → funny style, irl type hint, VOD "lacy"
+list my vods / what streams     → list available VODs
 ```
 
-### CLI (Run Pipeline Directly)
+### CLI
 
 ```powershell
 # Clip a specific VOD
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto --vod lacy"
+clip.cmd --style auto --vod lacy
 
 # Clip the next unprocessed VOD
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --style auto"
+clip.cmd --style auto
 
-# List available VODs
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --list"
+# Process every unprocessed VOD in one batch
+clip.cmd --all
 
-# Force re-process a VOD (ignore processed.log)
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --vod lacy --style funny"
+# List available VODs (JSON, no processing)
+clip.cmd --list
+
+# Force re-process (ignores processed.log; per-VOD checkpoints still apply
+# unless you also clear vods/.pipeline_state/<vod>)
+clip.cmd --vod lacy --force
 ```
 
 ### Pipeline Flags
@@ -554,36 +310,30 @@ docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --vod la
 | Flag | Values | Description |
 |---|---|---|
 | `--style` | `auto`, `funny`, `hype`, `emotional`, `hot_take`, `storytime`, `reactive`, `dancing`, `variety` | Clip category weighting |
-| `--vod` | any keyword | Target VOD by filename match; bypasses processed.log |
+| `--vod` | any keyword | Target VOD by filename match; bypasses `processed.log` |
+| `--vods` | comma-separated keywords | Target multiple specific VODs in one batch |
 | `--type` | `gaming`, `irl`, `just_chatting`, `reaction`, `debate` | Stream type hint for segment classification |
-| `--force` | — | Re-process the most recently added VOD |
+| `--all` | — | Process every unprocessed VOD |
+| `--force` | — | Ignore `processed.log` and re-run from scratch |
 | `--list` | — | Return JSON inventory of all VODs, no processing |
 
-### Monitoring a Running Pipeline
+Many more behaviors are controlled via environment variables (`CLIP_*`) rather than CLI flags — the dashboard sets these for you; see the wiki for the full list per feature.
 
-```powershell
-# Current stage (instant)
-docker exec stream-clipper bash -c "cat /tmp/clipper/pipeline_stage.txt"
+---
 
-# Live log (Ctrl+C to stop watching; pipeline keeps running)
-docker exec stream-clipper bash -c "tail -f /tmp/clipper/pipeline.log"
+## Configuration Files
 
-# Persistent log (survives pipeline completion)
-# On Windows host: clips\.pipeline_logs\YYYYMMDD_HHMMSS_VODNAME.log
-```
+| File | What it controls |
+|---|---|
+| `config/models.json` | `text_model`, `vision_model`, `whisper_model`, context length, per-stage model overrides |
+| `config/hardware.json` | Whisper compute device (CUDA/CPU) |
+| `config/openclaw.json` | Discord agent config: model, Discord token wiring, compaction settings |
+| `config/exec-approvals.json` | Command-execution allowlist for the Discord agent (must permit `clip.cmd`) |
+| `config/originality.json` | Dashboard-managed render defaults (framing mode, style profiles, captions, jump cuts, etc.) — regenerate from `config/originality.example.json` if deleted |
+| `config/shape_priors.json` | Per-content-species duration/pacing hints derived from reference-clip analysis |
+| `.env` | `DISCORD_BOT_TOKEN` |
 
-### Re-Processing and Cache Management
-
-```powershell
-# Force re-process all VODs (clear the processed log)
-echo. > vods\processed.log
-
-# Force re-transcription (delete cached transcript)
-del vods\.transcriptions\VODNAME.json
-
-# Force re-process without touching the log (use --vod flag)
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --vod lacy"
-```
+`config/` holds ~30 JSON files in total covering SFX cues, hook templates, caption voice, chat keywords, selection weighting, and more — each is documented on its relevant wiki concept page rather than exhaustively here. Secrets (`BufferIOapiKey.txt`, `CloudinaryAPI.txt`, `config/buffer_poster.json`) are gitignored and never committed.
 
 ---
 
@@ -591,90 +341,43 @@ docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --vod la
 
 ### "All VODs already processed"
 
-Clear `vods/processed.log`:
-```powershell
-echo. > vods\processed.log
-```
-Or use `--vod <name>` to target a specific VOD by name (always bypasses the log).
+Clear `vods/processed.log`, or use `--vod <name>` to target a specific VOD (always bypasses the log).
 
-### No clips in the output folder
+### No clips produced
 
-Check `clips/.diagnostics/last_run_*.json` or the pipeline log. Look for:
-- **Transcript quality**: Real words or dots/empty? → transcription failed
-- **keyword_moments count**: Should be hundreds for a long stream
-- **llm_moments count**: Zero → LM Studio not reachable or model token budget issue
-- **scored_moments count**: Zero → Stage 6 failed entirely
-- **clips_made**: Should match target clip count
+Check `clips/.diagnostics/last_run_*.json` and the pipeline log in `clips/.pipeline_logs/`. Look for: whether the transcript has real words (not empty/garbled), whether Stage 4 found any candidates, and whether a quality gate is set too high for a weak VOD (unjudged/low-scoring VODs can legitimately produce zero clips at a strict gate — lower it or set it to "All clips").
 
 ### LM Studio "not reachable"
 
-- Confirm LM Studio is running
-- Confirm **"Serve on Local Network"** is enabled in LM Studio's Developer/Server panel
-- Default port is 1234 — confirm nothing else is using it
-- Restart the container after enabling the setting: `docker compose restart`
+- Confirm LM Studio is running and its local server is started (Developer tab).
+- Confirm it's serving on port 1234 (default) — nothing else should be bound there.
+- The orchestrator always resolves to `http://localhost:1234` regardless of what's in `config/models.json`, so a stale docker-era URL in that file is harmless.
 
-### Stage 3/4/6 all chunks failing
+### Dashboard shows stale UI / missing features after an update
 
-The most common cause is token budget — the 35B model needs large `max_tokens` values to finish reasoning before producing output. Check the pipeline log for `finish=length, reasoning_tokens=XXXX, total_tokens=YYYY`. If `reasoning_tokens ≈ total_tokens`, the model was cut off mid-think. Use the dashboard Models panel to set the context length, or use a smaller model (9B).
+**Restart it.** Flask reads templates/static per-request but only registers routes at process start, so an old `dashboard/app.py` process will serve new frontend files against old (missing) backend routes. Kill every running `app.py` process and start one fresh. Identify dashboards by **listening port**, not process count — Windows' venv launcher spawns a base-interpreter child process, so one dashboard can show as two processes in Task Manager.
+
+### Port already in use
+
+The dashboard (default 5001) and poster app (default 5100) both roll forward to the next free port automatically if squatted — check the terminal output for the actual bound port, or pin one explicitly with `DASHBOARD_PORT` / `POSTER_PORT`.
+
+### Stage 4 (or any LLM stage) failing on every chunk
+
+Usually a token-budget issue with reasoning-capable models: check the log for `finish=length, reasoning_tokens=XXXX`. If reasoning tokens are consuming the whole budget, either raise the context length in **Dashboard → Models**, use a model with thinking disabled, or switch to a smaller/faster model.
 
 ### Bot responds with text but doesn't run the pipeline
 
-1. Check `config/exec-approvals.json` contains a wildcard pattern: `{"*": {"allowlist": [{"pattern": "*"}]}}`
-2. Clear stale sessions:
-   ```powershell
-   docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-   docker compose restart
-   ```
-3. Make sure **Message Content Intent** is enabled in Discord Developer Portal → Bot settings
+1. Confirm `config/exec-approvals.json` still has its wildcard allowlist pattern (`{"pattern": "*"}`) — this ships as the default in `exec-approvals.example.json`, but if you've since locked it down, `clip.cmd` needs to be explicitly allowed.
+2. Confirm **Message Content Intent** is enabled in the Discord Developer Portal.
+3. Clear stale OpenClaw sessions if the agent seems stuck in an old context.
 
 ### CUDA / GPU not available for Whisper
 
-```powershell
-# Check GPU is visible in container
-docker exec stream-clipper nvidia-smi
+Check `config/hardware.json` — set via **Dashboard → Hardware**, or confirm NVIDIA drivers are installed and `nvidia-smi` runs cleanly from a terminal.
 
-# Check Whisper device config
-type config\hardware.json
-# Should show: {"whisper_device": "cuda"}
+### Pipeline seems hung
 
-# If hardware.json missing, dashboard will default to CUDA
-# Set via Dashboard → Hardware panel
-```
-
-### Pipeline hung (30+ minutes, no stage progress)
-
-```powershell
-# Check what stage it's stuck on
-docker exec stream-clipper bash -c "cat /tmp/clipper/pipeline_stage.txt"
-
-# Kill and restart
-docker exec stream-clipper bash -c "pkill -f clip-pipeline"
-docker exec stream-clipper bash -c "bash /root/scripts/clip-pipeline.sh --vod YOURVODNAME"
-```
-
-### Full Reset
-
-```powershell
-docker compose down
-docker compose up -d --build
-```
-
-Then clear stale sessions if the bot was connected:
-```powershell
-docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*.jsonl"
-```
-
-### Quick Reference
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| "All VODs already processed" | VOD in processed.log | Clear log or use `--vod` |
-| No clips, llm_moments=0 | LM Studio not reachable or token limit | Check LM Studio server, check model config |
-| Stage 3/4 all "empty content" | Token budget too low for model | Increase max_tokens or use smaller model |
-| Bot replies with text, no exec | Missing exec-approvals or stale session | Fix exec-approvals, clear sessions |
-| "LM Studio not reachable" | Server off or LAN serving disabled | Start LM Studio + enable "Serve on Local Network" |
-| No CUDA for Whisper | NVIDIA toolkit not working | Check `docker exec stream-clipper nvidia-smi` |
-| Pipeline hung in Stage 4 | 35B model slow (normal) | Wait, or switch to 9B for faster runs |
+Check the log's last-modified time before assuming a hang — some stages (the vision judge, in particular) log in large silent batches and can legitimately run 10+ minutes with no new log lines. If it's genuinely stuck, stop it from the dashboard (which uses a PID marker to kill the correct process tree) rather than force-killing terminals blindly.
 
 ---
 
@@ -682,34 +385,48 @@ docker exec stream-clipper bash -c "rm -f /root/.openclaw/agents/main/sessions/*
 
 ```
 OpenClawStreamClipper/
-├── docker-compose.yml              # Single service: stream-clipper
-├── Dockerfile                      # CUDA 12.3 + Python + Node.js + Whisper + FFmpeg + OpenClaw
-├── .env.example                    # Discord token template
+├── clip.cmd                        # Native launcher — forwards args to run_pipeline.py
+├── start.ps1                       # Starts the dashboard + OpenClaw Discord gateway
+├── start-poster.cmd                # Starts the Buffer Clip Poster app (:5100)
+├── requirements-windows.txt        # Consolidated native (bare-metal) dependencies
 ├── scripts/
-│   ├── entrypoint.sh               # Container startup: inject token, detect hardware, start gateway
-│   └── clip-pipeline.sh            # 8-stage AI clipping pipeline (~1,800 lines)
+│   ├── run_pipeline.py             # Orchestrator: arg parsing, config resolution, 8-stage dispatch
+│   ├── pipeline/
+│   │   ├── common.py               # Logger, model load/unload via `lms` CLI, subprocess helpers
+│   │   └── stages/stage{1..8}.py   # One module per pipeline stage
+│   ├── lib/                        # ~64 modules: moment detection, vision, rendering, captions,
+│   │                                #   SFX, framing, style profiles, checkpoints, etc.
+│   └── research/                   # Reference Lab tooling, benchmarking, corpus comparison
 ├── dashboard/
-│   ├── app.py                      # Flask API + SSE streaming + docker exec bridge (Windows)
-│   ├── templates/index.html        # Single-page dark UI
-│   └── static/                     # CSS + vanilla JS
-├── config/
-│   ├── models.json                 # text_model, vision_model, whisper_model, llm_url, context_length
-│   ├── hardware.json               # whisper_device: "cuda" or "cpu"
-│   ├── openclaw.json               # OpenClaw agent config (LM Studio, Discord token, compaction)
-│   ├── exec-approvals.json         # Command execution allowlist for the agent
-│   ├── openclaw.example.json       # Template for openclaw.json
-│   └── exec-approvals.example.json # Template for exec-approvals.json
+│   ├── app.py                      # Flask entrypoint (native run, default :5001)
+│   ├── routes/                     # Blueprint per feature area
+│   ├── static/modules/             # Vanilla JS, one module per panel
+│   └── templates/index.html        # Single-page UI
+├── poster/                         # Buffer Clip Poster — separate sibling app (:5100)
+├── config/                         # ~30 JSON config files (models, originality, SFX, captions, ...)
 ├── workspace/
-│   ├── AGENTS.md                   # Bot identity + exec rules
+│   ├── AGENTS.md                   # Discord agent identity + exec rules
 │   └── skills/stream-clipper/
-│       └── SKILL.md                # Skill triggers, commands, style/type inference
+│       └── SKILL.md                # Trigger words, style/type inference, exec commands
 ├── vods/                           # Drop VOD files here (gitignored)
-│   ├── .transcriptions/            # Cached Whisper transcriptions (auto-created)
-│   └── processed.log               # Log of already-clipped VODs (auto-created)
-└── clips/                          # Rendered clips appear here (gitignored)
-    ├── .pipeline_logs/             # Persistent timestamped logs per run (auto-created)
-    └── .diagnostics/               # Pipeline diagnostic JSONs per run (auto-created)
+│   ├── .transcriptions/            # Cached transcripts (auto-created)
+│   └── .pipeline_state/            # Per-VOD checkpoint snapshots (auto-created)
+├── clips/                          # Rendered clips (gitignored)
+│   ├── .pipeline_logs/             # Persistent per-run logs
+│   ├── .diagnostics/               # Per-run diagnostic JSON
+│   └── post_kits/                  # Per-platform caption/hashtag kits
+├── reference_clips/                # Optional reference-clip corpus for the Reference Lab
+├── AIclippingPipelineVault/        # The living wiki — authoritative project knowledge base
+│   └── wiki/index.md               # Start here for anything not covered in this README
+└── legacy/                         # Retired Docker deployment (Dockerfile, docker-compose.yml,
+                                     #   the original bash pipeline) — kept for reference/rollback
 ```
+
+---
+
+## Legacy Docker Path
+
+Before the bare-metal port, this ran as one Docker container (bash pipeline) talking to native Windows LM Studio over `host.docker.internal`. That path is retired but not deleted — the files live under `legacy/`, and setting `CLIP_USE_DOCKER=1` still routes the dashboard through a `docker exec` bridge into that container if you need it. It does **not** receive any of the features or fixes documented above; bare-metal is the only actively developed path. See [`wiki/concepts/bare-metal-windows`](AIclippingPipelineVault/wiki/concepts/bare-metal-windows.md) for the full migration history.
 
 ---
 
