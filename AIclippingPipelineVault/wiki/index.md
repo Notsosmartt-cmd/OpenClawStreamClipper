@@ -10,6 +10,7 @@ Content catalog. Updated on every ingest. Read this first when answering queries
 - [[log-2026-Q2]] — log archive: 2026-Q2 (and earlier) entries, rotated out 2026-07-12 (verbatim)
 - [[hot]] — **Start here**: bounded current-state digest (models, in-flight work, recent changes, landmines)
 - [[overview]] — Full synthesis: architecture, pipeline, models, interfaces, design decisions
+- [[resume-dossier]] — Verified project facts (scale metrics, architecture decisions, bug stories) compiled for a resume-writing handoff — raw material, not resume copy
 - [[concepts/moment-discovery-upgrades]] — Hub for the Tier-1/2/3 moment-discovery upgrade plan (Q1–Q5, M1–M3, A1–A3)
 - [[concepts/tier-4-conversation-shape]] — Tier-4 plan (**status: planned**): conversation shape detection + Pass D rubric judge (per-phase 4.1–4.8)
 - [[sources/implementation-plan]] — Hub for the Phase 0–5 implementation plan (frame sampling, grounding, chat, speech, masking, model split)
