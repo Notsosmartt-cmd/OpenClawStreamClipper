@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>THE FINALS Clipper</title>
+<link rel="stylesheet" href="/static/finals.css">
+</head>
+<body>
+<header>
+  <h1><span class="logo">▲</span> THE FINALS <span class="sub">CLIPPER</span></h1>
+  <div id="status-pill" class="pill idle">idle</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Run a scan</h2>
+    <div class="grid">
+      <label class="wide">VOD
+        <select id="sel-vod"></select>
+      </label>
+      <label class="wide">…or a path anywhere on disk
+        <input id="inp-path" type="text" placeholder="G:\recordings\finals_session.mp4">
+      </label>
+      <label>Pre-buffer (s)<input id="inp-pre" type="number" value="10" min="0" max="60" step="1"></label>
+      <label>Post-buffer (s)<input id="inp-post" type="number" value="5" min="0" max="60" step="1"></label>
+      <label>End-screen clip cap (s)<input id="inp-endcap" type="number" value="6" min="1" max="20" step="1"></label>
+      <label>Sample fps<input id="inp-fps" type="number" value="2" min="0.5" max="6" step="0.5"></label>
+      <label>OCR
+        <select id="sel-ocr">
+          <option value="auto" selected>auto (GPU if free)</option>
+          <option value="gpu">GPU</option>
+          <option value="cpu">CPU</option>
+        </select>
+      </label>
+      <label>Window start (opt)<input id="inp-start" type="text" placeholder="00:10:00"></label>
+      <label>Window end (opt)<input id="inp-end" type="text" placeholder="01:40:00"></label>
+      <label class="check"><input id="chk-revives" type="checkbox" checked> Revive clips</label>
+      <label class="check"><input id="chk-endscreens" type="checkbox" checked> End-screen clips</label>
+    </div>
+    <div class="row">
+      <button id="btn-run" class="primary">Start scan</button>
+      <button id="btn-stop" class="danger" disabled>Stop</button>
+      <span id="run-msg" class="msg"></span>
+    </div>
+    <div class="progress"><div id="progress-bar"></div></div>
+    <div id="progress-line" class="mono dim"></div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <pre id="log" class="mono">—</pre>
+  </section>
+
+  <section class="card">
+    <h2>Results</h2>
+    <div class="row">
+      <select id="sel-run"></select>
+      <button id="btn-refresh">Refresh</button>
+      <span id="results-summary" class="msg"></span>
+    </div>
+    <table id="clips-table">
+      <thead><tr><th>Clip</th><th>Type</th><th>At</th><th>Len</th><th>Size</th><th>Teammates</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <video id="player" controls preload="none" style="display:none"></video>
+  </section>
+
+  <section class="card">
+    <h2>Probe a frame <span class="dim">(tune-check: enter a timestamp where you know you revived — see what the detector sees)</span></h2>
+    <div class="row">
+      <input id="inp-probe-t" type="text" placeholder="01:23:45" style="width:9rem">
+      <button id="btn-probe">Probe</button>
+    </div>
+    <pre id="probe-out" class="mono" style="display:none"></pre>
+    <img id="probe-img" style="display:none" alt="annotated probe frame">
+  </section>
+</main>
+
+<script src="/static/finals.js"></script>
+</body>
+</html>

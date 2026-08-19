@@ -32,6 +32,12 @@ clips/*
 !clips/.gitkeep
 
 # ============================================================
+# Finals clipper output — montage clips + events manifests
+# ============================================================
+finals_clips/*
+!finals_clips/.gitkeep
+
+# ============================================================
 # OpenClaw runtime data (sessions, auth, memory, device IDs)
 # ============================================================
 config/agents/

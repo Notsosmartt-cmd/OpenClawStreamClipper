@@ -1,0 +1,81 @@
+/* THE FINALS Clipper — deliberately distinct look (red/gold on near-black)
+   so it can't be confused with the teal main dashboard or the Buffer poster. */
+:root {
+  --bg: #0d0b0c;
+  --card: #161113;
+  --edge: #3a2226;
+  --text: #f2e9e4;
+  --dim: #a08d8a;
+  --red: #d31f3c;
+  --red-hot: #ff2d55;
+  --gold: #e8c15a;
+  --mono: Consolas, "Cascadia Mono", monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px; border-bottom: 2px solid var(--red);
+  background: linear-gradient(180deg, #1c0d11, #120a0c);
+}
+h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0.14em; font-weight: 800; }
+h1 .logo { color: var(--red-hot); }
+h1 .sub { color: var(--gold); font-weight: 300; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 60px; }
+.card {
+  background: var(--card); border: 1px solid var(--edge); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 18px;
+}
+h2 { margin: 0 0 12px; font-size: 1.02rem; color: var(--gold); letter-spacing: 0.05em; }
+.dim { color: var(--dim); font-weight: 400; font-size: 0.85em; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 14px; }
+.grid .wide { grid-column: span 2; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--dim); }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text); }
+input, select {
+  background: #0f0c0d; color: var(--text); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 7px 9px; font-size: 0.92rem;
+}
+input:focus, select:focus { outline: 1px solid var(--red); }
+.row { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+button {
+  background: #241418; color: var(--text); border: 1px solid var(--edge);
+  border-radius: 7px; padding: 8px 18px; font-size: 0.95rem; cursor: pointer;
+}
+button.primary { background: var(--red); border-color: var(--red-hot); font-weight: 700; }
+button.primary:hover { background: var(--red-hot); }
+button.danger { border-color: #7c2230; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.msg { color: var(--dim); font-size: 0.88rem; }
+.pill {
+  padding: 4px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.pill.idle { background: #241d1f; color: var(--dim); }
+.pill.running { background: var(--red); color: #fff; animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: 0.65; } }
+.progress {
+  height: 8px; background: #0f0c0d; border: 1px solid var(--edge);
+  border-radius: 999px; margin-top: 14px; overflow: hidden;
+}
+#progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--red), var(--gold)); transition: width 0.6s; }
+#progress-line { margin-top: 6px; font-size: 0.8rem; }
+.mono { font-family: var(--mono); }
+pre.mono {
+  background: #0a0809; border: 1px solid var(--edge); border-radius: 8px;
+  padding: 10px 12px; max-height: 300px; overflow: auto; font-size: 0.78rem;
+  white-space: pre-wrap; word-break: break-all;
+}
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.88rem; }
+th { text-align: left; color: var(--gold); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--edge); }
+td { padding: 6px 8px; border-bottom: 1px solid #241a1d; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #201316; }
+td.type-revive { color: var(--red-hot); font-weight: 600; }
+td.type-end { color: var(--gold); }
+#player { width: 100%; max-height: 420px; margin-top: 14px; border-radius: 8px; background: #000; }
+#probe-img { max-width: 100%; margin-top: 12px; border: 1px solid var(--edge); border-radius: 8px; }
+@media (max-width: 780px) { .grid { grid-template-columns: 1fr 1fr; } }

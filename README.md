@@ -11,7 +11,7 @@ A self-hosted, AI-powered livestream highlight clipper. Drop a VOD into a folder
 ## Table of Contents
 
 - [How It Works](#how-it-works)
-- [Two Interfaces (+ a Third App)](#two-interfaces--a-third-app)
+- [Two Interfaces (+ Sibling Apps)](#two-interfaces--sibling-apps)
 - [The Pipeline](#the-pipeline)
 - [Feature Highlights](#feature-highlights)
 - [Models](#models)
@@ -19,6 +19,7 @@ A self-hosted, AI-powered livestream highlight clipper. Drop a VOD into a folder
 - [Setup Guide](#setup-guide)
 - [Dashboard](#dashboard)
 - [Buffer Clip Poster](#buffer-clip-poster)
+- [THE FINALS Clipper](#the-finals-clipper)
 - [Usage](#usage)
 - [Configuration Files](#configuration-files)
 - [Troubleshooting](#troubleshooting)
@@ -85,7 +86,7 @@ Scales with VOD length — 3 clips/hour, minimum 3, capped at 20:
 
 ---
 
-## Two Interfaces (+ a Third App)
+## Two Interfaces (+ Sibling Apps)
 
 **Discord bot** (primary) — natural-language commands via the OpenClaw agent; results delivered as attachments. Driven by [`workspace/AGENTS.md`](workspace/AGENTS.md) (bot identity/rules) and [`workspace/skills/stream-clipper/SKILL.md`](workspace/skills/stream-clipper/SKILL.md) (trigger words → `clip.cmd` invocation).
 
@@ -97,6 +98,11 @@ python dashboard\app.py
 **Buffer Clip Poster** (optional, separate app) — a sibling Flask app on port **5100** for batch-posting finished clips straight to TikTok + Instagram Reels via the Buffer API. Entirely independent of the main dashboard. See [Buffer Clip Poster](#buffer-clip-poster) below. Start with:
 ```powershell
 start-poster.cmd
+```
+
+**THE FINALS Clipper** (optional, separate app) — a game-specific sibling app on port **5200** that OCR-scans a VOD for teammate-revive moments and end-of-match screens in THE FINALS, then cuts buffered montage clips. Completely separate from the transcript-driven main pipeline. See [THE FINALS Clipper](#the-finals-clipper) below. Start with:
+```powershell
+start-finals.cmd
 ```
 
 ---
@@ -134,6 +140,7 @@ The pipeline has grown well past "transcribe, detect, render" — a non-exhausti
 - **Per-VOD checkpoints** — a crashed or stopped run resumes from the last completed stage per VOD instead of restarting from scratch.
 - **Reference Lab** — a dashboard tab that decomposes a corpus of reference (competitor) clips into structured attribute cards, cards your own output the same way, and generates a gap report with concrete config levers.
 - **Buffer Clip Poster** — a separate app for batch-publishing finished clips to TikTok + Instagram Reels.
+- **THE FINALS Clipper** — a separate game-specific app that OCR-detects revive banners and end-of-match screens in THE FINALS VODs and cuts buffered montage clips (no LLM involved — pure HUD detection).
 
 See [`wiki/index.md`](AIclippingPipelineVault/wiki/index.md) for the full list of concept pages — captions, style profiles, SFX taxonomy, jump cuts, originality/fingerprinting, the reference-comparison loop, and more each have their own page.
 
@@ -270,6 +277,17 @@ Start it with `start-poster.cmd` — it's fully independent of the main dashboar
 
 ---
 
+## THE FINALS Clipper
+
+A separate game-specific app (`finals/` + `scripts/finals/`, port **5200**, pin with `FINALS_PORT`) for making revive-montage source material from THE FINALS gameplay. It doesn't use the main pipeline at all — revives and scoreboards are *visual HUD events* the transcript-driven stages can't see. Instead it decodes the VOD at ~2 fps (NVDEC-accelerated) and runs targeted OCR (easyocr, GPU when free) over two screen regions:
+
+- **Revives** — detects the center-screen `REVIVE <TEAMMATE>` completion banner and the `REVIVE 200 + 200` score popup, then cuts a clip with a configurable buffer (default **10 s before / 5 s after**; back-to-back defib chains merge into one clip). World-space "REVIVE" markers over downed teammates and the "HOLD TO REVIVE" prompt are recognized and excluded, so being *near* a downed teammate never false-positives.
+- **End-of-match screens** — classifies the red summary screens (Tournament Result, Team Performance, and the personal DEFEATED/VICTORY performance overview) and cuts a quick capped clip (default 6 s) of *each appearance* of each screen.
+
+Clips are montage **raw material**: source resolution and audio, no captions, no 9:16 crop. Output lands in `finals_clips/<vod-stem>/` with an `events.json` manifest. The dashboard has a **Probe** panel — enter a timestamp where you know you revived and it shows you exactly what the detector saw on that frame (annotated image + OCR text), which is the fast way to sanity-check a new VOD source. Start it with `start-finals.cmd`; CLI equivalent: `.venv\Scripts\python.exe scripts\finals\run_finals.py --vod <path>`. Full details: [`wiki/entities/finals-clipper`](AIclippingPipelineVault/wiki/entities/finals-clipper.md).
+
+---
+
 ## Usage
 
 ### Discord Commands
@@ -359,7 +377,7 @@ Check `clips/.diagnostics/last_run_*.json` and the pipeline log in `clips/.pipel
 
 ### Port already in use
 
-The dashboard (default 5001) and poster app (default 5100) both roll forward to the next free port automatically if squatted — check the terminal output for the actual bound port, or pin one explicitly with `DASHBOARD_PORT` / `POSTER_PORT`.
+The dashboard (default 5001), poster app (default 5100), and Finals clipper (default 5200) all roll forward to the next free port automatically if squatted — check the terminal output for the actual bound port, or pin one explicitly with `DASHBOARD_PORT` / `POSTER_PORT` / `FINALS_PORT`.
 
 ### Stage 4 (or any LLM stage) failing on every chunk
 
@@ -388,6 +406,7 @@ OpenClawStreamClipper/
 ├── clip.cmd                        # Native launcher — forwards args to run_pipeline.py
 ├── start.ps1                       # Starts the dashboard + OpenClaw Discord gateway
 ├── start-poster.cmd                # Starts the Buffer Clip Poster app (:5100)
+├── start-finals.cmd                # Starts THE FINALS Clipper app (:5200)
 ├── requirements-windows.txt        # Consolidated native (bare-metal) dependencies
 ├── scripts/
 │   ├── run_pipeline.py             # Orchestrator: arg parsing, config resolution, 8-stage dispatch
@@ -396,13 +415,15 @@ OpenClawStreamClipper/
 │   │   └── stages/stage{1..8}.py   # One module per pipeline stage
 │   ├── lib/                        # ~64 modules: moment detection, vision, rendering, captions,
 │   │                                #   SFX, framing, style profiles, checkpoints, etc.
-│   └── research/                   # Reference Lab tooling, benchmarking, corpus comparison
+│   ├── research/                   # Reference Lab tooling, benchmarking, corpus comparison
+│   └── finals/                     # THE FINALS HUD detector (OCR scan + clip cutter)
 ├── dashboard/
 │   ├── app.py                      # Flask entrypoint (native run, default :5001)
 │   ├── routes/                     # Blueprint per feature area
 │   ├── static/modules/             # Vanilla JS, one module per panel
 │   └── templates/index.html        # Single-page UI
 ├── poster/                         # Buffer Clip Poster — separate sibling app (:5100)
+├── finals/                         # THE FINALS Clipper dashboard — separate sibling app (:5200)
 ├── config/                         # ~30 JSON config files (models, originality, SFX, captions, ...)
 ├── workspace/
 │   ├── AGENTS.md                   # Discord agent identity + exec rules
@@ -415,6 +436,7 @@ OpenClawStreamClipper/
 │   ├── .pipeline_logs/             # Persistent per-run logs
 │   ├── .diagnostics/               # Per-run diagnostic JSON
 │   └── post_kits/                  # Per-platform caption/hashtag kits
+├── finals_clips/                   # THE FINALS Clipper output (gitignored)
 ├── reference_clips/                # Optional reference-clip corpus for the Reference Lab
 ├── AIclippingPipelineVault/        # The living wiki — authoritative project knowledge base
 │   └── wiki/index.md               # Start here for anything not covered in this README
