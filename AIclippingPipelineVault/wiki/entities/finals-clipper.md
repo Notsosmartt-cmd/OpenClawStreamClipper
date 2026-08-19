@@ -3,7 +3,7 @@ title: THE FINALS Clipper
 type: entity
 tags: [app, finals, ocr, montage, sibling-app]
 sources: [finals/, scripts/finals/, start-finals.cmd]
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # THE FINALS Clipper
@@ -24,6 +24,9 @@ Two halves, decoupled the same way as dashboard ↔ pipeline:
   - `finals_cut.py` — buffer windows → merge overlaps → NVENC re-encode cuts (libx264 fallback). Clips are **raw material**: source resolution/audio, no captions, no 9:16.
   - `run_finals.py` — CLI: scan+cut, `--probe T` (one-frame classify + annotated jpg), `--selftest` (12 synthetic-frame checks), pid/done run markers, `--max-minutes` watchdog (default 240 — every run is bounded).
 - **App** — `finals/` (Flask :5200, mirrors `poster/` layout): `app.py`, `_state.py`, `runner.py` (spawn/stop with `taskkill /T` + cross-process markers — BUG 67/72 lessons applied), `routes.py`, one HTML/CSS/JS page (red/gold theme, deliberately distinct). Start: `start-finals.cmd`.
+
+> [!note] Multi-VOD batching (2026-08-20, owner-requested parity with the main dashboard)
+> Owner: "I can't select multiple vods in the finals pipeline as I can in the main pipeline." The single VOD dropdown became a **checkbox multi-select table** — same interaction pattern as [[entities/dashboard]]'s `vods-panel.js` (row-click/checkbox toggle, header select-all, button label shows the count) — plus an "add a path" chip list for files outside `vods/`. Engine side: `run_finals.py` now takes `--vod` (repeatable) or `--vods` (comma-separated, same convention as `run_pipeline.py`) and loops the queue **sequentially in one subprocess**, writing `events.json` per VOD into its own `finals_clips/<stem>/` as before. One VOD failing logs and moves on rather than aborting the batch (checkpoint-style resilience, not true resume — each item starts fresh). The pid marker is rewritten per queue item (`index=`/`total=`/`queue=` fields) so `/api/state` can report `"VOD 2/4"` position; `--max-minutes` re-arms per VOD, not per batch. `start`/`end` scan-window fields apply to every queued VOD (documented via tooltip — a shared window across differently-sized VODs is a known sharp edge, not yet solved). Verified live: 2-VOD batch queued+ran sequentially end-to-end over HTTP, per-item progress reporting confirmed, legacy single `{"vod": ...}` body still accepted, 409 double-run guard intact, clean process-tree stop mid-queue (no orphaned ffmpeg).
 
 Output: `finals_clips/<vod-stem>/*.mp4` + `events.json` manifest (events, params, stats, clips). Gitignored like `clips/`.
 
@@ -53,8 +56,8 @@ Each contiguous same-type span → one quick clip, capped at `end_cap` (default 
 - Cutter: fabricated overlapping events → correct `x2` merge with both names; 12 s span capped to 6 s; NVENC path confirmed.
 - App: all endpoints exercised over HTTP (run / 409 double-run guard / state+progress / stop with clean process tree — verified no orphaned ffmpeg — / results / probe with annotated image).
 
-> [!warning] Not yet validated on real THE FINALS footage
-> No Finals VOD existed on disk at build time — band geometry and keywords come from the owner's screenshots. First real run: use the **Probe** panel on a known revive timestamp and eyeball the annotated frame; adjust `REVIVE_BAND` / gates in `finals_common.py` if the recording layout differs (e.g. facecam overlays near the band).
+> [!warning] Detector fires on real footage, but no owner eyeball-confirmation yet
+> No Finals VOD existed on disk at build time — band geometry and keywords come from the owner's screenshots. Owner has since moved real Finals VODs into `vods/` (2026-08-20); smoke-testing a 30s window of two of them DID produce a genuine revive event each (gate + OCR fired on real HUD, not just synthetic frames) — but the extracted teammate names were noisy across multiple OCR reads of the same banner (expected — grouping keeps every distinct string seen, so a garbled read shows up as an extra "name"). Still owner-unverified: use the **Probe** panel on a known revive timestamp and eyeball the annotated frame before trusting a full-VOD batch run; adjust `REVIVE_BAND` / gates in `finals_common.py` if the recording layout differs (e.g. facecam overlays near the band).
 
 ## Knobs (dashboard + CLI)
 

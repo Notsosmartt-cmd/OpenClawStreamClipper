@@ -62,14 +62,27 @@ def marker_pid() -> int | None:
     return None
 
 
-def marker_vod() -> str:
+def marker_info() -> dict:
+    """Parse the pid marker's queue fields: current vod, 0-based index, total,
+    and the full queue (pipe-joined vod= is the current item; queue= is all)."""
+    out = {"vod": "", "index": 0, "total": 0, "queue": []}
     try:
         for line in (_state.RUN_DIR / "pid").read_text(encoding="utf-8").splitlines():
             if line.startswith("vod="):
-                return line.split("=", 1)[1].strip()
+                out["vod"] = line.split("=", 1)[1].strip()
+            elif line.startswith("index="):
+                out["index"] = int(line.split("=", 1)[1].strip())
+            elif line.startswith("total="):
+                out["total"] = int(line.split("=", 1)[1].strip())
+            elif line.startswith("queue="):
+                out["queue"] = [q for q in line.split("=", 1)[1].strip().split("|") if q]
     except Exception:
         pass
-    return ""
+    return out
+
+
+def marker_vod() -> str:
+    return marker_info()["vod"]
 
 
 def is_running() -> bool:
@@ -82,10 +95,12 @@ def is_running() -> bool:
     return marker_pid() is not None
 
 
-def spawn(vod: str, params: dict) -> None:
+def spawn(vods: list[str], params: dict) -> None:
     _state.RUN_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = [str(_state.PYTHON), str(_state.RUNNER), "--vod", vod,
-           "--pre", str(params.get("pre", 10)),
+    cmd = [str(_state.PYTHON), str(_state.RUNNER)]
+    for v in vods:
+        cmd += ["--vod", v]
+    cmd += ["--pre", str(params.get("pre", 10)),
            "--post", str(params.get("post", 5)),
            "--end-cap", str(params.get("end_cap", 6)),
            "--fps", str(params.get("fps", 2)),
@@ -107,7 +122,7 @@ def spawn(vod: str, params: dict) -> None:
     proc = subprocess.Popen(cmd, **kwargs)
     proc._log_fh = log_fh  # closed on stop; GC'd otherwise
     _state.job_process = proc
-    _state.job_meta = {"vod": vod, "params": params, "started": time.time()}
+    _state.job_meta = {"vods": vods, "params": params, "started": time.time()}
     _state.last_exit = None
 
 
@@ -155,11 +170,12 @@ def tail_log(n: int = 300) -> str:
 
 
 def progress() -> dict:
-    """Parse the newest '[scan] xx.x%' line for the UI progress bar."""
-    out = {"pct": None, "line": ""}
+    """Parse the newest '[scan] xx.x%' line (per-VOD bar) plus the queue
+    position from the pid marker (overall 'VOD 2/4' bar)."""
+    out = {"pct": None, "line": "", "queue_index": 0, "queue_total": 0, "queue": []}
     try:
         for line in reversed(_state.LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()):
-            if line.startswith("[scan]") or line.startswith("[cut]") or line.startswith("[finals]"):
+            if line.startswith(("[scan]", "[cut]", "[finals]", "[queue]")):
                 out["line"] = line.strip()
                 break
         for line in reversed(_state.LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()):
@@ -169,6 +185,13 @@ def progress() -> dict:
             if line.startswith(("[cut]", "[finals]")):
                 out["pct"] = 100.0
                 break
+            if line.startswith("[queue]"):
+                out["pct"] = 0.0
+                break
     except Exception:
         pass
+    info = marker_info()
+    out["queue_index"] = info["index"]
+    out["queue_total"] = info["total"]
+    out["queue"] = [os.path.basename(v) for v in info["queue"]]
     return out

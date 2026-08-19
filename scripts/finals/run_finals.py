@@ -197,70 +197,59 @@ def _run_dir() -> str:
     return d
 
 
-def write_pid_marker(vod: str) -> None:
+def write_pid_marker(vods: list[str], index: int) -> None:
+    """(Re)written once per queue item so a poller can show 'VOD 2/4'. The
+    started= timestamp is only set on the FIRST write of a run (queue_started
+    file) so the whole-batch elapsed time is still recoverable."""
     done = os.path.join(_run_dir(), "done")
     if os.path.exists(done):
         os.remove(done)
+    started_path = os.path.join(_run_dir(), "queue_started")
+    if index == 0:
+        with open(started_path, "w", encoding="utf-8") as fh:
+            fh.write(str(int(time.time())))
+    started = int(time.time())
+    if os.path.exists(started_path):
+        try:
+            started = int(open(started_path, encoding="utf-8").read().strip())
+        except Exception:
+            pass
     with open(os.path.join(_run_dir(), "pid"), "w", encoding="utf-8") as fh:
-        fh.write(f"pid={os.getpid()}\nvod={vod}\nstarted={int(time.time())}\n")
+        fh.write(f"pid={os.getpid()}\nvod={vods[index]}\nindex={index}\ntotal={len(vods)}\n"
+                 f"queue={'|'.join(vods)}\nstarted={started}\n")
 
 
 def write_done_marker(code: int) -> None:
     try:
         with open(os.path.join(_run_dir(), "done"), "w", encoding="utf-8") as fh:
             fh.write(f"exit_code={code}\nfinished={int(time.time())}\n")
+        started_path = os.path.join(_run_dir(), "queue_started")
+        if os.path.exists(started_path):
+            os.remove(started_path)
     except Exception:
         pass
 
 
-# --- main ------------------------------------------------------------------------
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description="THE FINALS revive + end-screen clipper")
-    ap.add_argument("--vod", help="VOD path (absolute, or a name inside vods/)")
-    ap.add_argument("--out", help="output dir (default finals_clips/<vod-stem>)")
-    ap.add_argument("--pre", type=float, default=fc.DEFAULT_PRE_S, help="seconds before the revive")
-    ap.add_argument("--post", type=float, default=fc.DEFAULT_POST_S, help="seconds after the revive")
-    ap.add_argument("--end-cap", type=float, default=fc.DEFAULT_END_CAP_S,
-                    help="max length of each end-screen quick clip")
-    ap.add_argument("--fps", type=float, default=2.0, help="sample rate (frames/sec scanned)")
-    ap.add_argument("--ocr", choices=("auto", "gpu", "cpu"), default="auto")
-    ap.add_argument("--no-revives", action="store_true")
-    ap.add_argument("--no-endscreens", action="store_true")
-    ap.add_argument("--start", type=parse_time, default=0.0, help="scan window start (s or HH:MM:SS)")
-    ap.add_argument("--end", type=parse_time, default=0.0, help="scan window end")
-    ap.add_argument("--max-minutes", type=float, default=240.0, help="hard wall-clock bound")
-    ap.add_argument("--no-hwaccel", action="store_true")
-    ap.add_argument("--scan-only", action="store_true", help="detect + write events.json, no cutting")
-    ap.add_argument("--probe", type=parse_time, default=None, metavar="T",
-                    help="classify one frame at T, save annotated jpg, exit")
-    ap.add_argument("--selftest", action="store_true")
-    args = ap.parse_args()
-
-    if args.selftest:
-        return selftest(args.ocr)
-
-    if not args.vod:
-        ap.error("--vod is required (unless --selftest)")
-    vod = args.vod
+def resolve_vod(raw: str) -> str | None:
+    vod = raw
     if not os.path.isabs(vod) and not os.path.exists(vod):
         candidate = os.path.join(PROJECT, "vods", vod)
         if os.path.exists(candidate):
             vod = candidate
     if not os.path.exists(vod):
-        log(f"[finals] VOD not found: {args.vod}")
-        return 1
-    vod = os.path.abspath(vod)
+        return None
+    return os.path.abspath(vod)
 
-    if args.probe is not None:
-        return probe(vod, args.probe, args.ocr)
 
+def process_one(vod: str, args, log=log) -> bool:
+    """Scan + cut one VOD into finals_clips/<stem>/. Returns True on success —
+    failures are logged and swallowed so one bad VOD doesn't kill the queue
+    (same resilience spirit as the main pipeline's per-VOD checkpointing)."""
     stem = os.path.splitext(os.path.basename(vod))[0]
-    out_dir = os.path.abspath(args.out) if args.out else os.path.join(OUT_ROOT, stem)
+    out_dir = os.path.abspath(args.out) if (args.out and len(args._vods) == 1) \
+        else os.path.join(OUT_ROOT, stem)
     os.makedirs(out_dir, exist_ok=True)
 
-    write_pid_marker(vod)
-    code = 1
     try:
         import finals_scan
         import finals_cut
@@ -296,7 +285,75 @@ def main() -> int:
             f"{len(payload['end_spans'])} end-screen span(s) -> "
             f"{sum(1 for c in payload['clips'] if c['type'] != 'revive')} clip(s)")
         log(f"[finals] output: {out_dir}")
-        code = 0
+        return True
+    except Exception as e:
+        log(f"[finals] FAILED on {os.path.basename(vod)}: {e}")
+        return False
+
+
+# --- main ------------------------------------------------------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="THE FINALS revive + end-screen clipper")
+    ap.add_argument("--vod", action="append", default=[],
+                    help="VOD path (absolute, or a name inside vods/) — repeatable")
+    ap.add_argument("--vods", default="",
+                    help="comma-separated VOD names/stems to process sequentially "
+                         "(dashboard multi-select — same convention as run_pipeline.py)")
+    ap.add_argument("--out", help="output dir override — only honored for a single VOD")
+    ap.add_argument("--pre", type=float, default=fc.DEFAULT_PRE_S, help="seconds before the revive")
+    ap.add_argument("--post", type=float, default=fc.DEFAULT_POST_S, help="seconds after the revive")
+    ap.add_argument("--end-cap", type=float, default=fc.DEFAULT_END_CAP_S,
+                    help="max length of each end-screen quick clip")
+    ap.add_argument("--fps", type=float, default=2.0, help="sample rate (frames/sec scanned)")
+    ap.add_argument("--ocr", choices=("auto", "gpu", "cpu"), default="auto")
+    ap.add_argument("--no-revives", action="store_true")
+    ap.add_argument("--no-endscreens", action="store_true")
+    ap.add_argument("--start", type=parse_time, default=0.0, help="scan window start (s or HH:MM:SS)")
+    ap.add_argument("--end", type=parse_time, default=0.0, help="scan window end")
+    ap.add_argument("--max-minutes", type=float, default=240.0,
+                    help="hard wall-clock bound PER VOD (the queue re-arms it for each item)")
+    ap.add_argument("--no-hwaccel", action="store_true")
+    ap.add_argument("--scan-only", action="store_true", help="detect + write events.json, no cutting")
+    ap.add_argument("--probe", type=parse_time, default=None, metavar="T",
+                    help="classify one frame at T, save annotated jpg, exit (single VOD only)")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args()
+
+    if args.selftest:
+        return selftest(args.ocr)
+
+    raw_vods = list(args.vod)
+    raw_vods += [v.strip() for v in args.vods.split(",") if v.strip()]
+    if not raw_vods:
+        ap.error("--vod (repeatable) or --vods (comma-separated) is required (unless --selftest)")
+
+    vods: list[str] = []
+    for raw in raw_vods:
+        resolved = resolve_vod(raw)
+        if not resolved:
+            log(f"[finals] VOD not found: {raw}")
+            return 1
+        if resolved not in vods:  # de-dupe (same VOD picked via dropdown + typed path)
+            vods.append(resolved)
+    args._vods = vods
+
+    if args.probe is not None:
+        if len(vods) != 1:
+            ap.error("--probe takes exactly one --vod")
+        return probe(vods[0], args.probe, args.ocr)
+
+    log(f"[finals] queue: {len(vods)} VOD(s)")
+    ok_count = 0
+    code = 1
+    try:
+        for i, vod in enumerate(vods):
+            write_pid_marker(vods, i)
+            log(f"[queue] VOD {i + 1}/{len(vods)}: {os.path.basename(vod)}")
+            if process_one(vod, args):
+                ok_count += 1
+        log(f"[finals] queue done — {ok_count}/{len(vods)} VOD(s) succeeded")
+        code = 0 if ok_count == len(vods) else 1
     finally:
         write_done_marker(code)
     return code

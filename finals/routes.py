@@ -29,10 +29,14 @@ def _resolve_vod(raw: str) -> str | None:
 @bp.route("/api/state")
 def api_state():
     running = runner.is_running()
-    vod = _state.job_meta.get("vod") or runner.marker_vod()
+    meta_vods = _state.job_meta.get("vods") or []
+    info = runner.marker_info()
+    vods = [os.path.basename(v) for v in meta_vods] or [os.path.basename(v) for v in info["queue"]]
+    current = os.path.basename(info["vod"]) if info["vod"] else (vods[0] if vods else "")
     return jsonify({
         "running": running,
-        "vod": os.path.basename(vod) if (running and vod) else "",
+        "vods": vods if running else [],
+        "vod": current if running else "",
         "params": _state.job_meta.get("params", {}),
         "progress": runner.progress() if (running or _state.LOG_FILE.exists()) else {},
         "last_exit": _state.last_exit,
@@ -55,13 +59,36 @@ def api_vods():
 
 @bp.route("/api/run", methods=["POST"])
 def api_run():
+    """Accepts a batch: {"vods": ["a.mp4", "b.mp4", ...]} (dashboard multi-select,
+    same "vods" convention as the main pipeline's /api/run) — or a single
+    {"vod": "a.mp4"} for back-compat / the CLI-style single pick. Queued VODs
+    run sequentially in one subprocess; see run_finals.py's queue loop."""
     data = request.get_json(silent=True) or {}
     with _state.job_lock:
         if runner.is_running():
             return jsonify({"error": "A Finals scan is already running"}), 409
-        vod = _resolve_vod(data.get("vod", ""))
-        if not vod:
-            return jsonify({"error": f"VOD not found: {data.get('vod', '')!r}"}), 400
+
+        requested = data.get("vods") or []
+        if isinstance(requested, str):
+            requested = [requested]
+        if not requested and data.get("vod"):
+            requested = [data["vod"]]
+        requested = [str(v).strip() for v in requested if str(v).strip()]
+        if not requested:
+            return jsonify({"error": "No VOD selected"}), 400
+
+        vods: list[str] = []
+        missing: list[str] = []
+        for raw in requested:
+            resolved = _resolve_vod(raw)
+            if resolved:
+                if resolved not in vods:
+                    vods.append(resolved)
+            else:
+                missing.append(raw)
+        if missing:
+            return jsonify({"error": f"VOD(s) not found: {', '.join(missing)}"}), 400
+
         params = {
             "pre": max(0.0, float(data.get("pre", 10))),
             "post": max(0.0, float(data.get("post", 5))),
@@ -77,8 +104,8 @@ def api_run():
         for key in ("start", "end"):
             if params[key] and not re.fullmatch(r"[\d:.]+", params[key]):
                 return jsonify({"error": f"Bad {key} time: {params[key]!r}"}), 400
-        runner.spawn(vod, params)
-    return jsonify({"ok": True, "vod": os.path.basename(vod)})
+        runner.spawn(vods, params)
+    return jsonify({"ok": True, "vods": [os.path.basename(v) for v in vods], "count": len(vods)})
 
 
 @bp.route("/api/stop", methods=["POST"])
