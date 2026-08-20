@@ -142,6 +142,8 @@ async function startRun() {
     ocr: q("sel-ocr").value,
     revives: q("chk-revives").checked,
     endscreens: q("chk-endscreens").checked,
+    montage: q("chk-montage").checked,
+    montage_speed: parseFloat(q("inp-mspeed").value) || 1.75,
     start: q("inp-start").value.trim(),
     end: q("inp-end").value.trim(),
   };
@@ -162,6 +164,18 @@ async function stopRun() {
   poll();
 }
 
+// Montage an existing run's clips (no re-scan) at the speed set in settings.
+async function montageRun() {
+  const stem = q("sel-run").value;
+  if (!stem) { q("results-summary").textContent = "no run selected"; return; }
+  const speed = parseFloat(q("inp-mspeed").value) || 1.75;
+  const { status, data } = await jpost("/api/montage", { stem, speed });
+  q("results-summary").textContent = status === 200
+    ? `building montage of ${stem} at ${speed}×…`
+    : (data.error || `error ${status}`);
+  poll();
+}
+
 // --- state poll --------------------------------------------------------------------
 async function poll() {
   let st;
@@ -170,6 +184,7 @@ async function poll() {
   pill.className = "pill " + (st.running ? "running" : "idle");
   pill.textContent = st.running ? `scanning ${st.vod}` : "idle";
   q("btn-run").disabled = st.running;
+  q("btn-montage").disabled = st.running;
   q("btn-stop").disabled = !st.running;
   const p = st.progress || {};
   q("progress-bar").style.width = (p.pct != null ? p.pct : 0) + "%";
@@ -226,16 +241,22 @@ async function loadRunDetail() {
   tbody.innerHTML = "";
   const clips = d.clips && d.clips.length ? d.clips
     : (d.files || []).map((f) => ({ file: f.file, type: "?", start: null, dur: null, names: [] }));
-  for (const c of clips) {
+  // Montage first — it's the headline output of the run.
+  const ordered = [...clips.filter((c) => c.type === "montage"),
+                   ...clips.filter((c) => c.type !== "montage")];
+  for (const c of ordered) {
     const tr = document.createElement("tr");
-    const isRev = c.type === "revive";
+    const typeCls = c.type === "montage" ? "type-montage" : (c.type === "revive" ? "type-revive" : "type-end");
+    const extra = c.type === "montage"
+      ? `${c.speed}× · ${c.source_clips} clip${c.source_clips === 1 ? "" : "s"}`
+      : (c.names || []).join(", ");
     tr.innerHTML =
       `<td class="mono">${c.file}</td>` +
-      `<td class="${isRev ? "type-revive" : "type-end"}">${c.type}</td>` +
+      `<td class="${typeCls}">${c.type}</td>` +
       `<td class="mono">${c.start != null ? fmtClock(c.start) : ""}</td>` +
       `<td>${c.dur != null ? c.dur.toFixed(1) + "s" : ""}</td>` +
       `<td>${sizes[c.file] != null ? sizes[c.file] + " MB" : ""}</td>` +
-      `<td>${(c.names || []).join(", ")}</td>`;
+      `<td>${extra}</td>`;
     tr.addEventListener("click", () => {
       const v = q("player");
       v.style.display = "block";
@@ -276,6 +297,7 @@ async function probe() {
 q("btn-run").addEventListener("click", startRun);
 q("btn-stop").addEventListener("click", stopRun);
 q("btn-refresh").addEventListener("click", loadResults);
+q("btn-montage").addEventListener("click", montageRun);
 q("btn-refresh-vods").addEventListener("click", loadVods);
 q("vod-select-all").addEventListener("change", (e) => toggleAllVods(e.target.checked));
 q("btn-add-path").addEventListener("click", addPath);

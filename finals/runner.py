@@ -106,15 +106,30 @@ def spawn(vods: list[str], params: dict) -> None:
            "--fps", str(params.get("fps", 2)),
            "--ocr", str(params.get("ocr", "auto")),
            "--max-minutes", str(params.get("max_minutes", 240))]
+    cmd += ["--montage-speed", str(params.get("montage_speed", 1.75))]
     if not params.get("revives", True):
         cmd.append("--no-revives")
     if not params.get("endscreens", True):
         cmd.append("--no-endscreens")
+    if not params.get("montage", True):
+        cmd.append("--no-montage")
     if params.get("start"):
         cmd += ["--start", str(params["start"])]
     if params.get("end"):
         cmd += ["--end", str(params["end"])]
 
+    _launch(cmd, vods, params)
+
+
+def spawn_remontage(stem: str, speed: float) -> None:
+    """Rebuild the montage of an existing run (run_finals.py --remontage)."""
+    _state.RUN_DIR.mkdir(parents=True, exist_ok=True)
+    cmd = [str(_state.PYTHON), str(_state.RUNNER),
+           "--remontage", stem, "--montage-speed", str(speed)]
+    _launch(cmd, [stem], {"remontage": True, "montage_speed": speed})
+
+
+def _launch(cmd: list[str], vods: list[str], params: dict) -> None:
     log_fh = open(_state.LOG_FILE, "w", encoding="utf-8", buffering=1)
     kwargs = dict(stdout=log_fh, stderr=subprocess.STDOUT, cwd=str(_state.PROJECT_DIR))
     if os.name == "nt":

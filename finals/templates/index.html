@@ -54,6 +54,8 @@
       <label title="Applies to every queued VOD — leave blank for full-length VODs, or only queue one VOD when using a window">Window end (opt)<input id="inp-end" type="text" placeholder="01:40:00"></label>
       <label class="check"><input id="chk-revives" type="checkbox" checked> Revive clips</label>
       <label class="check"><input id="chk-endscreens" type="checkbox" checked> End-screen clips</label>
+      <label class="check" title="Combine this run's clips (chronological — revives, then that match's end screens) into one sped-up montage per VOD. Individual clips are kept."><input id="chk-montage" type="checkbox" checked> Build montage</label>
+      <label>Montage speed (×)<input id="inp-mspeed" type="number" value="1.75" min="1" max="3" step="0.25"></label>
     </div>
     <div class="row">
       <button id="btn-run" class="primary">Start scan</button>
@@ -75,6 +77,7 @@
     <div class="row">
       <select id="sel-run"></select>
       <button id="btn-refresh">Refresh</button>
+      <button id="btn-montage" title="Combine this run's already-cut clips into a montage at the speed set above — no re-scan">Montage this run</button>
       <span id="results-summary" class="msg"></span>
     </div>
     <table id="clips-table">

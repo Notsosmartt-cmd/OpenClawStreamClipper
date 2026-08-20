@@ -49,6 +49,18 @@ Hits within 3 s group into one event; clip = `[t_first − pre, t_last + post]` 
 
 Each contiguous same-type span → one quick clip, capped at `end_cap` (default 6 s, "a quick clip of each time it is shown").
 
+## Montage (2026-08-20, owner ask: "automatically combined into a montage… sped up 1.5x-2x")
+
+`finals_cut.build_montage()` concatenates a run's clips **chronologically** (a match's revives, then its end screens, then the next match — natural session narrative) into one sped-up montage per VOD: `finals_clips/<stem>/montage_<speed>x.mp4`. Individual clips are always kept.
+
+- **Speed**: default **1.75×** (middle of the owner's 1.5–2× range), UI/CLI-adjustable 1.0–3.0. Video via `setpts=PTS/S` + explicit `fps=` (probed from the first clip — the owner's OBS recordings are **30 fps**, not 60; never assume); audio via pitch-preserving `atempo` (chained above 2.0× for old-ffmpeg safety). Duration verified exact: 38.0 s of clips → 21.75 s @ 1.75× / 19.04 s @ 2×.
+- **Assembly**: ffmpeg concat *demuxer* over the just-cut clips (uniform by construction — same `_cut()` settings, same source; `-fflags +genpts`), NVENC→x264 fallback shared with `_cut()`. Montage-type entries are excluded from the source list, so a re-montage never eats a previous montage.
+- **Default ON** (`--no-montage` to skip; "Build montage" checkbox + speed input in the dashboard). Params recorded in `events.json`; the montage appears in the `clips` list as `type: "montage"` and renders **first** in the Results table.
+- **Existing runs**: `run_finals.py --remontage <stem> --montage-speed S` (dashboard: **"Montage this run"** button + `POST /api/montage`) rebuilds a montage from an existing `events.json`'s already-cut clips — **no re-scan** — for runs made before this feature or to change speed. Old montage files are left on disk (only the `events.json` entry is swapped); runs through the same runner/markers, so the 409 guard and Stop apply.
+
+> [!warning] Stale-instance lesson (caught live, 2026-08-20)
+> The first montage API test silently ran at the default 1.75× instead of the requested 1.5×: a **stale Finals app instance** (started via `start-finals.cmd` before the montage code existed) was still squatting :5200, so the fresh instance rolled to :5201 and the test hit the old one — which dropped the unknown JSON fields and spawned a fresh-code `run_finals.py` with engine defaults. Symptom to remember: *new fields ignored + engine defaults applied* ⇒ check for a port-roll (`netstat -ano | findstr :5200`) before debugging the code. Route/param changes require restarting the Finals app, same as the main dashboard.
+
 ## Verification (2026-08-19)
 
 - `--selftest`: 12/12 PASS (synthetic banner/marker/hold/end-screens through real easyocr + grouping/merge units).
@@ -56,8 +68,8 @@ Each contiguous same-type span → one quick clip, capped at `end_cap` (default 
 - Cutter: fabricated overlapping events → correct `x2` merge with both names; 12 s span capped to 6 s; NVENC path confirmed.
 - App: all endpoints exercised over HTTP (run / 409 double-run guard / state+progress / stop with clean process tree — verified no orphaned ffmpeg — / results / probe with annotated image).
 
-> [!warning] Detector fires on real footage, but no owner eyeball-confirmation yet
-> No Finals VOD existed on disk at build time — band geometry and keywords come from the owner's screenshots. Owner has since moved real Finals VODs into `vods/` (2026-08-20); smoke-testing a 30s window of two of them DID produce a genuine revive event each (gate + OCR fired on real HUD, not just synthetic frames) — but the extracted teammate names were noisy across multiple OCR reads of the same banner (expected — grouping keeps every distinct string seen, so a garbled read shows up as an extra "name"). Still owner-unverified: use the **Probe** panel on a known revive timestamp and eyeball the annotated frame before trusting a full-VOD batch run; adjust `REVIVE_BAND` / gates in `finals_common.py` if the recording layout differs (e.g. facecam overlays near the band).
+> [!note] Real-footage status (2026-08-20): detector confirmed working at scale
+> Band geometry and keywords were calibrated from screenshots only, but the owner has since run FULL scans of 4 of their 5 Finals VODs on their own instance — e.g. the 2026-08-18 VOD (39 min): **14 revive events + 12 end-screen spans → 24 clips**; 47/20/20 clips on the others. So the gates + OCR demonstrably fire on real OBS recordings (30 fps 1080p). Remaining known noise: teammate-name extraction collects OCR variants of the same name across frames (`G1GGA`/`GIGGA`…) — cosmetic, names are labels only. Owner eyeball-verdict on clip QUALITY (buffer feel, false-positive rate) still pending.
 
 ## Knobs (dashboard + CLI)
 

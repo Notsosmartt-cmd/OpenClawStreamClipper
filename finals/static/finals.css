@@ -76,6 +76,7 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: #201316; }
 td.type-revive { color: var(--red-hot); font-weight: 600; }
 td.type-end { color: var(--gold); }
+td.type-montage { color: var(--gold); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* VOD library multi-select table — mirrors the main dashboard's vod-table
    interaction pattern (row-click toggles, header select-all) in this app's

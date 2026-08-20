@@ -97,6 +97,8 @@ def api_run():
             "ocr": data.get("ocr") if data.get("ocr") in ("auto", "gpu", "cpu") else "auto",
             "revives": bool(data.get("revives", True)),
             "endscreens": bool(data.get("endscreens", True)),
+            "montage": bool(data.get("montage", True)),
+            "montage_speed": min(3.0, max(1.0, float(data.get("montage_speed", 1.75)))),
             "start": str(data.get("start") or "").strip(),
             "end": str(data.get("end") or "").strip(),
             "max_minutes": min(600.0, max(5.0, float(data.get("max_minutes", 240)))),
@@ -106,6 +108,23 @@ def api_run():
                 return jsonify({"error": f"Bad {key} time: {params[key]!r}"}), 400
         runner.spawn(vods, params)
     return jsonify({"ok": True, "vods": [os.path.basename(v) for v in vods], "count": len(vods)})
+
+
+@bp.route("/api/montage", methods=["POST"])
+def api_montage():
+    """Build (or rebuild at a new speed) the montage of an EXISTING run from
+    its already-cut clips — no re-scan. Serves runs made before the montage
+    feature existed, and speed changes without a full re-run."""
+    data = request.get_json(silent=True) or {}
+    with _state.job_lock:
+        if runner.is_running():
+            return jsonify({"error": "A Finals scan is already running"}), 409
+        stem = os.path.basename(str(data.get("stem") or "").strip())
+        if not stem or not (_state.OUT_ROOT / stem / "events.json").exists():
+            return jsonify({"error": f"No run found for {stem!r}"}), 400
+        speed = min(3.0, max(1.0, float(data.get("speed", 1.75))))
+        runner.spawn_remontage(stem, speed)
+    return jsonify({"ok": True, "stem": stem, "speed": speed})
 
 
 @bp.route("/api/stop", methods=["POST"])

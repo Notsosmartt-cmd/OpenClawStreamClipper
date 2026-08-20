@@ -230,6 +230,48 @@ def write_done_marker(code: int) -> None:
         pass
 
 
+def remontage(stem: str, speed: float) -> int:
+    """Rebuild the montage for an EXISTING finals_clips/<stem> run — no scan,
+    no re-cut. Lets runs made before the montage feature (or with a different
+    speed) get a montage from their already-cut clips. Old montage files are
+    left on disk (never hard-delete user-visible output); events.json's clip
+    list swaps to the new one."""
+    stem = os.path.splitext(os.path.basename(stem.strip().strip('"')))[0]
+    out_dir = os.path.join(OUT_ROOT, stem)
+    events_path = os.path.join(out_dir, "events.json")
+    if not os.path.exists(events_path):
+        log(f"[remontage] no run found at finals_clips/{stem} (missing events.json)")
+        return 1
+
+    import finals_cut
+    with open(events_path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    source = [c for c in payload.get("clips", []) if c.get("type") != "montage"]
+    if not source:
+        log(f"[remontage] run {stem} has no clips to combine")
+        return 1
+    old = [c for c in payload.get("clips", []) if c.get("type") == "montage"]
+    for c in old:
+        log(f"[remontage] previous montage {c['file']} left in place (replaced in events.json)")
+
+    write_pid_marker([stem], 0)
+    code = 1
+    try:
+        m = finals_cut.build_montage(source, out_dir, speed=speed, log=log)
+        if m:
+            payload["clips"] = source + [m]
+            payload.setdefault("params", {})["montage"] = True
+            payload["params"]["montage_speed"] = m["speed"]
+            with open(events_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2)
+            log(f"[finals] montage {m['file']} ({m['dur']:.1f}s @ {m['speed']:g}x) "
+                f"from {m['source_clips']} clip(s)")
+            code = 0
+    finally:
+        write_done_marker(code)
+    return code
+
+
 def resolve_vod(raw: str) -> str | None:
     vod = raw
     if not os.path.isabs(vod) and not os.path.exists(vod):
@@ -264,7 +306,9 @@ def process_one(vod: str, args, log=log) -> bool:
             "meta": result["meta"],
             "params": {"pre_s": args.pre, "post_s": args.post, "end_cap_s": args.end_cap,
                        "fps": args.fps, "revives": not args.no_revives,
-                       "endscreens": not args.no_endscreens},
+                       "endscreens": not args.no_endscreens,
+                       "montage": not args.no_montage,
+                       "montage_speed": args.montage_speed},
             "revive_events": [asdict(e) for e in result["revive_events"]],
             "end_spans": [asdict(s) for s in result["end_spans"]],
             "revive_holds": result["revive_holds"],
@@ -276,14 +320,21 @@ def process_one(vod: str, args, log=log) -> bool:
             payload["clips"] = finals_cut.cut_all(
                 result, out_dir, pre_s=args.pre, post_s=args.post,
                 end_cap_s=args.end_cap, log=log)
+            if payload["clips"] and not args.no_montage:
+                m = finals_cut.build_montage(payload["clips"], out_dir,
+                                             speed=args.montage_speed, log=log)
+                if m:
+                    payload["clips"].append(m)
 
         events_path = os.path.join(out_dir, "events.json")
         with open(events_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
+        _m = next((c for c in payload["clips"] if c["type"] == "montage"), None)
         log(f"[finals] {len(payload['revive_events'])} revive event(s) -> "
             f"{sum(1 for c in payload['clips'] if c['type'] == 'revive')} clip(s); "
             f"{len(payload['end_spans'])} end-screen span(s) -> "
-            f"{sum(1 for c in payload['clips'] if c['type'] != 'revive')} clip(s)")
+            f"{sum(1 for c in payload['clips'] if c['type'].startswith('end_'))} clip(s)"
+            + (f"; montage {_m['file']} ({_m['dur']:.1f}s @ {_m['speed']:g}x)" if _m else ""))
         log(f"[finals] output: {out_dir}")
         return True
     except Exception as e:
@@ -314,14 +365,24 @@ def main() -> int:
     ap.add_argument("--max-minutes", type=float, default=240.0,
                     help="hard wall-clock bound PER VOD (the queue re-arms it for each item)")
     ap.add_argument("--no-hwaccel", action="store_true")
+    ap.add_argument("--no-montage", action="store_true",
+                    help="skip the per-VOD sped-up montage of this run's clips")
+    ap.add_argument("--montage-speed", type=float, default=1.75,
+                    help="montage playback speed 1.0-3.0 (owner default 1.75x)")
     ap.add_argument("--scan-only", action="store_true", help="detect + write events.json, no cutting")
     ap.add_argument("--probe", type=parse_time, default=None, metavar="T",
                     help="classify one frame at T, save annotated jpg, exit (single VOD only)")
+    ap.add_argument("--remontage", metavar="STEM",
+                    help="rebuild the montage for an existing finals_clips/<stem> run "
+                         "(uses --montage-speed; no scan, no re-cut)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
 
     if args.selftest:
         return selftest(args.ocr)
+
+    if args.remontage:
+        return remontage(args.remontage, args.montage_speed)
 
     raw_vods = list(args.vod)
     raw_vods += [v.strip() for v in args.vods.split(",") if v.strip()]
