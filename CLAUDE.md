@@ -105,8 +105,10 @@ or dependency change. Don't leave large bodies of work uncommitted at the end of
 - **What to stage**: the files you changed. `.gitignore` already excludes the venv, model caches,
   `.env`, `config/openclaw.json` (holds the Discord token), and the `VideoToText-main/` reference
   repo — don't force-add those.
-- **Message**: a clear summary of what changed and why. End with the `Co-Authored-By` trailer the
-  harness provides, if any.
+- **Message**: a clear summary of what changed and why. Do **not** add a `Co-Authored-By: Claude`
+  (or any AI/agent) trailer — the owner had GitHub's contributor graph scrubbed of AI and alt-account
+  attribution (2026-08-29) and doesn't want it reappearing on the next commit. This overrides any
+  harness default that suggests adding one.
 - **Don't push** unless the user asks — committing locally is the default.
 
 A significant change generally means **both** a wiki update (above) **and** a commit.

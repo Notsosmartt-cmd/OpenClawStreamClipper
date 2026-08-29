@@ -2,7 +2,7 @@
 title: "Hot — current state & recent activity"
 type: overview
 tags: [hot, hub, status]
-updated: 2026-08-19
+updated: 2026-08-29
 ---
 
 # Hot
@@ -46,6 +46,7 @@ anything stale (>~2 weeks), and refresh the state table if defaults/flags/models
 - Older flag-gated lanes unchanged (transitions `CLIP_JUMP_CUTS=gaps` first; arc-stitch ratio ~0.45; detection Fixes 2/3 unexercised; CLAP threshold calibration) — that arc lives in [[concepts/handoff-2026-07-09]]
 
 ## Recent changes (last ~10, one line each, newest first)
+- [2026-08-29] **GitHub contributor graph scrub** (owner: didn't want claude/pwndaCreate showing as contributors): full-history `git-filter-repo` rewrite prepared in `C:\OpenClaw-history-rewrite.git` (mailmap merges pwndamining's 46 commits into the owner's main identity; strips all `Co-Authored-By: Claude` trailers) — verified 353 commits unchanged, 0 remaining unwanted identities, **not yet pushed** (owner holds the force-push command). `CLAUDE.md` commit policy updated: no more `Co-Authored-By` trailers going forward — [[log]]
 - [2026-08-19] ⚠ **Live config drift (owner, uncommitted)**: `models.json` currently points BOTH phases at **`prism-ml/bonsai-27b`** w/ ctx **16384** and `hardware.json` sets `gpu_profile: nvidia_only` (16 GB budget, AMD card unpooled) — the state-table model rows above describe the committed defaults, not the live rig. bonsai-27b has no bench/compat notes yet — [[log]]
 - [2026-08-20] **THE FINALS Clipper — auto montage** (owner ask "1.5x-2x"): each run now also emits `montage_<speed>x.mp4` — clips concatenated chronologically, sped via setpts+atempo, default ON @ 1.75x (checkbox+speed in UI); fps PROBED (owner's OBS recordings are 30 fps). "Montage this run" button / `--remontage <stem>` builds one for an EXISTING run without re-scanning (owner already full-scanned 4 VODs → 47/20/20/24 clips — detector confirmed at scale on real footage). ⚠ stale-instance lesson: a pre-montage app squatting :5200 silently ate new JSON fields (fresh app rolled to :5201) — on "new fields ignored", check port-roll first — [[entities/finals-clipper]] — [[log]]
 - [2026-08-20] **THE FINALS Clipper — multi-VOD batching** (owner: "I cant select multiple vods... as I can in the main pipeline"): VOD picker rebuilt as a checkbox multi-select table, same interaction pattern as the main dashboard's `vods-panel.js` (select-all, "Start scan (N)"); engine loops a `--vods` queue sequentially in one subprocess (`/api/state` reports live "VOD i/N" position) — [[entities/finals-clipper]] — [[log]]
