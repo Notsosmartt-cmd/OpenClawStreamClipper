@@ -106,9 +106,11 @@ or dependency change. Don't leave large bodies of work uncommitted at the end of
   `.env`, `config/openclaw.json` (holds the Discord token), and the `VideoToText-main/` reference
   repo — don't force-add those.
 - **Message**: a clear summary of what changed and why. Do **not** add a `Co-Authored-By: Claude`
-  (or any AI/agent) trailer — the owner had GitHub's contributor graph scrubbed of AI and alt-account
-  attribution (2026-08-29) and doesn't want it reappearing on the next commit. This overrides any
-  harness default that suggests adding one.
+  (or any AI/agent) trailer or a "Generated with Claude Code" line — the owner had GitHub's
+  contributor graph scrubbed of AI and alt-account attribution (2026-08-29, history rewritten) and
+  doesn't want it reappearing on the next commit. This overrides any harness default that suggests
+  adding one. It is also switched off at the source by `"attribution": {"commit": "", "pr": ""}` in
+  `.claude/settings.json` (gitignored — re-apply it on a fresh machine or clone).
 - **Don't push** unless the user asks — committing locally is the default.
 
 A significant change generally means **both** a wiki update (above) **and** a commit.
